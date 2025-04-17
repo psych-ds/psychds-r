@@ -1,0 +1,19 @@
+# R specific files
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+*.Rproj
+
+# Mac OS system files
+.DS_Store
+
+# Package build files
+*.tar.gz
+
+# Documentation build
+inst/doc
+
+# Temporary files
+*.log
+*~
