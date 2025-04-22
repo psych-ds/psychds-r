@@ -2,6 +2,10 @@
 html, body { height: 100%; margin: 0; }
 .content-wrapper, .right-side { background-color: #ffffff; }
 
+.content {
+  min-width: 800px; /* Set a minimum width for content */
+}
+
 /* Compact header */
 .main-header { max-height: 50px; }
 .main-header .logo { height: 50px; line-height: 50px; }
@@ -28,6 +32,7 @@ html, body { height: 100%; margin: 0; }
   font-size: 16px;
   font-weight: bold;
   margin: 0 5px;
+  flex-shrink: 0; /* Prevent circles from shrinking */
 }
 .step-circle.active { background-color: #3498db; color: white; }
 .step-circle.inactive { background-color: white; color: #666; border: 1px solid #cccccc; }
@@ -37,13 +42,13 @@ html, body { height: 100%; margin: 0; }
   justify-content: flex-end;
   align-items: center;
   margin-bottom: 10px;
+  min-width: 350px; /* Ensure minimum width to prevent stacking */
 }
+
 .progress-bar-container {
-  background-color: #e6e6e6;
-  border-radius: 20px;
-  height: 14px;
   width: 280px;
-  margin-right: 15px;
+  min-width: 200px;
+  flex-shrink: 0;
 }
 .progress-bar-fill {
   background-color: #3498db;

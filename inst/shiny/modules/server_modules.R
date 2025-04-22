@@ -491,15 +491,56 @@ step1Server <- function(id, state, session) {
 
       # Show summary before proceeding
       dirs <- selected_dirs()
+
+      # Create a nicer display for files
+      files_html <- if(length(state$data_files) > 0) {
+        tagList(
+          div(
+            style = "max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; margin-top: 5px; background-color: #f8f9fa;",
+            lapply(state$data_files, function(file) {
+              div(
+                style = "padding: 4px 0; border-bottom: 1px solid #eee;",
+                icon("file"),
+                span(style = "margin-left: 5px;", file)
+              )
+            })
+          )
+        )
+      } else {
+        "None"
+      }
+
+      # Create a nicer display for directories
+      dirs_html <- if(length(dirs) > 0) {
+        tagList(
+          div(
+            style = "max-height: 150px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; margin-top: 5px; background-color: #f8f9fa;",
+            lapply(dirs, function(dir) {
+              div(
+                style = "padding: 4px 0; border-bottom: 1px solid #eee;",
+                icon("folder"),
+                span(style = "margin-left: 5px;", dir)
+              )
+            })
+          )
+        )
+      } else {
+        "None"
+      }
+
       showModal(modalDialog(
         title = "Dataset Creation - Step 1 Complete",
         div(
           p(strong("Project Directory:"), state$project_dir),
-          p(strong("Selected Files:"),
-            if(length(state$data_files) > 0) paste(state$data_files, collapse = ", ") else "None"),
-          p(strong("Optional Directories:"),
-            if(length(dirs) > 0) paste(dirs, collapse = ", ") else "None")
+
+          strong("Selected Files:"),
+          files_html,
+
+          strong("Optional Directories:"),
+          dirs_html
         ),
+        # Valid sizes are "m" (default), "s", "l", or "xl"
+        size = "l",
         easyClose = TRUE,
         footer = tagList(
           modalButton("Cancel"),

@@ -16,10 +16,10 @@ stepProgressUI <- function(current_step) {
       div(class = "progress-bar-container",
           div(class = "progress-bar-fill", style = paste0("width: ", progress_pct, "%;"))
       ),
-      div(
-        span(class = ifelse(current_step >= 1, "step-circle active", "step-circle inactive"), "1"),
-        span(class = ifelse(current_step >= 2, "step-circle active", "step-circle inactive"), "2"),
-        span(class = ifelse(current_step >= 3, "step-circle active", "step-circle inactive"), "3")
+      div(style = "display: flex; white-space: nowrap;", # Force horizontal layout
+          span(class = ifelse(current_step >= 1, "step-circle active", "step-circle inactive"), "1"),
+          span(class = ifelse(current_step >= 2, "step-circle active", "step-circle inactive"), "2"),
+          span(class = ifelse(current_step >= 3, "step-circle active", "step-circle inactive"), "3")
       )
   )
 }
