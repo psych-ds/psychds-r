@@ -12,6 +12,7 @@ library(DT)
 library(jsonlite)
 library(tools)
 library(utils)
+library(sortable)
 
 # Load global configuration and helper functions
 source("global.R")
