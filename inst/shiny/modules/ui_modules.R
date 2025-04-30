@@ -196,6 +196,10 @@ step1UI <- function(id) {
 #'
 #' @param id Namespace ID for the module
 #' @return UI for Step 2
+#' Debug version of Step 2 UI
+#'
+#' @param id Namespace ID for the module
+#' @return UI for Step 2
 step2UI <- function(id) {
   ns <- NS(id)
 
@@ -206,7 +210,7 @@ step2UI <- function(id) {
         width = 6,
         div(
           h2("Create Dataset"),
-          h3("Step 2: Create Data Dictionary")
+          h3("Step 2: Dataset Metadata")
         )
       ),
       column(
@@ -215,21 +219,112 @@ step2UI <- function(id) {
       )
     ),
 
-    # Data Dictionary Editor - This is a placeholder for the actual implementation
-    div(
-      class = "section-box",
-      div(class = "section-title", "Data Dictionary"),
-      div(class = "section-description",
-          "A data dictionary provides metadata about each variable in your dataset.
-           This information helps others understand and reuse your data."),
+    # Description text
+    p(class = "section-description",
+      "We'll generate a text file called dataset_description.json containing information about ",
+      "your dataset. This file is part of Psych-DS - it is placed in your project directory and is ",
+      "used to confirm whether your specific dataset is organized to the Psych-DS standard."
+    ),
 
-      # Tabs for each file
-      uiOutput(ns("file_tabs"))
+    # Main content - two columns
+    fluidRow(
+      # Left column - Detected Variables
+      column(
+        width = 6,
+        div(
+          class = "section-box",
+          div(class = "section-title", "Detected Variables"),
+
+          p(class = "section-description",
+            "The following column headers were detected in your selected files. ",
+            "Variables with the same name across multiple files are assumed to have ",
+            "identical definitions."
+          ),
+
+          # Variable list
+          div(
+            style = "margin-top: 15px;",
+            DT::dataTableOutput(ns("variables_table"))
+          ),
+
+          # Warning box
+          div(
+            style = "margin-top: 15px; padding: 10px; background-color: #fff3cd; border-radius: 3px;",
+            p(
+              style = "color: #856404; margin-bottom: 0;",
+              "Note: If you need different definitions for variables that currently have the same ",
+              "name across files, you will need to rename them to be distinct. Make these changes in ",
+              "your CSV files and restart the process."
+            )
+          )
+        )
+      ),
+
+      # Right column - Dataset Info and Authors
+      column(
+        width = 6,
+        # Dataset Information section
+        div(
+          class = "section-box",
+          div(class = "section-title", "Dataset Information"),
+
+          # Name field
+          div(
+            style = "margin-bottom: 15px;",
+            textInput(
+              ns("dataset_name"),
+              "Name *",
+              placeholder = "e.g., Visual Attention Experiment 2023"
+            )
+          ),
+
+          # Description field
+          div(
+            style = "margin-bottom: 15px;",
+            textAreaInput(
+              ns("dataset_description"),
+              "Description *",
+              placeholder = "Briefly describe your dataset",
+              height = "100px"
+            )
+          )
+        ),
+
+        # Author Information section
+        div(
+          class = "section-box",
+          div(class = "section-title", "Author Information"),
+
+          p("Author Names (separate with commas)"),
+
+          # Author table
+          div(
+            id = ns("authors_container"),
+            style = "max-height: 200px; overflow-y: auto; border: 1px solid #ced4da; border-radius: 3px; margin-bottom: 15px;",
+            # Header
+            div(
+              style = "display: flex; background-color: #f8f9fa; padding: 5px; border-bottom: 1px solid #ced4da;",
+              div(style = "flex: 2;", strong("Name")),
+              div(style = "flex: 2;", strong("ORCID ID"))
+            ),
+            # Authors will be inserted here dynamically
+            uiOutput(ns("author_list"))
+          ),
+
+          # Add author button
+          actionButton(
+            ns("add_author"),
+            "Add New Author",
+            class = "btn-primary",
+            style = "margin-bottom: 15px;"
+          )
+        )
+      )
     ),
 
     # Navigation Buttons
     div(
-      style = "text-align: right;",
+      style = "text-align: right; margin-top: 20px;",
       actionButton(
         ns("back"),
         "← Back",
@@ -244,10 +339,12 @@ step2UI <- function(id) {
   )
 }
 
-#' Create Step 3 UI: Dataset Metadata
+#' Step 3 UI Module
 #'
-#' @param id Namespace ID for the module
-#' @return UI for Step 3
+#' UI components for Step 3: Standardize Filenames
+#'
+#' @param id The module ID
+#' @param session The current session object
 step3UI <- function(id) {
   ns <- NS(id)
 
@@ -258,7 +355,7 @@ step3UI <- function(id) {
         width = 6,
         div(
           h2("Create Dataset"),
-          h3("Step 3: Dataset Metadata")
+          h3("Step 3: Standardize Filenames")
         )
       ),
       column(
@@ -267,50 +364,154 @@ step3UI <- function(id) {
       )
     ),
 
-    # Dataset Metadata
-    div(
-      class = "section-box",
-      div(class = "section-title", "Dataset Information"),
-      div(class = "section-description",
-          "Provide general information about your dataset."),
+    # Description
+    p(class = "section-description",
+      "Rename your data files to follow Psych-DS naming conventions. Each filename will be composed of a set of keywords
+      and custom values to create a clear, consistent description."),
 
-      # Dataset name and description
-      textInput(ns("dataset_name"), "Dataset Name", placeholder = "e.g., Study on Memory and Recognition"),
-      textAreaInput(ns("dataset_description"), "Description", placeholder = "Describe your dataset...", height = "100px"),
+    # Main content area - Using a more balanced two-column layout
+    fluidRow(
+      # Left column - File Mapping with Keyword Configuration
+      column(
+        width = 6,
+        # File Mapping Section
+        div(
+          class = "section-box",
+          div(class = "section-title", "File Mapping"),
+          p(class = "section-description",
+            "Select each file to configure its standardized filename."),
 
-      # Authors
-      div(class = "section-title", style = "margin-top: 15px;", "Authors"),
-      div(
-        id = ns("authors_container"),
-        # Will be populated dynamically
+          div(
+            class = "file-browser",
+            style = "height: 250px; overflow-y: auto; margin-bottom: 15px;", # Increased height
+            div(
+              class = "file-list-header",
+              div(class = "row",
+                  div(class = "col-xs-6", strong("Original Filename")),
+                  div(class = "col-xs-6", strong("New Filename"))
+              )
+            ),
+            div(
+              id = ns("file_mapping_list"),
+              class = "file-mapping-list",
+              # Will be populated dynamically with file rows
+              uiOutput(ns("file_mapping_rows"))
+            )
+          )
+        ),
+
+        # Current file indicator
+        div(
+          id = ns("current_file_indicator"),
+          class = "alert alert-info",
+          style = "margin-top: 15px;",
+          uiOutput(ns("current_file_text"))
+        ),
+
+        # Keywords selection area
+        div(
+          class = "section-box",
+          style = "margin-top: 15px;",
+          div(class = "section-title", "Choose Keywords"),
+          p(class = "section-description",
+            "Select keywords to use in your filename. Choose keywords that are meaningful for your dataset and use them consistently."),
+
+          div(
+            class = "keyword-option-chips",
+            style = "margin-bottom: 15px;",
+            actionButton(ns("keyword_session"), "Session", class = "btn btn-sm btn-primary keyword-chip"),
+            actionButton(ns("keyword_subject"), "Subject", class = "btn btn-sm btn-primary keyword-chip"),
+            actionButton(ns("keyword_study"), "Study", class = "btn btn-sm btn-primary keyword-chip"),
+            actionButton(ns("keyword_task"), "Task", class = "btn btn-sm btn-primary keyword-chip"),
+            actionButton(ns("keyword_condition"), "Condition", class = "btn btn-sm btn-primary keyword-chip"),
+            actionButton(ns("keyword_stimulus"), "Stimulus", class = "btn btn-sm btn-primary keyword-chip"),
+            actionButton(ns("keyword_trial"), "Trial", class = "btn btn-sm btn-primary keyword-chip"),
+            actionButton(ns("keyword_description"), "Description", class = "btn btn-sm btn-primary keyword-chip")
+          ),
+
+          div(
+            class = "section-title",
+            "Selected Keywords"
+          ),
+          div(
+            id = ns("selected_keywords_container"),
+            class = "selected-keywords-container",
+            style = "min-height: 80px; padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; margin-bottom: 15px;",
+            # Using uiOutput instead of sortable::rank_list
+            uiOutput(ns("selected_keywords"))
+          )
+
+        ),
+
+        # Custom keywords section
+        div(
+          class = "section-box",
+          style = "margin-top: 15px;",
+          div(class = "section-title", "Add Custom Keyword"),
+          div(
+            class = "input-group",
+            style = "margin-bottom: 15px;",
+            textInput(ns("custom_keyword_name"), NULL, placeholder = "Custom keyword name", width = "70%"),
+            div(
+              class = "input-group-btn",
+              style = "width: 30%;",
+              actionButton(ns("add_custom_keyword"), "Add", class = "btn btn-primary", style = "width: 100%;")
+            )
+          )
+        )
       ),
-      div(
-        style = "margin-top: 10px;",
-        actionButton(ns("add_author"), "Add Author", class = "add-btn")
-      ),
 
-      # License
-      div(class = "section-title", style = "margin-top: 15px;", "License"),
-      selectInput(ns("license"), NULL,
-                  choices = c("CC-BY-4.0" = "CC-BY-4.0",
-                              "CC0-1.0" = "CC0-1.0",
-                              "MIT" = "MIT",
-                              "Other" = "other"),
-                  selected = "CC-BY-4.0")
+      # Right column - Keyword Values and Preview
+      column(
+        width = 6,
+        # Keyword value inputs
+        div(
+          class = "section-box",
+          div(class = "section-title", "Keyword Values"),
+          div(
+            class = "keyword-values-section",
+            style = "min-height: 250px;", # Match the height of file mapping box
+            uiOutput(ns("keyword_value_inputs"))
+          )
+        ),
+
+        # Filename preview
+        div(
+          class = "section-box",
+          style = "margin-top: 15px;",
+          div(class = "section-title", "Filename Preview"),
+          div(
+            class = "well well-sm filename-preview",
+            style = "background-color: #f8f9fa; border: 1px solid #ced4da; padding: 15px; text-align: center; margin: 10px 0; min-height: 60px;",
+            uiOutput(ns("filename_preview"))
+          ),
+          div(
+            style = "text-align: center;",
+            actionButton(ns("generate_filename"), "Generate Filename", class = "btn btn-primary", style = "width: 100%;")
+          )
+        ),
+
+        # Debugging div (hidden in production, used for troubleshooting)
+        tags$div(
+          id = ns("debug_output"),
+          style = "display: none;",
+          verbatimTextOutput(ns("debug_text"))
+        )
+      )
     ),
 
-    # Navigation Buttons
+    # Navigation buttons
     div(
-      style = "text-align: right;",
+      style = "text-align: right; margin-top: 20px;",
       actionButton(
         ns("back"),
         "← Back",
         class = "back-btn"
       ),
       actionButton(
-        ns("finish"),
-        "Finish",
-        class = "finish-btn"
+        ns("continue"),
+        "Continue →",
+        class = "continue-btn"
       )
     )
   )
