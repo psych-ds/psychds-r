@@ -435,6 +435,7 @@ optionalDirsServer <- function(id, state, session) {
 #' @param state Global state reactive values
 #' @param session The current session object
 step1Server <- function(id, state, session) {
+  message("????")
   moduleServer(id, function(input, output, session) {
     # Initialize directory input handler
     dir_path <- directoryInputServer("project_dir", state, session)
@@ -592,101 +593,305 @@ step1Server <- function(id, state, session) {
 #' @param session The current session object
 step2Server <- function(id, state, session) {
   moduleServer(id, function(input, output, session) {
-    # Create tabs for each file
-    output$file_tabs <- renderUI({
-      if (length(state$data_files) == 0) {
-        return(div(
-          style = "text-align: center; padding: 30px; color: #999;",
-          "No data files selected. Please go back to Step 1 and select at least one data file."
+    # Initialize reactive values for authors
+    authors <- reactiveVal(list())
+    detected_variables <- reactiveVal(data.frame())
+
+    # On initialization, analyze selected files
+    observe({
+      req(state$project_dir)
+      req(length(state$data_files) > 0)
+
+      # Extract variable information from selected files
+      variables_df <- extractVariableInfo(state$project_dir, state$data_files)
+
+      # Only set if we have actual data
+      if (!is.null(variables_df) && nrow(variables_df) > 0) {
+        detected_variables(variables_df)
+      }
+    })
+
+    # Extract variable information from files
+    extractVariableInfo <- function(project_dir, file_paths) {
+      # Initialize results data frame
+      result <- data.frame(
+        variable = character(),
+        present_in = character(),
+        stringsAsFactors = FALSE
+      )
+
+      # Track variables across files
+      all_vars <- list()
+
+      # Process each file
+      for (file_path in file_paths) {
+        full_path <- file.path(project_dir, file_path)
+
+        if (file.exists(full_path)) {
+          # Read column names from CSV
+          tryCatch({
+            # Read just the header row
+            header <- colnames(read.csv(full_path, nrows = 1))
+
+            # Add to the variable tracking
+            for (var_name in header) {
+              if (var_name %in% names(all_vars)) {
+                all_vars[[var_name]] <- c(all_vars[[var_name]], file_path)  # Use full relative path
+              } else {
+                all_vars[[var_name]] <- file_path  # Use full relative path
+              }
+            }
+          }, error = function(e) {
+            # Handle errors reading the file
+            warning(paste("Error reading", file_path, ":", e$message))
+          })
+        }
+      }
+
+      # Convert to data frame
+      for (var_name in names(all_vars)) {
+        result <- rbind(result, data.frame(
+          variable = var_name,
+          present_in = paste(all_vars[[var_name]], collapse = ", "),
+          stringsAsFactors = FALSE
         ))
       }
 
-      # Create a tabset with a tab for each file
-      tabsetPanel(
-        id = session$ns("file_tabset"),
-        lapply(state$data_files, function(file) {
-          tabPanel(
-            basename(file),
+      # Sort alphabetically by variable name
+      if (nrow(result) > 0) {
+        result <- result[order(result$variable), ]
+      }
+
+      return(result)
+    }
+
+    # Render the variables table
+    output$variables_table <- DT::renderDataTable({
+      vars_df <- detected_variables()
+
+      if (is.null(vars_df) || nrow(vars_df) == 0) {
+        return(DT::datatable(
+          data.frame(
+            Variable = "No variables detected",
+            `Present In` = "Please select CSV files in Step 1",
+            check.names = FALSE
+          ),
+          options = list(
+            dom = 't',
+            paging = FALSE,
+            searching = FALSE,
+            info = FALSE
+          ),
+          rownames = FALSE
+        ))
+      }
+
+      # Create formatted file lists with scrollable container
+      vars_df$present_in <- sapply(vars_df$present_in, function(files_str) {
+        files <- strsplit(files_str, ", ")[[1]]
+        file_divs <- character(length(files))
+
+        for (i in seq_along(files)) {
+          file_divs[i] <- sprintf('<div>%s</div>', files[i])
+        }
+
+        # Create scrollable container with CSS class
+        paste0('<div class="file-list-scrollable">',
+               paste(file_divs, collapse = ""),
+               '</div>')
+      })
+
+      DT::datatable(
+        vars_df,
+        options = list(
+          pageLength = 5,
+          lengthMenu = c(5, 10, 15),
+          scrollX = TRUE,
+          dom = "ftip",
+          columnDefs = list(
+            list(className = 'dt-left', targets = "_all")
+          )
+        ),
+        rownames = FALSE,
+        selection = "none",
+        escape = FALSE  # Important: allows HTML in cells
+      )
+    })
+
+    # Render author list
+    output$author_list <- renderUI({
+      author_list <- authors()
+
+      if (length(author_list) == 0) {
+        return(
+          div(
+            style = "padding: 10px; text-align: center; color: #666;",
+            "No authors added yet. Click 'Add New Author' below."
+          )
+        )
+      }
+
+      # Header row with columns for first/last name
+      tagList(
+        div(
+          style = "display: flex; background-color: #f8f9fa; padding: 5px; border-bottom: 1px solid #ced4da;",
+          div(style = "flex: 1;", strong("First Name")),
+          div(style = "flex: 1;", strong("Last Name")),
+          div(style = "flex: 1;", strong("ORCID ID")),
+          div(style = "flex: 0; width: 40px;", "")
+        ),
+        # Author rows
+        lapply(seq_along(author_list), function(i) {
+          author <- author_list[[i]]
+          div(
+            style = "display: flex; padding: 5px; border-bottom: 1px solid #ced4da;",
             div(
-              style = "margin-top: 15px;",
-              if (file %in% names(state$data_dict) && nrow(state$data_dict[[file]]) > 0) {
-                renderDataDictEditor(file, state$data_dict[[file]], session$ns)
-              } else {
-                div(
-                  style = "text-align: center; padding: 30px; color: #999;",
-                  "No columns found in this file or file is not accessible."
-                )
-              }
+              style = "flex: 1;",
+              author$first_name
+            ),
+            div(
+              style = "flex: 1;",
+              author$last_name
+            ),
+            div(
+              style = "flex: 1;",
+              author$orcid
+            ),
+            div(
+              style = "flex: 0; width: 40px;",
+              actionButton(
+                inputId = session$ns(paste0("remove_author_", i)),
+                label = NULL,
+                icon = icon("trash"),
+                class = "btn-sm btn-danger",
+                style = "padding: 2px 6px;"
+              )
             )
           )
         })
       )
     })
 
-    # Function to render data dictionary editor for a file
-    renderDataDictEditor <- function(file, dict_data, ns) {
-      # Create a unique ID for this editor
-      editor_id <- paste0("editor_", gsub("[^a-zA-Z0-9]", "_", file))
-
-      # Create the editor UI
-      div(
-        div(class = "section-title", paste0("File: ", basename(file))),
-        p(class = "section-description", "Edit the variable information below. Click 'Save Changes' when done."),
-
-        # Data table for editing
-        DTOutput(ns(editor_id)),
-
-        # Save button
+    # Handle adding a new author
+    observeEvent(input$add_author, {
+      showModal(modalDialog(
+        title = "Add Author",
+        # Stack fields vertically instead of flex layout
         div(
-          style = "text-align: right; margin-top: 10px;",
-          actionButton(ns(paste0("save_", editor_id)), "Save Changes", class = "save-btn")
+          textInput(session$ns("new_author_first"), "First Name", ""),
+          textInput(session$ns("new_author_last"), "Last Name", ""),
+          textInput(session$ns("new_author_orcid"), "ORCID ID (optional)",
+                    placeholder = "e.g., 0000-0002-1825-0097")
+        ),
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(session$ns("save_new_author"), "Add", class = "btn-primary")
+        ),
+        easyClose = TRUE
+      ))
+    })
+
+    # Save new author
+    observeEvent(input$save_new_author, {
+      if (input$new_author_first != "" && input$new_author_last != "") {
+        current_authors <- authors()
+
+        # Add new author with separate first and last name
+        current_authors[[length(current_authors) + 1]] <- list(
+          first_name = input$new_author_first,
+          last_name = input$new_author_last,
+          orcid = input$new_author_orcid
         )
-      )
-    }
 
-    # Create data tables for each file
+        # Update authors
+        authors(current_authors)
+
+        # Close modal
+        removeModal()
+      } else {
+        showNotification("First and last name are required", type = "error")
+      }
+    })
+
+    # Handle removing authors
     observe({
-      for (file in state$data_files) {
+      author_list <- authors()
+
+      for (i in seq_along(author_list)) {
         local({
-          local_file <- file
-          editor_id <- paste0("editor_", gsub("[^a-zA-Z0-9]", "_", local_file))
+          local_i <- i
+          observeEvent(input[[paste0("remove_author_", local_i)]], {
+            current_authors <- authors()
 
-          if (local_file %in% names(state$data_dict) && nrow(state$data_dict[[local_file]]) > 0) {
-            # Create editable data table
-            output[[editor_id]] <- renderDT({
-              datatable(
-                state$data_dict[[local_file]],
-                editable = TRUE,
-                options = list(
-                  pageLength = 10,
-                  lengthMenu = c(5, 10, 25, 50),
-                  scrollX = TRUE
-                )
-              )
-            })
+            # Remove the author at the specified index
+            if (local_i <= length(current_authors)) {
+              current_authors <- current_authors[-local_i]
+              authors(current_authors)
+            }
+          })
+        })
+      }
+    })
 
-            # Handle table edits
-            observeEvent(input[[paste0(editor_id, "_cell_edit")]], {
-              info <- input[[paste0(editor_id, "_cell_edit")]]
-              i <- info$row
-              j <- info$col + 1  # column index offset
-              v <- info$value
+    # Pre-fill dataset information if it exists
+    observe({
+      if (!is.null(state$dataset_info$name)) {
+        updateTextInput(session, "dataset_name", value = state$dataset_info$name)
+      }
 
-              # Update the data dictionary
-              state$data_dict[[local_file]][i, j] <- v
-            })
+      if (!is.null(state$dataset_info$description)) {
+        updateTextAreaInput(session, "dataset_description", value = state$dataset_info$description)
+      }
 
-            # Handle save button
-            observeEvent(input[[paste0("save_", editor_id)]], {
-              showNotification(paste("Changes saved for", basename(local_file)), type = "message")
-            })
+      # Initialize authors if not already set
+      if (length(authors()) == 0 && length(state$dataset_info$authors) > 0) {
+        # Convert from state format to list of author objects
+        author_list <- lapply(state$dataset_info$authors, function(author_data) {
+          # Parse author data - expected format could be various
+          if (is.list(author_data) && !is.null(author_data$first_name)) {
+            # Already in the right format
+            author_data
+          } else if (is.character(author_data)) {
+            # Try to extract from string format
+            if (grepl("\\(.*\\)$", author_data)) {
+              # Format like "First Last (ORCID)"
+              parts <- regmatches(author_data, regexec("^(.*?)\\s*\\((.*)\\)$", author_data))[[1]]
+              name_parts <- strsplit(trimws(parts[2]), "\\s+")[[1]]
+              if (length(name_parts) > 1) {
+                first_name <- paste(name_parts[1:(length(name_parts)-1)], collapse = " ")
+                last_name <- name_parts[length(name_parts)]
+              } else {
+                first_name <- name_parts[1]
+                last_name <- ""
+              }
+              list(first_name = first_name, last_name = last_name, orcid = parts[3])
+            } else {
+              # Just a name, try to split into first/last
+              name_parts <- strsplit(trimws(author_data), "\\s+")[[1]]
+              if (length(name_parts) > 1) {
+                first_name <- paste(name_parts[1:(length(name_parts)-1)], collapse = " ")
+                last_name <- name_parts[length(name_parts)]
+              } else {
+                first_name <- name_parts[1]
+                last_name <- ""
+              }
+              list(first_name = first_name, last_name = last_name, orcid = "")
+            }
+          } else {
+            # Default fallback
+            list(first_name = "", last_name = "", orcid = "")
           }
         })
+
+        authors(author_list)
       }
     })
 
     # Handle Back button
     observeEvent(input$back, {
+      # Save current data first
+      saveMetadata()
+
       # Confirm going back
       showModal(modalDialog(
         title = "Go Back to Step 1?",
@@ -707,148 +912,10 @@ step2Server <- function(id, state, session) {
 
     # Handle Continue button
     observeEvent(input$continue, {
-      # Move to step 3
-      state$current_step <- 3
-    })
-  })
-}
-
-#' Step 3 Server Module
-#'
-#' Handles dataset metadata and finalization
-#'
-#' @param id The module ID
-#' @param state Global state reactive values
-#' @param session The current session object
-step3Server <- function(id, state, session) {
-  moduleServer(id, function(input, output, session) {
-    # Initialize authors
-    authors <- reactiveVal(list())
-
-    # Add an initial author field on startup
-    observe({
-      if (length(authors()) == 0) {
-        addAuthorField()
-      }
-    })
-
-    # Function to add an author field
-    addAuthorField <- function() {
-      # Create a unique ID for this author
-      author_id <- generate_id("author")
-
-      # Add to the list of authors
-      current <- authors()
-      current[[length(current) + 1]] <- list(
-        id = author_id,
-        name = "",
-        affiliations = ""
-      )
-      authors(current)
-
-      # Add the UI element
-      insertUI(
-        selector = paste0("#", session$ns("authors_container")),
-        where = "beforeEnd",
-        ui = div(
-          id = paste0("author_container_", author_id),
-          style = "margin-bottom: 10px; display: flex; align-items: center;",
-          div(
-            style = "flex-grow: 1;",
-            textInput(
-              session$ns(paste0("author_name_", author_id)),
-              "Name",
-              width = "100%",
-              placeholder = "Author's name"
-            )
-          ),
-          div(
-            style = "flex-grow: 1; margin-left: 10px;",
-            textInput(
-              session$ns(paste0("author_affil_", author_id)),
-              "Affiliations",
-              width = "100%",
-              placeholder = "Author's affiliations"
-            )
-          ),
-          div(
-            style = "margin-left: 10px; margin-top: 25px;",
-            if (length(authors()) > 1) {
-              actionButton(
-                session$ns(paste0("remove_author_", author_id)),
-                label = NULL,
-                icon = icon("trash"),
-                class = "btn-danger remove-btn"
-              )
-            }
-          )
-        )
-      )
-
-      # Add observer for remove button if this isn't the first author
-      if (length(authors()) > 1) {
-        local({
-          local_id <- author_id
-          observeEvent(input[[paste0("remove_author_", local_id)]], {
-            # Get current authors
-            current <- authors()
-
-            # Find and remove this author
-            index_to_remove <- which(sapply(current, function(x) x$id == local_id))
-            if (length(index_to_remove) > 0) {
-              current <- current[-index_to_remove]
-              authors(current)
-            }
-
-            # Remove the UI element
-            removeUI(selector = paste0("#author_container_", local_id))
-          })
-        })
-      }
-    }
-
-    # Handle add author button
-    observeEvent(input$add_author, {
-      addAuthorField()
-    })
-
-    # Update authors information when inputs change
-    observe({
-      current <- authors()
-
-      # Update each author's information
-      for (i in seq_along(current)) {
-        author_id <- current[[i]]$id
-        name_input <- paste0("author_name_", author_id)
-        affil_input <- paste0("author_affil_", author_id)
-
-        if (exists(name_input, where = input)) {
-          current[[i]]$name <- input[[name_input]]
-        }
-        if (exists(affil_input, where = input)) {
-          current[[i]]$affiliations <- input[[affil_input]]
-        }
-      }
-
-      # Update the reactive value
-      authors(current)
-    })
-
-    # Handle Back button
-    observeEvent(input$back, {
-      # Update global state with current values
-      updateGlobalState()
-
-      # Go back to step 2
-      state$current_step <- 2
-    })
-
-    # Handle Finish button
-    observeEvent(input$finish, {
       # Validate inputs
       if (is.null(input$dataset_name) || input$dataset_name == "") {
         showModal(modalDialog(
-          title = "Error",
+          title = "Missing Information",
           "Please enter a dataset name.",
           easyClose = TRUE,
           footer = modalButton("OK")
@@ -856,56 +923,982 @@ step3Server <- function(id, state, session) {
         return()
       }
 
-      # Update global state
-      updateGlobalState()
+      if (is.null(input$dataset_description) || input$dataset_description == "") {
+        showModal(modalDialog(
+          title = "Missing Information",
+          "Please enter a dataset description.",
+          easyClose = TRUE,
+          footer = modalButton("OK")
+        ))
+        return()
+      }
 
-      # Show confirmation
+      # Save metadata
+      saveMetadata()
+
+      # Create JSON preview
+      json_preview <- createJsonPreview()
+
+      # Show JSON preview modal
       showModal(modalDialog(
-        title = "Create Dataset",
+        title = "Dataset JSON Preview",
         div(
-          p("You're about to create a Psych-DS dataset with the following settings:"),
-          tags$ul(
-            tags$li(strong("Dataset Name:"), input$dataset_name),
-            tags$li(strong("Project Directory:"), state$project_dir),
-            tags$li(strong("Data Files:"),
-                    if(length(state$data_files) > 0) paste(state$data_files, collapse = ", ") else "None"),
-            tags$li(strong("Authors:"),
-                    paste(sapply(authors(), function(a) a$name), collapse = ", ")),
-            tags$li(strong("License:"), input$license)
+          p("Here's a preview of the dataset_description.json file that will be generated:"),
+
+          # Use a pre tag for better code display
+          tags$pre(
+            class = "json-preview",
+            HTML(json_preview)
           ),
-          p("Click 'Create' to generate the Psych-DS dataset.")
+
+          p("This JSON will be saved in your project directory when you proceed to Step 3.")
         ),
+        size = "l",
         easyClose = TRUE,
         footer = tagList(
-          modalButton("Cancel"),
-          actionButton(session$ns("confirm_create"), "Create", class = "btn-success")
+          modalButton("Back"),
+          actionButton(session$ns("confirm_continue"), "Confirm and Continue", class = "btn-primary")
         )
       ))
     })
 
-    # Handle confirmed create action
-    observeEvent(input$confirm_create, {
+    # Handle confirmed continue action
+    observeEvent(input$confirm_continue, {
+      removeModal()
+      # Move to step 3
+      state$current_step <- 3
+    })
+
+    # Create JSON Preview function
+    createJsonPreview <- function() {
+      # Get variables
+      vars_df <- detected_variables()
+      if (is.null(vars_df) || nrow(vars_df) == 0) {
+        variables_array <- "[]"
+      } else {
+        variables_list <- paste0('"', vars_df$variable, '"')
+        variables_array <- paste0(
+          "[\n      ",
+          paste(variables_list, collapse = ",\n      "),
+          "\n    ]"
+        )
+      }
+
+      # Format authors in the new format
+      author_list <- authors()
+      if (length(author_list) == 0) {
+        authors_array <- "[]"
+      } else {
+        author_entries <- lapply(author_list, function(author) {
+          orcid_part <- if (!is.null(author$orcid) && author$orcid != "") {
+            sprintf(',\n        "@id": "%s"', author$orcid)
+          } else {
+            ""
+          }
+
+          sprintf(
+            '{\n        "@type": "Person",\n        "givenName": "%s",\n        "familyName": "%s"%s\n      }',
+            author$first_name,
+            author$last_name,
+            orcid_part
+          )
+        })
+
+        authors_array <- paste0(
+          "[\n      ",
+          paste(author_entries, collapse = ",\n      "),
+          "\n    ]"
+        )
+      }
+
+      # Create the JSON template with the correct format
+      json_template <- paste0(
+        "{\n",
+        '    "@context": "https://schema.org/",\n',
+        '    "@type": "Dataset",\n',
+        sprintf('    "name": "%s",\n', gsub('"', '\\\\"', input$dataset_name)),
+        sprintf('    "description": "%s",\n', gsub('"', '\\\\"', input$dataset_description)),
+        '    "author": ', authors_array, ',\n',
+        '    "variableMeasured": ', variables_array, '\n',
+        "}"
+      )
+
+      # Simple HTML escaping for display
+      json_html <- gsub("<", "&lt;", json_template)
+      json_html <- gsub(">", "&gt;", json_html)
+
+      # Manual syntax highlighting with spans
+      # Mark keys
+      json_html <- gsub('("@[^"]+"):', '<span class="json-key">\\1</span>:', json_html)
+      json_html <- gsub('("[^@][^"]*"):',  '<span class="json-key">\\1</span>:', json_html)
+
+      # Mark string values
+      json_html <- gsub('": "([^"]*)"', '": <span class="json-string">"\\1"</span>', json_html)
+
+      # Mark punctuation
+      json_html <- gsub('\\{', '<span class="json-punctuation">{</span>', json_html)
+      json_html <- gsub('\\}', '<span class="json-punctuation">}</span>', json_html)
+      json_html <- gsub('\\[', '<span class="json-punctuation">[</span>', json_html)
+      json_html <- gsub('\\]', '<span class="json-punctuation">]</span>', json_html)
+      json_html <- gsub(',(\n)', '<span class="json-punctuation">,</span>\\1', json_html)
+
+      return(json_html)
+    }
+
+    # Function to save metadata to state
+    saveMetadata <- function() {
+      # Save dataset info
+      state$dataset_info$name <- input$dataset_name
+      state$dataset_info$description <- input$dataset_description
+
+      # Save authors to state
+      author_list <- authors()
+      state$dataset_info$authors <- author_list
+    }
+  })
+}
+
+
+#' Step 3 Server Module
+#'
+#' Handles filename standardization and mapping
+#'
+#' @param id The module ID
+#' @param state Global state reactive values
+#' @param session The current session object
+step3Server <- function(id, state, session) {
+  moduleServer(id, function(input, output, session) {
+    # Reactive values to store filename mapping and configuration
+    files <- reactiveVal(list())
+    current_file <- reactiveVal(NULL)
+    selected_keywords <- reactiveVal(list())
+    file_mappings <- reactiveVal(list())
+
+    # Add a debugging output for troubleshooting
+    output$debug_text <- renderPrint({
+      # Print current keywords and their values
+      keywords <- selected_keywords()
+      if (length(keywords) > 0) {
+        lapply(keywords, function(k) {
+          list(name = k$name, value = k$value, id = k$id)
+        })
+      } else {
+        "No keywords selected"
+      }
+    })
+
+    # Initialize with data files from state
+    observe({
+      req(state$project_dir)
+      req(length(state$data_files) > 0)
+
+      # Create initial file mappings
+      mappings <- lapply(state$data_files, function(file) {
+        list(
+          original = file,
+          new = "",
+          keywords = list(),
+          values = list()
+        )
+      })
+
+      # Set the file mappings
+      file_mappings(mappings)
+
+      # Set the current file to the first one
+      if (length(mappings) > 0) {
+        current_file(1)
+      }
+    })
+
+    # Render file mapping rows
+    output$file_mapping_rows <- renderUI({
+      mappings <- file_mappings()
+
+      if (length(mappings) == 0) {
+        return(div(class = "text-center text-muted", "No files selected"))
+      }
+
+      rows <- lapply(seq_along(mappings), function(i) {
+        file_info <- mappings[[i]]
+        is_current <- current_file() == i
+
+        div(
+          class = paste("file-mapping-row", if(is_current) "active" else "", if(i %% 2 == 0) "even" else "odd"),
+          style = paste0(
+            "padding: 8px 15px; border-bottom: 1px solid #eee; cursor: pointer; ",
+            if(is_current) "background-color: #e3f2fd;" else if(i %% 2 == 0) "background-color: #f8f9fa;" else ""
+          ),
+          div(class = "row",
+              div(class = "col-xs-6",
+                  span(file_info$original, class = "original-filename"),
+                  # Add a click handler to make this the current file
+                  tags$script(paste0("$(document).on('click', '#", session$ns("file_mapping_rows"), " .file-mapping-row:eq(", i-1, ")', function() { Shiny.setInputValue('", session$ns("select_file"), "', ", i, ", {priority: 'event'}); });"))
+              ),
+              div(class = "col-xs-6",
+                  if (file_info$new != "") {
+                    span(file_info$new, class = "new-filename", style = "color: #3498db; font-weight: bold;")
+                  } else {
+                    if (is_current) {
+                      actionButton(session$ns(paste0("generate_for_", i)), "Generate", class = "btn btn-xs btn-primary")
+                    } else {
+                      span("Click to configure", class = "text-muted")
+                    }
+                  }
+              )
+          )
+        )
+      })
+
+      do.call(tagList, rows)
+    })
+
+    # Handle file selection
+    observeEvent(input$select_file, {
+      current_file(input$select_file)
+
+      # Update selected keywords based on the current file's configuration
+      mappings <- file_mappings()
+      file_index <- input$select_file
+
+      if (file_index <= length(mappings)) {
+        file_info <- mappings[[file_index]]
+        selected_keywords(file_info$keywords)
+      }
+    })
+
+    # Current file text
+    output$current_file_text <- renderUI({
+      file_index <- current_file()
+      mappings <- file_mappings()
+
+      if (is.null(file_index) || file_index > length(mappings)) {
+        return(p("No file selected"))
+      }
+
+      file_info <- mappings[[file_index]]
+      p(
+        style = "margin: 0;",
+        strong("Currently configuring:"),
+        span(file_info$original, style = "font-style: italic;")
+      )
+    })
+
+    # Handle keyword selection events - one for each standard keyword
+    observeEvent(input$keyword_subject, {
+      addKeyword("subject", "Subject")
+    })
+
+    observeEvent(input$keyword_study, {
+      addKeyword("study", "Study")
+    })
+
+    observeEvent(input$keyword_session, {
+      addKeyword("session", "Session")
+    })
+
+    observeEvent(input$keyword_task, {
+      addKeyword("task", "Task")
+    })
+
+    observeEvent(input$keyword_condition, {
+      addKeyword("condition", "Condition")
+    })
+
+    observeEvent(input$keyword_stimulus, {
+      addKeyword("stimulus", "Stimulus")
+    })
+
+    observeEvent(input$keyword_trial, {
+      addKeyword("trial", "Trial")
+    })
+
+    observeEvent(input$keyword_description, {
+      addKeyword("description", "Description")
+    })
+
+    # Helper function to add a keyword
+    addKeyword <- function(name, display) {
+      keywords <- selected_keywords()
+
+      # Only add if it doesn't already exist
+      if (!any(sapply(keywords, function(k) k$name == name))) {
+        # Add a unique ID for this keyword
+        keyword_id <- paste0(name, "_", format(Sys.time(), "%Y%m%d%H%M%S"), "_", sample(1000:9999, 1))
+
+        keywords[[length(keywords) + 1]] <- list(
+          name = name,
+          display = display,
+          value = "",
+          id = keyword_id
+        )
+        selected_keywords(keywords)
+        updateKeywordMapping()
+      }
+    }
+
+    # Add custom keyword
+    observeEvent(input$add_custom_keyword, {
+      keyword_name <- input$custom_keyword_name
+
+      if (keyword_name != "") {
+        # Clean up the keyword name (lowercase, replace spaces with underscores)
+        keyword_name <- tolower(gsub("[^a-zA-Z0-9_]", "", gsub(" ", "_", keyword_name)))
+
+        keywords <- selected_keywords()
+
+        # Only add if it doesn't already exist
+        if (!any(sapply(keywords, function(k) k$name == keyword_name))) {
+          # Add a unique ID for this keyword
+          keyword_id <- paste0(keyword_name, "_", format(Sys.time(), "%Y%m%d%H%M%S"), "_", sample(1000:9999, 1))
+
+          keywords[[length(keywords) + 1]] <- list(
+            name = keyword_name,
+            display = input$custom_keyword_name,
+            value = "",
+            id = keyword_id,
+            custom = TRUE
+          )
+          selected_keywords(keywords)
+          updateKeywordMapping()
+        } else {
+          showNotification("This keyword already exists", type = "warning")
+        }
+
+        # Clear the input
+        updateTextInput(session, "custom_keyword_name", value = "")
+      }
+    })
+
+
+
+
+
+    # Handle keyword order changes
+    observeEvent(input$keyword_order, {
+      # Get the keyword IDs from the sortable input
+      keyword_ids <- input$keyword_order
+
+      if (length(keyword_ids) > 0) {
+        cat("Keyword order changed:", paste(keyword_ids, collapse=", "), "\n")
+
+        # Get current keywords
+        current_keywords <- selected_keywords()
+
+        # Skip if no keywords
+        if (length(current_keywords) == 0) return()
+
+        # Create a new list with the updated order
+        new_keywords <- list()
+
+        # Create a map of id to keyword
+        keyword_map <- list()
+        for (i in seq_along(current_keywords)) {
+          keyword <- current_keywords[[i]]
+          keyword_map[[keyword$id]] <- keyword
+        }
+
+        # Then, rebuild the list in the new order
+        for (id in keyword_ids) {
+          if (id %in% names(keyword_map)) {
+            new_keywords[[length(new_keywords) + 1]] <- keyword_map[[id]]
+          }
+        }
+
+        # Update the selected keywords
+        if (length(new_keywords) > 0) {
+          # Verify we didn't lose any keywords
+          if (length(new_keywords) == length(current_keywords)) {
+            cat("Updating selected keywords with new order\n")
+            selected_keywords(new_keywords)
+            updateKeywordMapping()
+          } else {
+            cat("WARNING: New keywords list length doesn't match original (",
+                length(new_keywords), " vs ", length(current_keywords), ")\n", sep="")
+          }
+        }
+      }
+    })
+
+    # Handle keyword removal
+    observeEvent(input$remove_keyword, {
+      index <- input$remove_keyword
+      keywords <- selected_keywords()
+
+      if (index <= length(keywords)) {
+        keywords <- keywords[-index]
+        selected_keywords(keywords)
+        updateKeywordMapping()
+      }
+    })
+
+    # Update the current file's keyword mapping
+    updateKeywordMapping <- function() {
+      file_index <- current_file()
+      if (is.null(file_index)) return()
+
+      mappings <- file_mappings()
+      if (file_index > length(mappings)) return()
+
+      mappings[[file_index]]$keywords <- selected_keywords()
+      file_mappings(mappings)
+
+      # Clear the new filename since the configuration changed
+      mappings[[file_index]]$new <- ""
+      file_mappings(mappings)
+    }
+
+    # Render keyword value inputs
+    output$keyword_value_inputs <- renderUI({
+      file_index <- current_file()
+      mappings <- file_mappings()
+
+      if (is.null(file_index) || file_index > length(mappings)) {
+        return(div(
+          style = "padding: 15px; text-align: center; color: #666;",
+          "Select keywords above to configure values"
+        ))
+      }
+
+      file_info <- mappings[[file_index]]
+      keywords <- file_info$keywords
+
+      if (length(keywords) == 0) {
+        return(div(
+          style = "padding: 15px; text-align: center; color: #666;",
+          "Select keywords above to configure values"
+        ))
+      }
+
+      # Create inputs in the same order as the keywords
+      inputs <- lapply(seq_along(keywords), function(i) {
+        keyword <- keywords[[i]]
+        div(
+          class = "form-group",
+          style = "margin-bottom: 15px;",
+          tags$label(
+            class = "control-label",
+            style = "color: #3498db; font-weight: bold; margin-bottom: 5px; display: block;",
+            span(paste0(keyword$display, ":"))
+          ),
+          textInput(
+            session$ns(paste0("keyword_value_", keyword$id)), # Use keyword ID instead of name
+            NULL,
+            value = keyword$value,
+            placeholder = paste("Enter", tolower(keyword$display), "value"),
+            width = "100%"
+          )
+        )
+      })
+
+      do.call(tagList, inputs)
+    })
+
+    output$selected_keywords <- renderUI({
+      keywords <- selected_keywords()
+
+      if (length(keywords) == 0) {
+        return(div(
+          style = "text-align: center; padding: 10px; color: #666;",
+          "Click keywords above to add them here"
+        ))
+      }
+
+      # Create a list of HTML elements for each keyword
+      keyword_labels <- lapply(seq_along(keywords), function(i) {
+        keyword <- keywords[[i]]
+
+        tags$div(
+          class = "keyword-chip-selected",
+          id = paste0("keyword_", keyword$id),
+          `data-keyword-id` = keyword$id,
+          `data-keyword-name` = keyword$name,
+          `data-keyword-index` = i,
+          style = "display: inline-block; margin: 3px; padding: 5px 10px; background-color: #3498db; color: white; border-radius: 15px; position: relative; cursor: move;",
+
+          # Keyword display name
+          tags$span(
+            style = "pointer-events: none;",
+            keyword$display
+          ),
+
+          # Remove button
+          tags$button(
+            id = paste0("remove_keyword_", i),
+            class = "remove-keyword",
+            style = "background: none; border: none; color: white; opacity: 0.7; padding: 0 0 0 5px; font-size: 10px;",
+            onclick = paste0("Shiny.setInputValue('", session$ns("remove_keyword"), "', ", i, ", {priority: 'event'});"),
+            icon("times")
+          )
+        )
+      })
+
+      # Use the sortable.js function directly rather than rank_list
+      tagList(
+        # Container for the sortable list
+        tags$div(
+          id = session$ns("sortable_keywords"),  # Use session$ns here instead of ns
+          class = "sortable-keywords",
+          keyword_labels
+        ),
+
+        # Initialize sortable with JavaScript
+        tags$script(HTML(paste0("
+      $(document).ready(function() {
+        // Initialize sortable
+        if (typeof Sortable !== 'undefined') {
+          var sortable = Sortable.create(document.getElementById('", session$ns("sortable_keywords"), "'), {  // Use session$ns here
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            onEnd: function(evt) {
+              // Get the new order
+              var items = evt.to.children;
+              var newOrder = [];
+              for (var i = 0; i < items.length; i++) {
+                newOrder.push($(items[i]).data('keyword-id'));
+              }
+
+              // Send to Shiny
+              Shiny.setInputValue('", session$ns("keyword_order"), "', newOrder);  // Use session$ns here
+            }
+          });
+        }
+      });
+    ")))
+      )
+    })
+
+    # Monitor keyword value changes
+    observe({
+      file_index <- current_file()
+      if (is.null(file_index)) return()
+
+      mappings <- file_mappings()
+      if (file_index > length(mappings)) return()
+
+      keywords <- mappings[[file_index]]$keywords
+
+      # Check for any changes in the keyword values
+      updated <- FALSE
+
+      for (i in seq_along(keywords)) {
+        keyword <- keywords[[i]]
+        input_name <- paste0("keyword_value_", keyword$id) # Use keyword ID instead of name
+
+        if (exists(input_name, where = input)) {
+          value <- input[[input_name]]
+
+          if (!is.null(value) && value != keyword$value) {
+            keywords[[i]]$value <- value
+            updated <- TRUE
+          }
+        }
+      }
+
+      if (updated) {
+        mappings[[file_index]]$keywords <- keywords
+        file_mappings(mappings)
+      }
+    })
+
+    # Preview filename
+    output$filename_preview <- renderUI({
+      file_index <- current_file()
+      mappings <- file_mappings()
+
+      if (is.null(file_index) || file_index > length(mappings)) {
+        return(p("No file selected"))
+      }
+
+      file_info <- mappings[[file_index]]
+      keywords <- file_info$keywords
+
+      if (length(keywords) == 0) {
+        return(p(
+          style = "font-style: italic; color: #666; text-align: center;",
+          "Add keywords to generate filename"
+        ))
+      }
+
+      # Check if any keyword has an empty value
+      empty_keywords <- any(sapply(keywords, function(k) k$value == ""))
+
+      if (empty_keywords) {
+        return(p(
+          style = "font-style: italic; color: #666; text-align: center;",
+          "Fill in all keyword values to generate filename"
+        ))
+      }
+
+      # Create filename preview
+      filename_parts <- c()
+      for (keyword in keywords) {
+        filename_parts <- c(filename_parts, paste0(keyword$name, "-", keyword$value))
+      }
+
+      # Add the file extension (use original filename extension)
+      original <- file_info$original
+      ext <- tools::file_ext(original)
+
+      if (ext != "") {
+        filename <- paste0(paste(filename_parts, collapse = "_"), "_data.", ext)
+      } else {
+        filename <- paste0(paste(filename_parts, collapse = "_"), "_data")
+      }
+
+      p(
+        style = "font-weight: bold; color: #3498db; word-break: break-all; margin: 0; text-align: center;",
+        filename
+      )
+    })
+
+    # Generate filename button
+    observeEvent(input$generate_filename, {
+      # Print log for debugging
+      cat("Generate filename button clicked\n")
+
+      # Get current file index
+      file_index <- current_file()
+      if (is.null(file_index)) {
+        cat("No file selected\n")
+        return()
+      }
+
+      # Get current keywords
+      keywords <- selected_keywords()
+      if (length(keywords) == 0) {
+        showNotification("Please add at least one keyword", type = "warning")
+        cat("No keywords selected\n")
+        return()
+      }
+
+      # DIRECTLY get values from input fields
+      keyword_values <- list()
+      missing_keywords <- list()
+
+      # Log all keywords
+      cat("Current keywords:\n")
+      for (i in seq_along(keywords)) {
+        cat("  ", i, ": ", keywords[[i]]$name, " (", keywords[[i]]$id, ")\n", sep="")
+      }
+
+      # Log all inputs
+      cat("Available inputs:\n")
+      input_names <- names(input)
+      value_inputs <- input_names[grepl("keyword_value_", input_names)]
+      for (name in value_inputs) {
+        cat("  ", name, " = ", input[[name]], "\n", sep="")
+      }
+
+      # Check each keyword for a value
+      for (i in seq_along(keywords)) {
+        keyword <- keywords[[i]]
+        input_name <- paste0("keyword_value_", keyword$id)
+
+        cat("Looking for input: ", input_name, "\n", sep="")
+
+        if (input_name %in% names(input)) {
+          value <- input[[input_name]]
+          cat("  Found value: '", value, "'\n", sep="")
+
+          if (!is.null(value) && value != "") {
+            keyword_values[[keyword$name]] <- value
+          } else {
+            missing_keywords[[length(missing_keywords) + 1]] <- keyword
+          }
+        } else {
+          cat("  Input not found!\n")
+          missing_keywords[[length(missing_keywords) + 1]] <- keyword
+        }
+      }
+
+      # Check if any values are missing
+      if (length(missing_keywords) > 0) {
+        missing_names <- sapply(missing_keywords, function(k) k$display)
+        message <- paste("Please fill in values for:", paste(missing_names, collapse=", "))
+        showNotification(message, type = "warning")
+        cat(message, "\n")
+        return()
+      }
+
+      # All values are present - create filename
+      filename_parts <- character(0)
+
+      for (keyword in keywords) {
+        # Get the value for this keyword
+        value <- keyword_values[[keyword$name]]
+
+        # Add to filename parts
+        filename_part <- paste0(keyword$name, "-", value)
+        filename_parts <- c(filename_parts, filename_part)
+
+        cat("Added part to filename: ", filename_part, "\n", sep="")
+      }
+
+      # Get mappings and file info
+      mappings <- file_mappings()
+      file_info <- mappings[[file_index]]
+
+      # Add the file extension
+      original <- file_info$original
+      ext <- tools::file_ext(original)
+
+      # Build the final filename
+      if (ext != "") {
+        filename <- paste0(paste(filename_parts, collapse = "_"), "_data.", ext)
+      } else {
+        filename <- paste0(paste(filename_parts, collapse = "_"), "_data")
+      }
+
+      cat("Final filename: ", filename, "\n", sep="")
+
+      # Update the keywords with their values in the mapping
+      updated_keywords <- keywords
+      for (i in seq_along(updated_keywords)) {
+        keyword_name <- updated_keywords[[i]]$name
+        if (keyword_name %in% names(keyword_values)) {
+          updated_keywords[[i]]$value <- keyword_values[[keyword_name]]
+        }
+      }
+
+      # Update the mapping with updated keywords and new filename
+      mappings[[file_index]]$keywords <- updated_keywords
+      mappings[[file_index]]$new <- filename
+      file_mappings(mappings)
+
+      # Also update the selected keywords
+      selected_keywords(updated_keywords)
+
+      # Show success notification
+      showNotification(paste("Filename generated successfully!"), type = "message")
+
+      # Auto-advance to next unconfigured file if available
+      auto_advance_to_next_file(file_index)
+    })
+
+    # Make sure this code is also updated to properly track values
+    observe({
+      # Skip if no file is selected
+      file_index <- current_file()
+      if (is.null(file_index)) return()
+
+      # Get the current keywords
+      keywords <- selected_keywords()
+      if (length(keywords) == 0) return()
+
+      # Check for input changes
+      updated <- FALSE
+      updated_keywords <- keywords
+
+      for (i in seq_along(keywords)) {
+        keyword <- keywords[[i]]
+        input_name <- paste0("keyword_value_", keyword$id)
+
+        if (exists(input_name, where = input)) {
+          new_value <- input[[input_name]]
+
+          # Only update if value is non-NULL and different
+          if (!is.null(new_value) && new_value != keyword$value) {
+            cat("Updating ", keyword$name, " value to '", new_value, "'\n", sep="")
+            updated_keywords[[i]]$value <- new_value
+            updated <- TRUE
+          }
+        }
+      }
+
+      # Update the keywords if any changed
+      if (updated) {
+        selected_keywords(updated_keywords)
+
+        # Also update in the file mapping
+        mappings <- file_mappings()
+        if (file_index <= length(mappings)) {
+          mappings[[file_index]]$keywords <- updated_keywords
+          file_mappings(mappings)
+        }
+      }
+    })
+
+    # Function to auto-advance to the next unconfigured file
+    auto_advance_to_next_file <- function(current_index) {
+      mappings <- file_mappings()
+
+      # Find next unconfigured file
+      for (i in (current_index+1):length(mappings)) {
+        if (mappings[[i]]$new == "") {
+          current_file(i)
+          return()
+        }
+      }
+
+      # If we're here, check from beginning to current
+      if (current_index > 1) {
+        for (i in 1:(current_index-1)) {
+          if (mappings[[i]]$new == "") {
+            current_file(i)
+            return()
+          }
+        }
+      }
+
+      # If all files configured, no need to change
+    }
+
+    # Handle generate buttons on the file mapping list
+    observe({
+      file_index <- current_file()
+      if (is.null(file_index)) return()
+
+      mappings <- file_mappings()
+      for (i in seq_along(mappings)) {
+        local({
+          local_i <- i
+          button_id <- paste0("generate_for_", local_i)
+
+          if (exists(button_id, where = input)) {
+            observeEvent(input[[button_id]], {
+              current_file(local_i)
+            })
+          }
+        })
+      }
+    })
+
+    # Handle back button
+    observeEvent(input$back, {
+      # Confirm going back
+      showModal(modalDialog(
+        title = "Go Back to Step 2?",
+        "Are you sure you want to go back to Step 2? Your progress in Step 3 will be saved.",
+        easyClose = TRUE,
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(session$ns("confirm_back"), "Go Back", class = "btn-warning")
+        )
+      ))
+    })
+
+    # Handle confirmed back action
+    observeEvent(input$confirm_back, {
       removeModal()
 
-      # In a real implementation, this would create the actual Psych-DS dataset
-      # For this example, we'll just show a success message
+      # Save the file mappings to state
+      state$file_mappings <- file_mappings()
+
+      # Go back to step 2
+      state$current_step <- 2
+    })
+
+    # Handle continue button
+    observeEvent(input$continue, {
+      # Validate that all files have been mapped
+      mappings <- file_mappings()
+      unmapped_files <- sapply(mappings, function(m) m$new == "")
+
+      if (any(unmapped_files)) {
+        showModal(modalDialog(
+          title = "Missing Filename Mappings",
+          div(
+            p("Some files have not been assigned standardized filenames:"),
+            tags$ul(
+              lapply(which(unmapped_files), function(i) {
+                tags$li(strong(mappings[[i]]$original))
+              })
+            ),
+            p("Would you like to continue anyway?")
+          ),
+          easyClose = TRUE,
+          footer = tagList(
+            modalButton("Cancel"),
+            actionButton(session$ns("confirm_continue_unmapped"), "Continue Anyway", class = "btn-warning")
+          )
+        ))
+      } else {
+        # All files are mapped, proceed directly
+        proceedToFinalStep()
+      }
+    })
+
+    # Handle confirmed continue action
+    observeEvent(input$confirm_continue_unmapped, {
+      removeModal()
+      proceedToFinalStep()
+    })
+
+    # Function to proceed to the final step
+    proceedToFinalStep <- function() {
+      # Save the file mappings to state
+      state$file_mappings <- file_mappings()
+
+      # Show summary before proceeding
+      showModal(modalDialog(
+        title = "File Standardization Complete",
+        div(
+          p("The following files will be renamed according to Psych-DS standards:"),
+          div(
+            style = "max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; margin-top: 5px; background-color: #f8f9fa;",
+            lapply(file_mappings(), function(mapping) {
+              if (mapping$new != "") {
+                div(
+                  style = "padding: 8px 0; border-bottom: 1px solid #eee;",
+                  div(
+                    style = "color: #666;",
+                    mapping$original
+                  ),
+                  div(
+                    style = "color: #3498db; font-weight: bold;",
+                    icon("arrow-right"), " ", mapping$new
+                  )
+                )
+              } else {
+                div(
+                  style = "padding: 8px 0; border-bottom: 1px solid #eee; color: #999; font-style: italic;",
+                  mapping$original, " (unchanged)"
+                )
+              }
+            })
+          ),
+          p("Click 'Finish' to complete dataset creation.")
+        ),
+        size = "large",
+        easyClose = TRUE,
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(session$ns("finish"), "Finish", class = "btn btn-success")
+        )
+      ))
+    }
+
+    # Handle finish button
+    observeEvent(input$finish, {
+      removeModal()
+
+      # Generate the dataset with standardized filenames
       showModal(modalDialog(
         title = "Success!",
         div(
-          p("Your Psych-DS dataset has been created successfully."),
+          icon("check-circle", class = "text-success", style = "font-size: 48px; display: block; text-align: center; margin: 15px 0;"),
+          p(style = "text-align: center; font-size: 16px;", "Your Psych-DS dataset has been created successfully."),
+          hr(),
           p("The following files and directories have been created:"),
           tags$ul(
-            tags$li(paste0(state$project_dir, "/data/")),
-            tags$li(paste0(state$project_dir, "/data/dataset_description.json")),
-            tags$li(paste0(state$project_dir, "/data/datapackage.json")),
-            lapply(state$data_files, function(file) {
-              tags$li(paste0(state$project_dir, "/data/", basename(file)))
+            style = "max-height: 200px; overflow-y: auto;",
+            tags$li(tags$code(paste0(state$project_dir, "/data/")), style = "margin-bottom: 5px;"),
+            tags$li(tags$code(paste0(state$project_dir, "/data/dataset_description.json")), style = "margin-bottom: 5px;"),
+            tags$li(tags$code(paste0(state$project_dir, "/data/datapackage.json")), style = "margin-bottom: 5px;"),
+            lapply(file_mappings(), function(mapping) {
+              if (mapping$new != "") {
+                tags$li(tags$code(paste0(state$project_dir, "/data/", mapping$new)), style = "margin-bottom: 5px;")
+              } else {
+                tags$li(tags$code(paste0(state$project_dir, "/data/", basename(mapping$original))), style = "margin-bottom: 5px;")
+              }
             })
           )
         ),
+        size = "large",
         easyClose = TRUE,
         footer = tagList(
-          actionButton(session$ns("view_dataset"), "View Dataset", class = "btn-primary"),
+          actionButton(ns("view_dataset"), "View Dataset", class = "btn btn-primary"),
           modalButton("Close")
         )
       ))
@@ -913,22 +1906,16 @@ step3Server <- function(id, state, session) {
 
     # Handle view dataset button
     observeEvent(input$view_dataset, {
-      # In a real implementation, this would open the dataset explorer
       removeModal()
       showNotification("Dataset explorer would open here", type = "message")
+
+      # In a real implementation, you would:
+      # 1. Switch to the dataset explorer tab
+      # 2. Load the newly created dataset
+      # But for this prototype, we'll just show a notification
     })
 
-    # Update global state with current values
-    updateGlobalState <- function() {
-      # Update dataset info
-      state$dataset_info$name <- input$dataset_name
-      state$dataset_info$description <- input$dataset_description
-      state$dataset_info$license <- input$license
-
-      # Update authors - convert from list to character vector
-      state$dataset_info$authors <- lapply(authors(), function(a) {
-        paste0(a$name, if (a$affiliations != "") paste0(" (", a$affiliations, ")") else "")
-      })
-    }
+    # Return reactive that provides the file mappings
+    return(reactive({ file_mappings() }))
   })
 }
