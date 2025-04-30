@@ -35,7 +35,9 @@ ui <- dashboardPage(
     useShinyjs(),
     # Include the external CSS file
     tags$head(
-      tags$link(rel = "stylesheet", type = "text/css", href = "css/styles.css")
+      tags$link(rel = "stylesheet", type = "text/css", href = paste0("css/styles.css?v=", format(Sys.time(), "%Y%m%d%H%M%S"))),
+      # Include SortableJS library
+      tags$script(src = "https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js")
     ),
 
     tabItems(

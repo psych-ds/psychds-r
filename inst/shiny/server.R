@@ -2,10 +2,7 @@
 #'
 #' This file defines the server-side logic for the Psych-DS app.
 #' It handles the main app flow, state management, and module coordination.
-
-# Load server modules (done in global.R in actual app)
 source("modules/server_modules.R")
-
 # Main server function
 server <- function(input, output, session) {
   # Initialize application state

@@ -1,9 +1,73 @@
-/* Main layout */
-html, body { height: 100%; margin: 0; }
-.content-wrapper, .right-side { background-color: #ffffff; }
+/* Main layout - FIXED for proper width calculation */
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow-x: hidden; /* Prevent horizontal scroll */
+}
 
+.main-sidebar {
+  position: fixed;
+  height: 100%;
+  width: 200px;
+}
+
+/* Critical fix - proper width calculation accounting for sidebar */
+.content-wrapper, .right-side {
+  background-color: #ffffff;
+  margin-left: 200px !important; /* Match sidebar width */
+  width: calc(100% - 200px) !important; /* Subtract sidebar width */
+  padding: 0 !important; /* Reset padding */
+}
+
+.container-fluid {
+  padding-right: 15px !important;
+  padding-left: 15px !important;
+  margin-right: 0 !important;
+  margin-left: 0 !important;
+}
+
+/* Remove min-width that's causing issues */
 .content {
-  min-width: 800px; /* Set a minimum width for content */
+  padding: 15px;
+  /* min-width removed - was causing horizontal scroll */
+}
+
+/* Fix column widths */
+.col-sm-1, .col-sm-2, .col-sm-3, .col-sm-4, .col-sm-5, .col-sm-6,
+.col-sm-7, .col-sm-8, .col-sm-9, .col-sm-10, .col-sm-11, .col-sm-12 {
+  padding-right: 15px;
+  padding-left: 15px;
+}
+
+/* Fix row margins */
+.row {
+  margin-right: -15px;
+  margin-left: -15px;
+}
+
+/* Header fixes */
+.main-header {
+  margin-left: 0 !important;
+}
+
+.main-header .navbar {
+  margin-left: 200px !important;
+  width: calc(100% - 200px) !important;
+}
+
+/* Progress indicator - fixed positioning */
+.progress-container {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-right: 15px; /* Add some padding */
+}
+
+.progress-bar-container {
+  width: 280px;
+  min-width: 200px;
+  flex-shrink: 0;
 }
 
 /* Compact header */
@@ -32,24 +96,11 @@ html, body { height: 100%; margin: 0; }
   font-size: 16px;
   font-weight: bold;
   margin: 0 5px;
-  flex-shrink: 0; /* Prevent circles from shrinking */
+  flex-shrink: 0;
 }
 .step-circle.active { background-color: #3498db; color: white; }
 .step-circle.inactive { background-color: white; color: #666; border: 1px solid #cccccc; }
 
-.progress-container {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  margin-bottom: 10px;
-  min-width: 350px; /* Ensure minimum width to prevent stacking */
-}
-
-.progress-bar-container {
-  width: 280px;
-  min-width: 200px;
-  flex-shrink: 0;
-}
 .progress-bar-fill {
   background-color: #3498db;
   border-radius: 20px;
@@ -87,6 +138,7 @@ html, body { height: 100%; margin: 0; }
   height: 34px;
   width: 50px;
   font-size: 14px;
+  margin-left: 5px;
 }
 .dir-input {
   height: 34px;
@@ -124,7 +176,7 @@ html, body { height: 100%; margin: 0; }
   font-size: 13px;
 }
 
-/* Continue button */
+/* Button styles */
 .continue-btn {
   background-color: #3498db;
   color: white;
@@ -133,6 +185,17 @@ html, body { height: 100%; margin: 0; }
   padding: 8px 20px;
   font-size: 15px;
   margin-top: 10px;
+}
+
+.back-btn {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 20px;
+  font-size: 15px;
+  margin-top: 10px;
+  margin-right: 10px;
 }
 
 /* Link styling */
@@ -158,4 +221,623 @@ h3 { margin-top: 0; margin-bottom: 15px; font-size: 18px; font-weight: normal; }
 }
 .selectable-file:hover {
   background-color: #f0f7ff;
+}
+
+/* Additional fixes to ensure proper layout */
+div[style*="text-align: right"] {
+  padding-right: 15px;
+}
+
+/* Ensure proper layout for flex items */
+.nav, .navbar-right {
+  margin-right: 0;
+}
+
+/* DataTables specific styling */
+.dataTables_wrapper {
+  width: 100% !important;
+  min-height: 100px !important;
+  padding: 0;
+}
+
+.dataTables_wrapper .dataTables_length {
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.dataTables_wrapper .dataTables_info {
+  font-size: 12px;
+  color: #666;
+  padding-top: 8px;
+}
+
+.dataTables_wrapper .dataTables_paginate {
+  padding-top: 8px;
+  font-size: 12px;
+}
+
+/* Table styling */
+table.dataTable {
+  width: 100% !important;
+  margin: 0 !important;
+  border: 1px solid #ced4da;
+  border-radius: 3px;
+}
+
+table.dataTable thead th {
+  background-color: #f8f9fa !important;
+  color: #333 !important;
+  font-weight: bold !important;
+  border-bottom: 2px solid #dee2e6 !important;
+  padding: 8px !important;
+}
+
+table.dataTable tbody td {
+  padding: 8px !important;
+  vertical-align: top !important;
+}
+
+table.dataTable tbody tr:nth-child(even) {
+  background-color: #fcfcfc !important;
+}
+
+table.dataTable tbody tr:hover {
+  background-color: #f5f5f5 !important;
+}
+
+/* Variable table container */
+.variable-table-container {
+  margin: 15px 0;
+  border: 1px solid #dee2e6;
+  border-radius: 5px;
+  overflow: hidden;
+  min-height: 200px;
+  background-color: white;
+}
+
+/* Warning box */
+.warning-box {
+  padding: 10px;
+  background-color: #fff3cd;
+  border-radius: 3px;
+  margin-top: 15px;
+}
+
+.warning-text {
+  color: #856404;
+  margin-bottom: 0;
+}
+
+/* Confirmation checkbox */
+.confirmation-box {
+  margin: 20px 0;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 3px;
+}
+
+/* Add button */
+.add-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.add-btn:hover {
+  background-color: #2980b9;
+  color: white;
+}
+
+/* Save button */
+.save-btn {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.save-btn:hover {
+  background-color: #218838;
+  color: white;
+}
+
+/* Finish button */
+.finish-btn {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 20px;
+  font-size: 15px;
+  margin-top: 10px;
+  margin-left: 10px;
+}
+
+.finish-btn:hover {
+  background-color: #218838;
+  color: white;
+}
+
+/* Ensure DataTable outputs are visible */
+.shiny-datatable-output {
+  width: 100% !important;
+  min-height: 100px !important;
+  visibility: visible !important;
+  display: block !important;
+}
+
+/* Specific fix for the variables table */
+#step2-variables_table {
+  width: 100% !important;
+  min-height: 100px !important;
+  visibility: visible !important;
+  display: block !important;
+}
+
+.file-list-scrollable {
+  max-height: 80px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+}
+
+.file-list-scrollable div {
+  padding: 2px 5px;
+  border-bottom: 1px solid #eee;
+  font-size: 12px;
+}
+
+.file-list-scrollable div:last-child {
+  border-bottom: none;
+}
+
+.file-list-scrollable div:nth-child(odd) {
+  background-color: #f8f9fa;
+}
+
+.file-list-scrollable div:nth-child(even) {
+  background-color: white;
+}
+
+/* Custom scrollbar for file lists */
+.file-list-scrollable::-webkit-scrollbar {
+  width: 8px;
+}
+
+.file-list-scrollable::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.file-list-scrollable::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.file-list-scrollable::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+.dataTables_wrapper table.dataTable tbody tr:empty {
+  display: none;
+}
+
+/* Ensure proper spacing for table cells */
+.dataTables_wrapper table.dataTable td {
+  vertical-align: middle;
+}
+
+/* Remove any empty table rows */
+.dataTables_wrapper table.dataTable tbody tr td:empty {
+  padding: 0;
+  height: 0;
+  visibility: hidden;
+}
+
+/* Handle empty content in cells */
+.dataTables_wrapper table.dataTable tbody tr td:has(:empty) {
+  padding: 8px;
+}
+
+/* Add this to your styles.css file */
+
+.json-preview {
+  background-color: #f8f9fa;
+  padding: 15px;
+  border: 1px solid #dee2e6;
+  border-radius: 5px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
+  color: #333;
+  margin: 0;  /* Remove default margins from pre tag */
+}
+
+/* Syntax highlighting for JSON */
+.json-key {
+  color: #0066cc;
+}
+
+.json-string {
+  color: #a31515;
+}
+
+.json-value {
+  color: #008800;
+}
+
+.json-punctuation {
+  color: #333;
+}
+
+/* Make sure nested JSON arrays display correctly */
+.json-preview span {
+  white-space: pre;
+  display: inline;
+}
+
+.panel {
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
+}
+
+.panel-heading {
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  padding: 10px 15px;
+}
+
+.panel-body {
+  padding: 15px;
+}
+
+/* Step header */
+.step-header {
+  margin-bottom: 20px;
+}
+
+.step-header h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-weight: bold;
+  color: #333;
+}
+
+.step-header p {
+  color: #555;
+  line-height: 1.5;
+}
+
+/* File mapping list */
+.file-list-container {
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  background-color: white;
+}
+
+.file-list-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #ced4da;
+  padding: 10px 15px;
+  font-weight: bold;
+}
+
+/* Step 3 specific styles - File mapping list */
+.file-mapping-list {
+  max-height: 350px;
+  overflow-y: auto;
+  background-color: white;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+}
+
+.file-mapping-row {
+  padding: 8px 15px;
+  border-bottom: 1px solid #eee;
+  transition: background-color 0.2s;
+  cursor: pointer;
+}
+
+.file-mapping-row:hover {
+  background-color: #f0f7ff !important;
+}
+
+.file-mapping-row.active {
+  background-color: #e3f2fd !important;
+}
+
+.file-mapping-row:last-child {
+  border-bottom: none;
+}
+
+.original-filename {
+  font-size: 14px;
+  word-break: break-all;
+}
+
+.new-filename {
+  font-size: 14px;
+  color: #3498db;
+  font-weight: bold;
+  word-break: break-all;
+}
+
+/* Current file indicator */
+.alert-info {
+  background-color: #e3f2fd;
+  border-color: #b3e5fc;
+  color: #0288d1;
+  padding: 10px 15px;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+/* Keyword configuration */
+.keyword-config-section,
+.custom-keyword-section,
+.keyword-values-section,
+.filename-preview-section {
+  margin-bottom: 20px;
+}
+
+.keyword-config-section h5,
+.custom-keyword-section h5,
+.keyword-values-section h5,
+.filename-preview-section h5 {
+  font-weight: bold;
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+/* Keyword chips container */
+.keyword-chips-container {
+  margin-bottom: 15px;
+}
+
+.keyword-option-chips {
+  margin-bottom: 10px;
+}
+
+/* Improved keyword styling */
+.keyword-chip {
+  display: inline-block;
+  margin-right: 5px;
+  margin-bottom: 5px;
+  border-radius: 15px;
+  padding: 3px 12px;
+  transition: transform 0.1s, background-color 0.2s;
+}
+
+.keyword-chip:hover {
+  transform: scale(1.05);
+  background-color: #2980b9;
+}
+
+.selected-keywords-container {
+  min-height: 60px;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border: 1px solid #ced4da;
+  border-radius: 4px;
+  margin-bottom: 15px;
+}
+
+.keyword-chip-selected {
+  display: inline-block;
+  margin-right: 5px;
+  margin-bottom: 5px;
+  border-radius: 15px;
+  padding: 2px 10px;
+  position: relative;
+}
+
+.remove-keyword {
+  background: none;
+  border: none;
+  color: white;
+  opacity: 0.7;
+  padding: 0 5px;
+  font-size: 10px;
+}
+
+.remove-keyword:hover {
+  opacity: 1;
+}
+
+/* Custom keyword section */
+.custom-keyword-section .input-group {
+  width: 100%;
+}
+
+/* Keyword values section */
+.keyword-values-section .form-group {
+  margin-bottom: 10px;
+}
+
+.keyword-values-section .control-label {
+  margin-bottom: 5px;
+  color: #3498db;
+  font-weight: bold;
+}
+
+/* Filename preview */
+.filename-preview {
+  background-color: #f8f9fa;
+  border: 1px solid #ced4da;
+  padding: 10px;
+  text-align: center;
+  margin: 10px 0;
+  border-radius: 4px;
+  min-height: 50px;
+}
+
+.filename-preview-text {
+  word-break: break-all;
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Navigation buttons */
+.step-navigation {
+  margin-top: 30px;
+  padding-top: 15px;
+  border-top: 1px solid #eee;
+  text-align: right;
+}
+
+/* Add file button styling */
+.btn-primary {
+  background-color: #3498db;
+  border-color: #2980b9;
+}
+
+.btn-primary:hover {
+  background-color: #2980b9;
+  border-color: #2472a4;
+}
+
+/* Form controls */
+.form-group {
+  margin-bottom: 15px;
+}
+
+.control-label {
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+/* Button transitions and effects */
+.btn {
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+/* Modal improvements */
+.modal-content {
+  border-radius: 6px;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+.modal-header {
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e9ecef;
+  border-top-left-radius: 6px;
+  border-top-right-radius: 6px;
+}
+
+.modal-footer {
+  background-color: #f8f9fa;
+  border-top: 1px solid #e9ecef;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+/* Responsiveness */
+@media (max-width: 767px) {
+  .col-xs-6 {
+    width: 50%;
+  }
+
+  .main-header .navbar {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+
+  .content-wrapper, .right-side {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+}
+
+/* Improved notifications */
+.shiny-notification {
+  border-radius: 4px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.15);
+  padding: 10px 15px;
+  margin-bottom: 8px;
+}
+
+.sortable-keywords {
+  min-height: 60px;
+  padding: 5px;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+/* Keyword chips in sortable list */
+.keyword-chip-selected {
+  display: inline-block;
+  margin: 3px;
+  padding: 5px 10px;
+  background-color: #3498db;
+  color: white;
+  border-radius: 15px;
+  position: relative;
+  cursor: move;
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.keyword-chip-selected:hover {
+  background-color: #2980b9;
+  transform: translateY(-1px);
+}
+
+/* Button to remove keyword */
+.remove-keyword {
+  background: none;
+  border: none;
+  color: white;
+  opacity: 0.7;
+  padding: 0 0 0 5px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.remove-keyword:hover {
+  opacity: 1;
+}
+
+/* Styling for the rank list from the sortable package */
+.rank-list-container {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.rank-list {
+  min-height: 60px;
+  margin-bottom: 0 !important;
+  background-color: transparent !important;
+  border: none !important;
+}
+
+/* Style for the dragging state */
+.ui-sortable-helper {
+  transform: scale(1.05) !important;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16) !important;
+  z-index: 1000 !important;
+}
+
+/* Style for the placeholder during drag */
+.ui-sortable-placeholder {
+  visibility: visible !important;
+  background-color: rgba(52, 152, 219, 0.1) !important;
+  border: 1px dashed #3498db !important;
+  border-radius: 15px !important;
 }
