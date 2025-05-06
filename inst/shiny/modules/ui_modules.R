@@ -7,7 +7,9 @@
 #'
 #' @param current_step Integer indicating current step (1-3)
 #' @return UI element for progress indicator
-stepProgressUI <- function(current_step) {
+stepProgressUI <- function(current_step, id) {
+  ns <- NS(id)
+
   # Calculate progress percentage
   progress_pct <- (current_step - 1) * 33.33
   if (current_step == 3) progress_pct <- 100
@@ -16,10 +18,42 @@ stepProgressUI <- function(current_step) {
       div(class = "progress-bar-container",
           div(class = "progress-bar-fill", style = paste0("width: ", progress_pct, "%;"))
       ),
-      div(style = "display: flex; white-space: nowrap;", # Force horizontal layout
-          span(class = ifelse(current_step >= 1, "step-circle active", "step-circle inactive"), "1"),
-          span(class = ifelse(current_step >= 2, "step-circle active", "step-circle inactive"), "2"),
-          span(class = ifelse(current_step >= 3, "step-circle active", "step-circle inactive"), "3")
+      div(style = "display: flex; justify-content: space-between; width: 100%;",
+          # Step 1
+          actionButton(
+            inputId = ns("goto_step1"),
+            label = "1",
+            class = paste("btn-circle", ifelse(current_step >= 1, "active", "inactive")),
+            style = paste0(
+              "width: 30px; height: 30px; border-radius: 50%; padding: 0; ",
+              "background-color: ", ifelse(current_step >= 1, "#3498db", "#e0e0e0"), "; ",
+              "color: ", ifelse(current_step >= 1, "white", "#666"), ";"
+            )
+          ),
+
+          # Step 2
+          actionButton(
+            inputId = ns("goto_step2"),
+            label = "2",
+            class = paste("btn-circle", ifelse(current_step >= 2, "active", "inactive")),
+            style = paste0(
+              "width: 30px; height: 30px; border-radius: 50%; padding: 0; ",
+              "background-color: ", ifelse(current_step >= 2, "#3498db", "#e0e0e0"), "; ",
+              "color: ", ifelse(current_step >= 2, "white", "#666"), ";"
+            )
+          ),
+
+          # Step 3
+          actionButton(
+            inputId = ns("goto_step3"),
+            label = "3",
+            class = paste("btn-circle", ifelse(current_step >= 3, "active", "inactive")),
+            style = paste0(
+              "width: 30px; height: 30px; border-radius: 50%; padding: 0; ",
+              "background-color: ", ifelse(current_step >= 3, "#3498db", "#e0e0e0"), "; ",
+              "color: ", ifelse(current_step >= 3, "white", "#666"), ";"
+            )
+          )
       )
   )
 }
@@ -143,7 +177,7 @@ step1UI <- function(id) {
       ),
       column(
         width = 6,
-        stepProgressUI(1)
+        stepProgressUI(1,"step_nav")
       )
     ),
 
@@ -215,7 +249,7 @@ step2UI <- function(id) {
       ),
       column(
         width = 6,
-        stepProgressUI(2)
+        stepProgressUI(2,"step_nav")
       )
     ),
 
@@ -360,7 +394,7 @@ step3UI <- function(id) {
       ),
       column(
         width = 6,
-        stepProgressUI(3)
+        stepProgressUI(3,"step_nav")
       )
     ),
 

@@ -435,7 +435,6 @@ optionalDirsServer <- function(id, state, session) {
 #' @param state Global state reactive values
 #' @param session The current session object
 step1Server <- function(id, state, session) {
-  message("????")
   moduleServer(id, function(input, output, session) {
     # Initialize directory input handler
     dir_path <- directoryInputServer("project_dir", state, session)
@@ -451,6 +450,16 @@ step1Server <- function(id, state, session) {
 
     # Initialize optional directories
     selected_dirs <- optionalDirsServer("opt_dirs", state, session)
+
+    # When this module is initialized, ensure we restore state if it exists
+    observe({
+      # Project directory is already handled by directoryInputServer
+      # File selection is already handled by fileBrowserServer
+      # Optional directories are already handled by optionalDirsServer
+
+      # This is where we would add any additional stateful elements
+      # specific to step 1 that aren't handled by the sub-modules
+    })
 
     # Handle Continue button
     observeEvent(input$continue, {
@@ -489,6 +498,9 @@ step1Server <- function(id, state, session) {
       # Update global state with current selections
       state$project_dir <- dir_path()
       state$data_files <- selected_files()
+
+      # Save optional directories to state
+      state$optional_dirs$directories <- selected_dirs()
 
       # Show summary before proceeding
       dirs <- selected_dirs()
@@ -558,27 +570,30 @@ step1Server <- function(id, state, session) {
 
       # Create data dictionary templates for selected files
       if (length(state$data_files) > 0) {
-        data_dict <- list()
-        for (file in state$data_files) {
-          # Create full path to file
-          file_path <- file.path(state$project_dir, file)
+        # Only create new data dictionary if it doesn't exist yet
+        if (is.null(state$data_dict) || length(state$data_dict) == 0) {
+          data_dict <- list()
+          for (file in state$data_files) {
+            # Create full path to file
+            file_path <- file.path(state$project_dir, file)
 
-          # Extract column information if file exists
-          if (file.exists(file_path)) {
-            data_dict[[file]] <- extract_csv_structure(file_path)
-          } else {
-            # Create empty data dictionary if file doesn't exist yet
-            data_dict[[file]] <- data.frame(
-              name = character(0),
-              type = character(0),
-              description = character(0),
-              stringsAsFactors = FALSE
-            )
+            # Extract column information if file exists
+            if (file.exists(file_path)) {
+              data_dict[[file]] <- extract_csv_structure(file_path)
+            } else {
+              # Create empty data dictionary if file doesn't exist yet
+              data_dict[[file]] <- data.frame(
+                name = character(0),
+                type = character(0),
+                description = character(0),
+                stringsAsFactors = FALSE
+              )
+            }
           }
-        }
 
-        # Update global state
-        state$data_dict <- data_dict
+          # Update global state
+          state$data_dict <- data_dict
+        }
       }
     })
   })
@@ -596,6 +611,49 @@ step2Server <- function(id, state, session) {
     # Initialize reactive values for authors
     authors <- reactiveVal(list())
     detected_variables <- reactiveVal(data.frame())
+
+    # IMPORTANT CHANGE: Pre-fill dataset information every time the module is rendered
+    # Make sure this runs whenever needed by adding a dependency on state$current_step
+    observe({
+      # Adding this dependency ensures it runs when you return to this step
+      step <- state$current_step
+
+      # Initialize dataset name from state
+      if (!is.null(state$dataset_info$name)) {
+        updateTextInput(session, "dataset_name", value = state$dataset_info$name)
+      }
+
+      # Initialize dataset description from state
+      if (!is.null(state$dataset_info$description)) {
+        updateTextAreaInput(session, "dataset_description", value = state$dataset_info$description)
+      }
+
+      # Initialize authors from state if available
+      if (length(authors()) == 0 && !is.null(state$dataset_info$authors) &&
+          length(state$dataset_info$authors) > 0) {
+        authors(state$dataset_info$authors)
+      }
+    })
+
+    # Store input values immediately when they change
+    observeEvent(input$dataset_name, {
+      if (!is.null(input$dataset_name)) {
+        state$dataset_info$name <- input$dataset_name
+      }
+    })
+
+    observeEvent(input$dataset_description, {
+      if (!is.null(input$dataset_description)) {
+        state$dataset_info$description <- input$dataset_description
+      }
+    })
+
+    # Store authors in state when they change
+    observe({
+      if (length(authors()) > 0) {
+        state$dataset_info$authors <- authors()
+      }
+    })
 
     # On initialization, analyze selected files
     observe({
@@ -806,6 +864,9 @@ step2Server <- function(id, state, session) {
         # Update authors
         authors(current_authors)
 
+        # Also update state immediately
+        state$dataset_info$authors <- current_authors
+
         # Close modal
         removeModal()
       } else {
@@ -827,6 +888,9 @@ step2Server <- function(id, state, session) {
             if (local_i <= length(current_authors)) {
               current_authors <- current_authors[-local_i]
               authors(current_authors)
+
+              # Also update state immediately
+              state$dataset_info$authors <- current_authors
             }
           })
         })
@@ -835,62 +899,27 @@ step2Server <- function(id, state, session) {
 
     # Pre-fill dataset information if it exists
     observe({
+      # This will run once when the module initializes
+
+      # Initialize authors from state if available
+      if (length(authors()) == 0 && !is.null(state$dataset_info$authors) && length(state$dataset_info$authors) > 0) {
+        authors(state$dataset_info$authors)
+      }
+
+      # Initialize dataset name from state if available
       if (!is.null(state$dataset_info$name)) {
         updateTextInput(session, "dataset_name", value = state$dataset_info$name)
       }
 
+      # Initialize dataset description from state if available
       if (!is.null(state$dataset_info$description)) {
         updateTextAreaInput(session, "dataset_description", value = state$dataset_info$description)
-      }
-
-      # Initialize authors if not already set
-      if (length(authors()) == 0 && length(state$dataset_info$authors) > 0) {
-        # Convert from state format to list of author objects
-        author_list <- lapply(state$dataset_info$authors, function(author_data) {
-          # Parse author data - expected format could be various
-          if (is.list(author_data) && !is.null(author_data$first_name)) {
-            # Already in the right format
-            author_data
-          } else if (is.character(author_data)) {
-            # Try to extract from string format
-            if (grepl("\\(.*\\)$", author_data)) {
-              # Format like "First Last (ORCID)"
-              parts <- regmatches(author_data, regexec("^(.*?)\\s*\\((.*)\\)$", author_data))[[1]]
-              name_parts <- strsplit(trimws(parts[2]), "\\s+")[[1]]
-              if (length(name_parts) > 1) {
-                first_name <- paste(name_parts[1:(length(name_parts)-1)], collapse = " ")
-                last_name <- name_parts[length(name_parts)]
-              } else {
-                first_name <- name_parts[1]
-                last_name <- ""
-              }
-              list(first_name = first_name, last_name = last_name, orcid = parts[3])
-            } else {
-              # Just a name, try to split into first/last
-              name_parts <- strsplit(trimws(author_data), "\\s+")[[1]]
-              if (length(name_parts) > 1) {
-                first_name <- paste(name_parts[1:(length(name_parts)-1)], collapse = " ")
-                last_name <- name_parts[length(name_parts)]
-              } else {
-                first_name <- name_parts[1]
-                last_name <- ""
-              }
-              list(first_name = first_name, last_name = last_name, orcid = "")
-            }
-          } else {
-            # Default fallback
-            list(first_name = "", last_name = "", orcid = "")
-          }
-        })
-
-        authors(author_list)
       }
     })
 
     # Handle Back button
     observeEvent(input$back, {
-      # Save current data first
-      saveMetadata()
+      # No need to save metadata here since it's saved continuously
 
       # Confirm going back
       showModal(modalDialog(
@@ -933,8 +962,7 @@ step2Server <- function(id, state, session) {
         return()
       }
 
-      # Save metadata
-      saveMetadata()
+      # No need to call saveMetadata here since data is saved continuously
 
       # Create JSON preview
       json_preview <- createJsonPreview()
@@ -1043,17 +1071,6 @@ step2Server <- function(id, state, session) {
       json_html <- gsub(',(\n)', '<span class="json-punctuation">,</span>\\1', json_html)
 
       return(json_html)
-    }
-
-    # Function to save metadata to state
-    saveMetadata <- function() {
-      # Save dataset info
-      state$dataset_info$name <- input$dataset_name
-      state$dataset_info$description <- input$dataset_description
-
-      # Save authors to state
-      author_list <- authors()
-      state$dataset_info$authors <- author_list
     }
   })
 }
@@ -1164,6 +1181,12 @@ step3Server <- function(id, state, session) {
       if (file_index <= length(mappings)) {
         file_info <- mappings[[file_index]]
         selected_keywords(file_info$keywords)
+
+        # Reset all keyword value inputs
+        for (keyword in file_info$keywords) {
+          input_name <- paste0("keyword_value_", keyword$id)
+          updateTextInput(session, input_name, value = "")
+        }
       }
     })
 
@@ -1348,7 +1371,7 @@ step3Server <- function(id, state, session) {
       file_mappings(mappings)
     }
 
-    # Render keyword value inputs
+    # Modify the keyword value inputs rendering
     output$keyword_value_inputs <- renderUI({
       file_index <- current_file()
       mappings <- file_mappings()
@@ -1361,7 +1384,7 @@ step3Server <- function(id, state, session) {
       }
 
       file_info <- mappings[[file_index]]
-      keywords <- file_info$keywords
+      keywords <- selected_keywords()
 
       if (length(keywords) == 0) {
         return(div(
@@ -1384,7 +1407,7 @@ step3Server <- function(id, state, session) {
           textInput(
             session$ns(paste0("keyword_value_", keyword$id)), # Use keyword ID instead of name
             NULL,
-            value = keyword$value,
+            value = "", # Always start with an empty string
             placeholder = paste("Enter", tolower(keyword$display), "value"),
             width = "100%"
           )
@@ -1576,20 +1599,6 @@ step3Server <- function(id, state, session) {
       keyword_values <- list()
       missing_keywords <- list()
 
-      # Log all keywords
-      cat("Current keywords:\n")
-      for (i in seq_along(keywords)) {
-        cat("  ", i, ": ", keywords[[i]]$name, " (", keywords[[i]]$id, ")\n", sep="")
-      }
-
-      # Log all inputs
-      cat("Available inputs:\n")
-      input_names <- names(input)
-      value_inputs <- input_names[grepl("keyword_value_", input_names)]
-      for (name in value_inputs) {
-        cat("  ", name, " = ", input[[name]], "\n", sep="")
-      }
-
       # Check each keyword for a value
       for (i in seq_along(keywords)) {
         keyword <- keywords[[i]]
@@ -1603,6 +1612,8 @@ step3Server <- function(id, state, session) {
 
           if (!is.null(value) && value != "") {
             keyword_values[[keyword$name]] <- value
+            # Update the keyword in the list with the value
+            keywords[[i]]$value <- value
           } else {
             missing_keywords[[length(missing_keywords) + 1]] <- keyword
           }
@@ -1675,7 +1686,6 @@ step3Server <- function(id, state, session) {
       # Auto-advance to next unconfigured file if available
       auto_advance_to_next_file(file_index)
     })
-
     # Make sure this code is also updated to properly track values
     observe({
       # Skip if no file is selected
@@ -1721,27 +1731,45 @@ step3Server <- function(id, state, session) {
 
     # Function to auto-advance to the next unconfigured file
     auto_advance_to_next_file <- function(current_index) {
+      cat("Starting auto_advance_to_next_file\n")
+      cat("Current index:", current_index, "\n")
+
       mappings <- file_mappings()
 
-      # Find next unconfigured file
-      for (i in (current_index+1):length(mappings)) {
+      cat("Total mappings:", length(mappings), "\n")
+
+      # If there's only one mapping or current index is the last mapping, don't advance
+      if (length(mappings) <= 1 || current_index >= length(mappings)) {
+        cat("Cannot advance - only one mapping or at last mapping\n")
+        return()
+      }
+
+      # Validate inputs more robustly
+      if (is.null(current_index) || current_index < 1 || current_index > length(mappings)) {
+        cat("Invalid current_index, resetting to 1\n")
+        current_index <- 1
+      }
+
+      # Total number of mappings
+      total_mappings <- length(mappings)
+
+      # Create a sequence of indices to check, wrapping around from current_index
+      check_sequence <- c(
+        seq(current_index + 1, total_mappings),  # From current index to end
+        seq(1, current_index)                    # From start to current index
+      )
+
+      # Find the first unconfigured file
+      for (i in check_sequence) {
         if (mappings[[i]]$new == "") {
+          cat("Found unconfigured file at index", i, "\n")
           current_file(i)
           return()
         }
       }
 
-      # If we're here, check from beginning to current
-      if (current_index > 1) {
-        for (i in 1:(current_index-1)) {
-          if (mappings[[i]]$new == "") {
-            current_file(i)
-            return()
-          }
-        }
-      }
-
-      # If all files configured, no need to change
+      # If all files are configured
+      cat("All files are configured\n")
     }
 
     # Handle generate buttons on the file mapping list
@@ -1825,49 +1853,259 @@ step3Server <- function(id, state, session) {
       proceedToFinalStep()
     })
 
-    # Function to proceed to the final step
-    proceedToFinalStep <- function() {
-      # Save the file mappings to state
-      state$file_mappings <- file_mappings()
-
-      # Show summary before proceeding
-      showModal(modalDialog(
-        title = "File Standardization Complete",
-        div(
-          p("The following files will be renamed according to Psych-DS standards:"),
-          div(
-            style = "max-height: 200px; overflow-y: auto; border: 1px solid #ddd; padding: 8px; margin-top: 5px; background-color: #f8f9fa;",
-            lapply(file_mappings(), function(mapping) {
-              if (mapping$new != "") {
-                div(
-                  style = "padding: 8px 0; border-bottom: 1px solid #eee;",
-                  div(
-                    style = "color: #666;",
-                    mapping$original
-                  ),
-                  div(
-                    style = "color: #3498db; font-weight: bold;",
-                    icon("arrow-right"), " ", mapping$new
-                  )
-                )
-              } else {
-                div(
-                  style = "padding: 8px 0; border-bottom: 1px solid #eee; color: #999; font-style: italic;",
-                  mapping$original, " (unchanged)"
-                )
-              }
-            })
-          ),
-          p("Click 'Finish' to complete dataset creation.")
-        ),
-        size = "large",
-        easyClose = TRUE,
-        footer = tagList(
-          modalButton("Cancel"),
-          actionButton(session$ns("finish"), "Finish", class = "btn btn-success")
+    create_file_structure_html <- function(project_dir, file_mappings, optional_dirs) {
+      # Create a nested list representing the file structure
+      create_nested_list <- function() {
+        # Root level items
+        root_items <- list(
+          tags$li(
+            tags$span(class = "file-icon", "📄"),
+            "dataset_description.json"
+          )
         )
-      ))
+
+        # Add optional directories
+        standard_dirs <- c("analysis", "materials", "results", "products", "documentation")
+        for (dir in standard_dirs) {
+          if (optional_dirs[[dir]]) {
+            root_items[[length(root_items) + 1]] <- tags$li(
+              tags$span(class = "folder-icon", "📁"),
+              paste0(dir, "/")
+            )
+          }
+        }
+
+        # Add custom directories
+        if (!is.null(optional_dirs$custom)) {
+          for (custom_dir in optional_dirs$custom) {
+            root_items[[length(root_items) + 1]] <- tags$li(
+              tags$span(class = "folder-icon", "📁"),
+              paste0(custom_dir, "/")
+            )
+          }
+        }
+
+        # Add data files
+        data_files <- lapply(file_mappings(), function(mapping) {
+          if (mapping$new != "") {
+            tags$li(
+              tags$span(class = "file-icon", "📄"),
+              mapping$new
+            )
+          }
+        })
+
+        # Create the full structure
+        tags$ul(
+          class = "file-tree",
+          tags$li(
+            tags$span(class = "folder-icon", "📁"),
+            "data/",
+            tags$ul(
+              lapply(data_files, function(file) file)
+            )
+          ),
+          root_items
+        )
+      }
+
+      # Return the nested list with some inline CSS for styling
+      tagList(
+        tags$style(HTML("
+      .file-tree {
+        font-family: monospace;
+        line-height: 1.5;
+        list-style-type: none;
+        padding-left: 20px;
+      }
+      .file-tree ul {
+        padding-left: 20px;
+      }
+      .file-icon, .folder-icon {
+        margin-right: 5px;
+      }
+    ")),
+        create_nested_list()
+      )
     }
+
+    proceedToFinalStep <- function() {
+        # Save the file mappings to state
+        state$file_mappings <- file_mappings()
+
+        # Create a new Psych-DS compliant dataset directory
+        original_project_dir <- state$project_dir
+        dataset_name <- gsub("[^a-zA-Z0-9_-]", "_", tolower(state$dataset_info$name))
+        timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+        new_dataset_dir <- file.path(
+          dirname(original_project_dir),
+          paste0(dataset_name, "_psychds_", timestamp)
+        )
+
+        # Create the new dataset directory
+        dir.create(new_dataset_dir, showWarnings = FALSE, recursive = TRUE)
+
+        # Create data directory
+        data_dir <- file.path(new_dataset_dir, "data")
+        dir.create(data_dir, showWarnings = FALSE, recursive = TRUE)
+
+        # Copy and rename files to data directory
+        for (mapping in file_mappings()) {
+          if (mapping$new != "") {
+            # Construct full source and destination paths
+            src_path <- file.path(original_project_dir, mapping$original)
+            dest_path <- file.path(data_dir, mapping$new)
+
+            # Copy the file
+            file.copy(src_path, dest_path, overwrite = FALSE)
+          }
+        }
+
+        # Create optional directories at the project root
+        optional_dirs <- state$optional_dirs
+        standard_dirs <- c("analysis", "materials", "results", "products", "documentation")
+
+        for (dir in standard_dirs) {
+          if (optional_dirs[[dir]]) {
+            dir.create(file.path(new_dataset_dir, dir), showWarnings = FALSE)
+          }
+        }
+
+        # Add any custom directories at the project root
+        if (!is.null(optional_dirs$custom)) {
+          for (custom_dir in optional_dirs$custom) {
+            dir.create(file.path(new_dataset_dir, custom_dir), showWarnings = FALSE)
+          }
+        }
+
+        # Generate dataset_description.json in the project root
+        dataset_info <- state$dataset_info
+
+        # Create a comprehensive dataset description
+        dataset_description <- list(
+          "@context" = "https://schema.org/",
+          "@type" = "Dataset",
+          "name" = dataset_info$name,
+          "description" = dataset_info$description,
+          "author" = lapply(dataset_info$authors, function(author) {
+            list(
+              "@type" = "Person",
+              "givenName" = author$first_name,
+              "familyName" = author$last_name,
+              "@id" = if(!is.null(author$orcid) && author$orcid != "") author$orcid else NULL
+            )
+          }),
+          "variableMeasured" = lapply(state$data_dict, function(file_dict) {
+            lapply(rownames(file_dict), function(var_name) {
+              list(
+                "@type" = "PropertyValue",
+                "name" = var_name,
+                "description" = file_dict[var_name, "description"]
+              )
+            })
+          })
+        )
+
+        # Remove NULL values
+        dataset_description <- dataset_description[!sapply(dataset_description, is.null)]
+
+        json_path <- file.path(new_dataset_dir, "dataset_description.json")
+        jsonlite::write_json(dataset_description, json_path, pretty = TRUE, auto_unbox = TRUE)
+
+        # Create file structure preview
+        file_structure_preview <- create_file_structure_html(new_dataset_dir, file_mappings(), optional_dirs)
+
+        # Update state with the new dataset directory
+        state$created_dataset_dir <- new_dataset_dir
+
+        # Show summary before proceeding
+        showModal(modalDialog(
+          title = "Dataset Creation Complete",
+          div(
+            p("Your Psych-DS dataset has been created successfully:"),
+            div(
+              style = "max-height: 300px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: #f8f9fa;",
+              file_structure_preview
+            ),
+            p("A basic version of your dataset has been copied to your Downloads folder.")
+          ),
+          footer = tagList(
+            modalButton("Close"),
+            actionButton(session$ns("validate_dataset"), "Validate Dataset", class = "btn-primary")
+          ),
+          size = "l"  # Using 'l' for large size
+        ))
+      }
+
+    # Add new event handlers for validate and download buttons
+    observeEvent(input$validate_dataset, {
+      # Debug logging
+      cat("Validate dataset button clicked\n")
+
+      # Get the path to the newly created dataset
+      full_dataset_dir <- state$created_dataset_dir
+      downloads_dir <- path.expand("~/Downloads")
+      destination_dir <- file.path(downloads_dir, basename(full_dataset_dir))
+
+      # Render the dataset preview
+      output$dataset_preview <- renderUI({
+        div(
+          class = "section-box",
+          div(class = "section-title", "Dataset Preview"),
+          div(
+            style = "max-height: 400px; overflow-y: auto; border: 1px solid #ddd; padding: 10px; background-color: #f8f9fa;",
+            create_file_structure_html(destination_dir,
+                                       lapply(list.files(file.path(destination_dir, "data"), recursive = TRUE, full.names = FALSE),
+                                              function(f) list(original = f, new = f)),
+                                       state$optional_dirs)
+          ),
+          # Dataset description preview
+          div(
+            class = "section-title",
+            style = "margin-top: 15px;",
+            "Dataset Description"
+          ),
+          div(
+            style = "border: 1px solid #ddd; padding: 10px; background-color: #f8f9fa; white-space: pre-wrap; font-family: monospace;",
+            paste(readLines(file.path(destination_dir, "dataset_description.json")), collapse = "\n")
+          )
+        )
+      })
+
+      # Remove any existing modal
+      removeModal()
+
+      # Use shiny's session to change the active tab
+      # This is a more direct approach to changing tabs
+      session$sendCustomMessage("changeTab", list(tabName = "validate"))
+    })
+
+    observeEvent(input$download_dataset, {
+      removeModal()
+
+      # Get the path to the newly created dataset
+      full_dataset_dir <- state$created_dataset_dir
+
+      # Create a destination directory in the user's Downloads folder
+      downloads_dir <- path.expand("~/Downloads")
+      destination_dir <- file.path(downloads_dir, basename(full_dataset_dir))
+
+      # Copy the entire directory to Downloads
+      file.copy(full_dataset_dir, downloads_dir, recursive = TRUE)
+
+      # Switch to the validate dataset tab
+      updateTabItems(session, "sidebar", "validate")
+
+      # Automatically load the newly created dataset path in the validate input
+      updateTextInput(session, "validate_dir", value = destination_dir)
+
+      # Show a notification
+      showNotification(
+        paste("Dataset downloaded to:", destination_dir),
+        type = "message",
+        duration = 5
+      )
+    })
 
     # Handle finish button
     observeEvent(input$finish, {

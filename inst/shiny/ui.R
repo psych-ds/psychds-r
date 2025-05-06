@@ -39,6 +39,42 @@ ui <- dashboardPage(
       # Include SortableJS library
       tags$script(src = "https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js")
     ),
+    tags$script(HTML("
+    $(document).ready(function() {
+      $('.step-circle').on('click', function() {
+        console.log('Step circle clicked!');
+        console.log('Classes:', $(this).attr('class'));
+      });
+    });
+  ")),
+    tags$script(HTML("
+  Shiny.addCustomMessageHandler('refreshUI', function(message) {
+    // Force a redraw by slightly resizing elements
+    $('.step-circle').each(function() {
+      var $this = $(this);
+      var w = $this.width();
+      $this.width(w+1);
+      setTimeout(function() { $this.width(w); }, 50);
+    });
+  });
+")),
+    tags$script(HTML("
+      Shiny.addCustomMessageHandler('downloadFile', function(message) {
+        var link = document.createElement('a');
+        link.href = window.URL.createObjectURL(new Blob([message.filepath]));
+        link.download = message.filename;
+        link.click();
+      });
+    ")),
+    tags$script(HTML("
+      Shiny.addCustomMessageHandler('changeTab', function(message) {
+        // Find the sidebar menu item and trigger a click
+        var tabItem = $('.sidebar-menu a[data-value=\"' + message.tabName + '\"]');
+        if (tabItem.length) {
+          tabItem.click();
+        }
+      });
+    ")),
 
     tabItems(
       # Create Dataset Tab
@@ -53,38 +89,7 @@ ui <- dashboardPage(
         h2("Validate Dataset"),
         p("This feature will allow you to validate an existing Psych-DS dataset against the schema."),
         # Placeholder for future implementation
-        div(
-          class = "section-box",
-          div(class = "section-title", "Select Dataset"),
-          div(class = "section-description",
-              "Select a Psych-DS dataset to validate."),
-
-          div(
-            class = "directory-input",
-            textInput(
-              "validate_dir",
-              label = NULL,
-              value = "",
-              placeholder = "Path to Psych-DS dataset",
-              width = "100%"
-            ),
-            shinyDirButton(
-              "validate_dir_select",
-              label = "...",
-              title = "Select a dataset directory",
-              class = "browse-btn"
-            )
-          ),
-
-          div(
-            style = "text-align: right; margin-top: 20px;",
-            actionButton(
-              "validate_btn",
-              "Validate",
-              class = "continue-btn"
-            )
-          )
-        )
+        uiOutput("dataset_preview")
       ),
 
       # Update Dictionary Tab

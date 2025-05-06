@@ -84,6 +84,32 @@ html, body {
   background-color: #3498db !important;
   border-left-color: #3498db !important;
 }
+.step-circle-btn {
+  width: 30px !important;
+  height: 30px !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: none !important;
+  transition: all 0.3s ease !important;
+}
+
+.step-circle-btn.active {
+  background-color: #3498db !important;
+  color: white !important;
+}
+
+.step-circle-btn.inactive {
+  background-color: #e0e0e0 !important;
+  color: #666 !important;
+}
+
+.step-circle-btn:hover {
+  transform: scale(1.1);
+  box-shadow: 0 0 5px rgba(0,0,0,0.2);
+}
 
 /* Progress indicator */
 .step-circle {
@@ -97,10 +123,9 @@ html, body {
   font-weight: bold;
   margin: 0 5px;
   flex-shrink: 0;
+  cursor: pointer;
+  transition: transform 0.2s;
 }
-.step-circle.active { background-color: #3498db; color: white; }
-.step-circle.inactive { background-color: white; color: #666; border: 1px solid #cccccc; }
-
 .progress-bar-fill {
   background-color: #3498db;
   border-radius: 20px;
