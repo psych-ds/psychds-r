@@ -2,41 +2,133 @@
 #'
 #' This file defines the server-side logic for the Psych-DS app.
 #' It handles the main app flow, state management, and module coordination.
-
-# Load server modules (done in global.R in actual app)
 source("modules/server_modules.R")
+
+step_navigation <- function(id, state, session) {
+  moduleServer(id, function(input, output, session) {
+    # Log inputs only once at initialization
+    cat("Step Navigation Module initialized with ID:", id, "\n")
+
+    # Step 1 button handler
+    observeEvent(input$goto_step1, {
+      cat("STEP 1 BUTTON CLICKED\n")
+      # Step 1 is always accessible
+      state$current_step <- 1
+      cat("Updated current_step to:", state$current_step, "\n")
+    })
+
+    # Step 2 button handler
+    observeEvent(input$goto_step2, {
+      cat("STEP 2 BUTTON CLICKED\n")
+
+      # Can only go to step 2 if:
+      # 1. We've already been there (state$current_step >= 2), OR
+      # 2. We have selected a directory and at least one data file
+      can_go_to_step2 <- state$current_step >= 2 ||
+        (!is.null(state$project_dir) &&
+           state$project_dir != "" &&
+           length(state$data_files) > 0)
+
+      cat("Can go to step 2:", can_go_to_step2, "\n")
+      cat("- current_step:", state$current_step, "\n")
+      cat("- project_dir:", if(is.null(state$project_dir)) "NULL" else state$project_dir, "\n")
+      cat("- data_files count:", length(state$data_files), "\n")
+
+      if (can_go_to_step2) {
+        state$current_step <- 2
+        cat("Updated current_step to:", state$current_step, "\n")
+      } else {
+        showNotification("Complete Step 1 first (select a project directory and at least one data file)",
+                         type = "warning")
+        cat("Navigation to Step 2 blocked - requirements not met\n")
+      }
+    })
+
+    # Step 3 button handler
+    observeEvent(input$goto_step3, {
+      cat("STEP 3 BUTTON CLICKED\n")
+
+      # Can only go to step 3 if:
+      # 1. We've already been there (state$current_step >= 3), OR
+      # 2. We have completed step 2 (dataset name and description filled)
+
+      # Check if dataset_info exists
+      if (is.null(state$dataset_info)) {
+        cat("dataset_info is NULL\n")
+        dataset_info_complete <- FALSE
+      } else {
+        cat("dataset_info exists\n")
+        cat("- name:", if(is.null(state$dataset_info$name)) "NULL" else state$dataset_info$name, "\n")
+        cat("- description:", if(is.null(state$dataset_info$description)) "NULL" else "EXISTS", "\n")
+
+        dataset_info_complete <- !is.null(state$dataset_info$name) &&
+          !is.null(state$dataset_info$description) &&
+          state$dataset_info$name != "" &&
+          state$dataset_info$description != ""
+      }
+
+      can_go_to_step3 <- state$current_step >= 3 || dataset_info_complete
+
+      cat("Can go to step 3:", can_go_to_step3, "\n")
+      cat("- current_step:", state$current_step, "\n")
+      cat("- dataset_info_complete:", dataset_info_complete, "\n")
+
+      if (can_go_to_step3) {
+        state$current_step <- 3
+        cat("Updated current_step to:", state$current_step, "\n")
+      } else {
+        showNotification("Complete Step 2 first (provide dataset name and description)",
+                         type = "warning")
+        cat("Navigation to Step 3 blocked - requirements not met\n")
+      }
+    })
+  })
+}
 
 # Main server function
 server <- function(input, output, session) {
   # Initialize application state
   state <- init_state()
 
+  # Add a reactive value to store the last create tab step
+  last_create_step <- reactiveVal(1)
+
   # Handle sidebar menu selection
   observeEvent(input$sidebar, {
     if (input$sidebar == "create") {
-      # If we're on create dataset tab and already in a step,
-      # don't reset the step (allows navigation back to this tab)
-      if (state$current_step == 0) {
+      # If we're on create dataset tab, use the last remembered step
+      # instead of always defaulting to 1
+      if (!is.null(last_create_step()) && last_create_step() > 0) {
+        state$current_step <- last_create_step()
+      } else if (is.null(state$current_step) || state$current_step == 0) {
+        # Only use the default step 1 if we never set a step before
         state$current_step <- 1
       }
     } else {
-      # For other tabs, reset step
+      # For other tabs, remember the current step before switching away
+      if (!is.null(state$current_step) && state$current_step > 0) {
+        last_create_step(state$current_step)
+      }
+
+      # For other tabs, set current step to 0 (no step active)
       state$current_step <- 0
     }
   })
 
+  stepNavServer <- step_navigation("step_nav", state, session)
+
+
+
   # Dynamically render the Create Dataset UI based on current step
   output$create_dataset_ui <- renderUI({
-    if (state$current_step == 1) {
-      step1UI("step1")
-    } else if (state$current_step == 2) {
-      step2UI("step2")
-    } else if (state$current_step == 3) {
-      step3UI("step3")
-    } else {
-      # Default to step 1
-      step1UI("step1")
-    }
+    # Print to console for debugging
+    cat("Rendering UI for step:", state$current_step, "\n")
+
+    switch(as.character(state$current_step),
+           "1" = step1UI("step1"),
+           "2" = step2UI("step2"),
+           "3" = step3UI("step3"),
+           step1UI("step1"))  # Default fallback
   })
 
   # Initialize the step modules

@@ -62,7 +62,8 @@ create_dataset_description <- function(dir_path, dataset_info) {
     HowToAcknowledge = dataset_info$how_to_acknowledge,
     Funding = dataset_info$funding,
     ReferencesAndLinks = dataset_info$references_and_links,
-    DatasetDOI = dataset_info$dataset_doi
+    DatasetDOI = dataset_info$dataset_doi,
+    Version = dataset_info$version
   )
 
   # Remove NULL values
@@ -70,7 +71,54 @@ create_dataset_description <- function(dir_path, dataset_info) {
 
   # Create JSON file
   json_path <- file.path(dir_path, "dataset_description.json")
-  jsonlite::write_json(template, json_path, pretty = TRUE, auto_unbox = TRUE)
+
+  # If jsonlite is installed, use it to write the JSON file
+  if (requireNamespace("jsonlite", quietly = TRUE)) {
+    jsonlite::write_json(template, json_path, pretty = TRUE, auto_unbox = TRUE)
+  } else {
+    # Fallback to basic JSON creation if jsonlite is not available
+    json_content <- "{\n"
+
+    # Add each field
+    fields <- names(template)
+    for (i in seq_along(fields)) {
+      field <- fields[i]
+      value <- template[[field]]
+
+      # Format value based on type
+      if (is.character(value)) {
+        formatted_value <- paste0('"', gsub('"', '\\"', value), '"')
+      } else if (is.list(value)) {
+        if (length(value) == 0) {
+          formatted_value <- "[]"
+        } else {
+          # Simple array formatting
+          items <- sapply(value, function(item) {
+            if (is.character(item)) {
+              paste0('"', gsub('"', '\\"', item), '"')
+            } else {
+              as.character(item)
+            }
+          })
+          formatted_value <- paste0("[", paste(items, collapse = ", "), "]")
+        }
+      } else {
+        formatted_value <- as.character(value)
+      }
+
+      # Add to JSON string
+      json_content <- paste0(
+        json_content,
+        '  "', field, '": ', formatted_value,
+        if (i < length(fields)) ",\n" else "\n"
+      )
+    }
+
+    json_content <- paste0(json_content, "}\n")
+
+    # Write to file
+    writeLines(json_content, json_path)
+  }
 
   invisible(NULL)
 }
