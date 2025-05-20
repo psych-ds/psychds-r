@@ -3,6 +3,8 @@
 #' This file contains server-side logic for the modular UI components.
 #' Each module handles its own state and communicates with the global state.
 
+source(file.path(getwd(), "validation.R"))
+
 #' Directory Input Server Module - Fixed Version
 #'
 #' Handles directory selection and validation
@@ -1075,7 +1077,6 @@ step2Server <- function(id, state, session) {
   })
 }
 
-
 #' Step 3 Server Module
 #'
 #' Handles filename standardization and mapping
@@ -1995,7 +1996,8 @@ step3Server <- function(id, state, session) {
               "@id" = if(!is.null(author$orcid) && author$orcid != "") author$orcid else NULL
             )
           }),
-          "variableMeasured" = lapply(state$data_dict, function(file_dict) {
+          "variableMeasured" = do.call(c, lapply(names(state$data_dict), function(file_name) {
+            file_dict <- state$data_dict[[file_name]]
             lapply(rownames(file_dict), function(var_name) {
               list(
                 "@type" = "PropertyValue",
@@ -2003,7 +2005,7 @@ step3Server <- function(id, state, session) {
                 "description" = file_dict[var_name, "description"]
               )
             })
-          })
+          }))
         )
 
         # Remove NULL values
@@ -2155,5 +2157,565 @@ step3Server <- function(id, state, session) {
 
     # Return reactive that provides the file mappings
     return(reactive({ file_mappings() }))
+  })
+}
+
+check_validator_button <- function(id, session) {
+  moduleServer(id, function(input, output, session) {
+    observeEvent(input$check_validator, {
+      # Insert JavaScript directly into the page
+      insertUI(
+        selector = "body",
+        where = "beforeEnd",
+        ui = tags$script(HTML('
+          console.log("Manual validator check requested");
+          var validatorStatus = "Validator NOT found";
+
+          if (typeof window.psychDSValidator !== "undefined") {
+            validatorStatus = "VALIDATOR FOUND! Methods: " + Object.keys(window.psychDSValidator).join(", ");
+            console.log(validatorStatus);
+          } else {
+            console.error(validatorStatus);
+          }
+
+          // Show a visible alert that users can see
+          alert(validatorStatus);
+
+          // Also try to communicate back to Shiny
+          if (typeof Shiny !== "undefined") {
+            Shiny.setInputValue("validator_status", validatorStatus);
+          } else {
+            console.error("Shiny object not available");
+          }
+        '))
+      )
+
+      # Also display a notification directly from R
+      showNotification("Check validator executed - look for browser alert", type = "message")
+    })
+
+    # This is the handler if Shiny communication works
+    observeEvent(input$validator_status, {
+      showNotification(paste("Validator status:", input$validator_status),
+                       type = "message",
+                       duration = 10)
+    })
+  })
+}
+
+check_validator_available <- function() {
+  shiny::insertUI(
+    selector = "head",
+    where = "beforeEnd",
+    ui = tags$script(HTML("
+      console.log('Checking validator availability...');
+      if (typeof window.psychDSValidator !== 'undefined') {
+        console.log('Validator is available');
+        Shiny.setInputValue('validator_available', true);
+      } else {
+        console.error('Validator is NOT available');
+        Shiny.setInputValue('validator_available', false);
+      }
+    "))
+  )
+}
+
+validateServer <- function(id, state, session) {
+  moduleServer(id, function(input, output, session) {
+    # Track validation status
+    validation_status <- reactiveValues(
+      is_validating = FALSE,
+      is_complete = FALSE,
+      is_valid = FALSE,
+      step_statuses = list() 
+    )
+    
+    # Define steps for the UI rendering
+    validation_steps <- list(
+      list(
+        key = "start",
+        message = list(
+          imperative = "Start validation",
+          pastTense = "Validation started"
+        ),
+        subSteps = list()
+      ),
+      list(
+        key = "check-folder",
+        message = list(
+          imperative = "Find project folder",
+          pastTense = "Project folder found"
+        ),
+        subSteps = list(
+          list(
+            key = "build-tree",
+            message = list(
+              imperative = "Crawl project folder and construct file tree",
+              pastTense = "Project folder crawled and file tree constructed"
+            )
+          )
+        )
+      ),
+      list(
+        key = "find-metadata",
+        message = list(
+          imperative = "Find metadata file",
+          pastTense = 'Metadata file "dataset_description.json" found in the root folder'
+        ),
+        subSteps = list()
+      ),
+      list(
+        key = "find-data-dir",
+        message = list(
+          imperative = 'Find "data" subfolder',
+          pastTense = '"data" subfolder found in the root folder'
+        ),
+        subSteps = list()
+      ),
+      list(
+        key = "parse-metadata",
+        message = list(
+          imperative = 'Parse "dataset_description.json" metadata file',
+          pastTense = 'Successfully parsed "dataset_description.json" metadata file'
+        ),
+        subSteps = list(
+          list(
+            key = "metadata-utf8",
+            message = list(
+              imperative = "Check metadata file for utf-8 encoding",
+              pastTense = "Metadata file is utf-8 encoded"
+            )
+          ),
+          list(
+            key = "metadata-json",
+            message = list(
+              imperative = "Parse metadata file as JSON",
+              pastTense = "Metadata file parsed successfully"
+            )
+          ),
+          list(
+            key = "metadata-jsonld",
+            message = list(
+              imperative = "Validate metadata file as JSON-LD",
+              pastTense = "Metadata file is valid JSON-LD"
+            )
+          ),
+          list(
+            key = "metadata-fields",
+            message = list(
+              imperative = 'Check metadata file for required "name", "description", and "variableMeasured" fields',
+              pastTense = 'Metadata file contains required "name", "description", and "variableMeasured" fields.'
+            )
+          ),
+          list(
+            key = "metadata-type",
+            message = list(
+              imperative = 'Check metadata file for field "@type" with value "Dataset"',
+              pastTense = 'Metadata file has "@type" field with value "Dataset"'
+            )
+          )
+        )
+      ),
+      list(
+        key = "check-for-csv",
+        message = list(
+          imperative = 'Check for CSV data files in "data" subfolder',
+          pastTense = 'CSV data files found in "data" subfolder'
+        ),
+        subSteps = list()
+      ),
+      list(
+        key = "validate-csvs",
+        message = list(
+          imperative = 'Check that all CSV data files are valid',
+          pastTense = 'All CSV data files are valid'
+        ),
+        subSteps = list(
+          list(
+            key = "csv-keywords",
+            message = list(
+              imperative = 'Check filename for keyword formatting ',
+              pastTense = 'Filename uses valid keyword formatting'
+            )
+          ),
+          list(
+            key = "csv-parse",
+            message = list(
+              imperative = 'Parse data file as CSV',
+              pastTense = 'Data file successfully parsed as CSV'
+            )
+          ),
+          list(
+            key = "csv-header",
+            message = list(
+              imperative = 'Check for header line',
+              pastTense = 'Header line found'
+            )
+          ),
+          list(
+            key = "csv-header-repeat",
+            message = list(
+              imperative = 'Check for redundant column names',
+              pastTense = 'No redundant column names found'
+            )
+          ),
+          list(
+            key = "csv-nomismatch",
+            message = list(
+              imperative = 'Check all lines for equal number of cells',
+              pastTense = 'All lines have equal number of cells'
+            )
+          ),
+          list(
+            key = "csv-rowid",
+            message = list(
+              imperative = 'Check for any row_id columns with non-unique values',
+              pastTense = 'All row_id columns have unique values'
+            )
+          )
+        )
+      ),
+      list(
+        key = "check-variableMeasured",
+        message = list(
+          imperative = 'Confirm that all column headers in CSV data files are found in "variableMeasured" metadata field',
+          pastTense = 'All column headers in CSV data files were found in "variableMeasured" metadata field'
+        ),
+        subSteps = list()
+      )
+    )
+    
+    # Store steps for UI reference
+    validation_status$steps <- validation_steps
+    
+    # Simplified handler for step status updates
+    observeEvent(input$validation_step_status, {
+      message("Received step status update")
+      
+      if (!is.null(input$validation_step_status) && 
+          !is.null(input$validation_step_status$stepStatus)) {
+        
+        # Get updates from JS
+        step_updates <- input$validation_step_status$stepStatus
+        
+        # Process each step status
+        for (i in seq_along(step_updates)) {
+          step_entry <- step_updates[[i]]
+          
+          if (length(step_entry) >= 2) {
+            step_key <- step_entry[[1]]
+            step_status <- step_entry[[2]]
+            
+            # Update the step status in our reactive
+            validation_status$step_statuses[[step_key]] <- list(
+              complete = step_status$complete,
+              success = step_status$success,
+              issue = step_status$issue
+            )
+            
+            message("Updated status for step: ", step_key)
+          }
+        }
+        
+        # Start validation mode if first update
+        if (!validation_status$is_validating) {
+          validation_status$is_validating <- TRUE
+        }
+      }
+    }, ignoreNULL = TRUE)
+    
+    # Handle validation complete events
+    observeEvent(input$validation_complete, {
+      message("Validation complete event received")
+      validation_status$is_complete <- TRUE
+      validation_status$is_valid <- TRUE
+    })
+    
+    # Handle validation halted events
+    observeEvent(input$validation_halted, {
+      message("Validation halted event received")
+      validation_status$is_complete <- TRUE
+      validation_status$is_valid <- FALSE
+    })
+    
+    # Handle validation results
+    observeEvent(input$validation_results, {
+      if (!is.null(input$validation_results)) {
+        message("Validation results received")
+        validation_status$is_complete <- TRUE
+        validation_status$is_valid <- input$validation_results$valid
+        validation_status$is_validating <- FALSE
+        state$validation_results <- input$validation_results
+      }
+    })
+    
+    # Render the validation UI with checklist
+    output$validation_results_ui <- renderUI({
+      # If validation hasn't started or is in progress, show appropriate message
+      if (!validation_status$is_validating && is.null(state$validation_results)) {
+        return(div(
+          style = "text-align: center; padding: 20px;",
+          p("Select a dataset directory and click 'Validate' to check compliance with Psych-DS standard.")
+        ))
+      }
+      
+      # Debug text to show current status
+      status_text <- paste(
+        "Validating:", validation_status$is_validating,
+        "Complete:", validation_status$is_complete,
+        "Valid:", validation_status$is_valid,
+        "Steps:", length(validation_status$step_statuses)
+      )
+      
+      # If validation is in progress or results are available, show the checklist
+      checklist <- div(
+        h3("Validation Progress", 
+           if (validation_status$is_complete) {
+             span(
+               style = paste0("color: ", ifelse(validation_status$is_valid, "#4caf50", "#f44336"), "; margin-left: 10px;"),
+               ifelse(validation_status$is_valid, "✓ Dataset is valid", "✗ Dataset has issues")
+             )
+           }
+        ),
+        p(style = "color: #999; font-style: italic;", status_text),
+        
+        # Main steps
+        div(
+          class = "validation-checklist",
+          style = "max-height: 500px; overflow-y: auto;",
+          
+          # Check if steps are defined
+          if (length(validation_status$steps) > 0) {
+            lapply(validation_status$steps, function(step) {
+              # Get status for this step
+              status <- validation_status$step_statuses[[step$key]]
+              
+              # Default status if not found
+              if (is.null(status)) {
+                status <- list(complete = FALSE, success = FALSE)
+              }
+              
+              # Determine message and icon
+              message <- if (status$complete) step$message$pastTense else step$message$imperative
+              icon <- if (status$complete) {
+                if (status$success) "✓" else "✗"
+              } else "⋯"
+              icon_color <- if (status$complete) {
+                if (status$success) "#4caf50" else "#f44336"
+              } else "#ffc107"
+              
+              div(
+                class = "step-item",
+                style = "margin-bottom: 15px; padding: 10px; border-radius: 5px; background-color: #f9f9f9; border: 1px solid #ddd;",
+                
+                div(
+                  class = "step-header",
+                  style = "font-weight: bold; display: flex; align-items: center;",
+                  span(icon, style = paste0("color: ", icon_color, "; margin-right: 10px; font-size: 18px;")),
+                  message
+                ),
+                
+                # Display issue if there is one
+                if (!is.null(status$issue)) {
+                  div(
+                    class = "step-issue",
+                    style = "margin-top: 10px; color: #f44336; padding-left: 20px;",
+                    p(strong("Issue:"), status$issue$reason)
+                  )
+                },
+                
+                # Render substeps if any
+                if (length(step$subSteps) > 0) {
+                  div(
+                    class = "substeps",
+                    style = "margin-top: 10px; margin-left: 20px; padding-left: 10px; border-left: 2px solid #ddd;",
+                    
+                    lapply(step$subSteps, function(subStep) {
+                      # Get substep status
+                      subStatus <- validation_status$step_statuses[[subStep$key]]
+                      
+                      # Default status if not found
+                      if (is.null(subStatus)) {
+                        subStatus <- list(complete = FALSE, success = FALSE)
+                      }
+                      
+                      # Determine message and icon
+                      subMessage <- if (subStatus$complete) subStep$message$pastTense else subStep$message$imperative
+                      subIcon <- if (subStatus$complete) {
+                        if (subStatus$success) "✓" else "✗"
+                      } else "⋯"
+                      subIconColor <- if (subStatus$complete) {
+                        if (subStatus$success) "#4caf50" else "#f44336"
+                      } else "#ffc107"
+                      
+                      div(
+                        class = "substep-item",
+                        style = "margin-bottom: 8px; display: flex; align-items: flex-start;",
+                        
+                        span(subIcon, style = paste0("color: ", subIconColor, "; margin-right: 10px;")),
+                        div(
+                          style = "flex: 1;",
+                          p(style = "margin: 0;", subMessage),
+                          
+                          # Display issue if there is one
+                          if (!is.null(subStatus$issue)) {
+                            div(
+                              class = "substep-issue",
+                              style = "margin-top: 5px; color: #f44336; font-size: 0.9em;",
+                              p(strong("Issue:"), subStatus$issue$reason)
+                            )
+                          }
+                        )
+                      )
+                    })
+                  )
+                }
+              )
+            })
+          } else {
+            div("No validation steps defined")
+          }
+        )
+      )
+      
+      # If validation is complete, also show the results summary
+      if (validation_status$is_complete && !is.null(state$validation_results)) {
+        result <- state$validation_results
+        
+        # Full results with checklist and summary
+        return(tagList(
+          # Checklist
+          div(
+            class = "section-box",
+            style = "margin-bottom: 20px;",
+            div(class = "section-title", "Validation Process"),
+            checklist
+          ),
+          
+          # Summary
+          div(
+            class = "section-box",
+            div(class = "section-title", "Results Summary"),
+            div(
+              style = paste0("padding: 15px; border-radius: 5px; background-color: ", 
+                            ifelse(result$valid, "#e8f5e9", "#ffebee"), ";"),
+              h3(
+                style = paste0("color: ", ifelse(result$valid, "#4caf50", "#f44336"), ";"),
+                ifelse(result$valid, "✓ Dataset is valid", "✗ Dataset has validation errors")
+              ),
+              
+              # Summary details
+              div(
+                style = "margin-top: 15px;",
+                h4("Details:"),
+                tags$ul(
+                  tags$li(paste0("Total files scanned: ", result$summary$totalFiles)),
+                  if (!is.null(result$summary$dataTypes) && length(result$summary$dataTypes) > 0) {
+                    tags$li(paste0("Data types found: ", paste(result$summary$dataTypes, collapse = ", ")))
+                  },
+                  tags$li(
+                    span(style = paste0("color: ", ifelse(result$valid, "#4caf50", "#f44336"), "; font-weight: bold;"), 
+                         ifelse(result$valid, 
+                               "This dataset appears to be Psych-DS compatible", 
+                               "This dataset does not appear to be Psych-DS compatible"))
+                  )
+                )
+              ),
+              
+              # Only show errors section if there are any
+              if (!result$valid && !is.null(result$issues) && !is.null(result$issues$errors) && length(result$issues$errors) > 0) {
+                div(
+                  style = "margin-top: 15px;",
+                  h4("Errors:"),
+                  tags$ul(
+                    lapply(result$issues$errors, function(error) {
+                      tags$li(
+                        p(style = "font-weight: bold;", error$key),
+                        p(error$reason)
+                      )
+                    })
+                  )
+                )
+              }
+            )
+          )
+        ))
+      } else {
+        # Just return the checklist during validation
+        return(div(
+          class = "section-box",
+          div(class = "section-title", "Validation Progress"),
+          checklist
+        ))
+      }
+    })
+    
+    # Handle the validate button click
+    observeEvent(input$validate_btn, {
+      req(input$validate_dir)
+      
+      if (dir.exists(input$validate_dir)) {
+        # Reset validation state
+        validation_status$is_validating <- TRUE
+        validation_status$is_complete <- FALSE
+        validation_status$is_valid <- FALSE
+        validation_status$step_statuses <- list()
+        state$validation_results <- NULL
+        
+        # Show a loading notification
+        showNotification(
+          "Validating dataset... This may take a moment", 
+          id = "validate_notif", 
+          type = "message",
+          duration = NULL
+        )
+        
+        # Try to build the file tree and run validation
+        tryCatch({
+          # Build the file tree
+          fileTree <- buildFileTree(input$validate_dir)
+          
+          # Send the file tree to the JavaScript validator
+          session$sendCustomMessage("run_validation", fileTree)
+        }, error = function(e) {
+          removeNotification(id = "validate_notif")
+          showNotification(paste("Error:", e$message), type = "error")
+          validation_status$is_validating <- FALSE
+        })
+      } else {
+        showNotification("Directory does not exist", type = "error")
+      }
+    })
+    
+    # Similar implementation for test validation button
+    observeEvent(input$test_validation, {
+      # Reset validation state
+      validation_status$is_validating <- TRUE
+      validation_status$is_complete <- FALSE
+      validation_status$is_valid <- FALSE
+      validation_status$step_statuses <- list()
+      state$validation_results <- NULL
+      
+      # Show a loading notification
+      showNotification(
+        "Running test validation... This may take a moment", 
+        id = "validate_notif", 
+        type = "message",
+        duration = NULL
+      )
+      
+      # Create a test file tree and run validation
+      tryCatch({
+        # Create test file tree
+        testTree <- createTestFileTree()
+        
+        # Send the test file tree to the JavaScript validator
+        session$sendCustomMessage("run_validation", testTree)
+      }, error = function(e) {
+        removeNotification(id = "validate_notif")
+        showNotification(paste("Error:", e$message), type = "error")
+        validation_status$is_validating <- FALSE
+      })
+    })
   })
 }

@@ -550,3 +550,300 @@ step3UI <- function(id) {
     )
   )
 }
+
+#' Validate Dataset UI Module
+#'
+#' UI components for the dataset validation feature
+#'
+#' @param id The module ID
+#' @return UI elements for dataset validation
+validateUI <- function(id) {
+  ns <- NS(id)
+  
+  # Define the validation steps structure to match the JavaScript implementation
+  validation_steps <- list(
+    list(
+      key = "start",
+      message = list(
+        imperative = "Start validation",
+        pastTense = "Validation started"
+      ),
+      subSteps = list()
+    ),
+    list(
+      key = "check-folder",
+      message = list(
+        imperative = "Find project folder", 
+        pastTense = "Project folder found"
+      ),
+      subSteps = list(
+        list(
+          key = "build-tree",
+          message = list(
+            imperative = "Crawl project folder and construct file tree",
+            pastTense = "Project folder crawled and file tree constructed"
+          )
+        )
+      )
+    ),
+    list(
+      key = "find-metadata",
+      message = list(
+        imperative = "Find metadata file",
+        pastTense = 'Metadata file "dataset_description.json" found'
+      ),
+      subSteps = list()
+    ),
+    list(
+      key = "find-data-dir",
+      message = list(
+        imperative = 'Find "data" subfolder',
+        pastTense = '"data" subfolder found'
+      ),
+      subSteps = list()
+    ),
+    list(
+      key = "parse-metadata",
+      message = list(
+        imperative = 'Parse metadata file',
+        pastTense = 'Metadata file parsed successfully'
+      ),
+      subSteps = list(
+        list(
+          key = "metadata-utf8",
+          message = list(
+            imperative = "Check metadata file for utf-8 encoding",
+            pastTense = "Metadata file is utf-8 encoded"
+          )
+        ),
+        list(
+          key = "metadata-json",
+          message = list(
+            imperative = "Parse metadata file as JSON",
+            pastTense = "Metadata file parsed successfully"
+          )
+        ),
+        list(
+          key = "metadata-jsonld",
+          message = list(
+            imperative = "Validate metadata file as JSON-LD",
+            pastTense = "Metadata file is valid JSON-LD"
+          )
+        ),
+        list(
+          key = "metadata-fields",
+          message = list(
+            imperative = 'Check metadata file for required fields',
+            pastTense = 'Metadata file contains required fields'
+          )
+        ),
+        list(
+          key = "metadata-type",
+          message = list(
+            imperative = 'Check metadata file for @type field',
+            pastTense = 'Metadata file has correct @type field'
+          )
+        )
+      )
+    ),
+    list(
+      key = "check-for-csv",
+      message = list(
+        imperative = 'Check for CSV files',
+        pastTense = 'CSV files found'
+      ),
+      subSteps = list()
+    ),
+    list(
+      key = "validate-csvs",
+      message = list(
+        imperative = 'Validate CSV files',
+        pastTense = 'CSV files validated'
+      ),
+      subSteps = list(
+        list(
+          key = "csv-keywords",
+          message = list(
+            imperative = "Check filename for keyword formatting",
+            pastTense = "Filename uses valid keyword formatting"
+          )
+        ),
+        list(
+          key = "csv-parse",
+          message = list(
+            imperative = "Parse data file as CSV",
+            pastTense = "Data file successfully parsed as CSV"
+          )
+        ),
+        list(
+          key = "csv-header",
+          message = list(
+            imperative = "Check for header line",
+            pastTense = "Header line found"
+          )
+        ),
+        list(
+          key = "csv-nomismatch",
+          message = list(
+            imperative = "Check all lines for equal number of cells",
+            pastTense = "All lines have equal number of cells"
+          )
+        ),
+        list(
+          key = "csv-rowid",
+          message = list(
+            imperative = "Check for any row_id columns with non-unique values",
+            pastTense = "All row_id columns have unique values"
+          )
+        )
+      )
+    ),
+    list(
+      key = "check-variableMeasured",
+      message = list(
+        imperative = 'Check column headers',
+        pastTense = 'Column headers validated'
+      ),
+      subSteps = list()
+    )
+  )
+  
+  div(
+    h2("Validate Dataset"),
+    p("Select a directory containing a Psych-DS dataset to validate against the schema."),
+    
+    # Directory selection section
+    div(
+      class = "section-box",
+      div(class = "section-title", "Select Dataset"),
+      div(class = "section-description",
+          "Select a Psych-DS dataset directory to validate."),
+      
+      div(
+        class = "directory-input",
+        textInput(
+          "validate_dir",
+          label = NULL,
+          value = "",
+          placeholder = "Path to Psych-DS dataset",
+          width = "100%"
+        ),
+        shinyDirButton(
+          "validate_dir_select",
+          label = "...",
+          title = "Select a dataset directory",
+          class = "browse-btn"
+        )
+      ),
+      
+      div(
+        style = "text-align: right; margin-top: 20px;",
+        # Test validation button - for quick testing with a sample dataset
+        actionButton(
+          "test_validation",
+          "Test Validation",
+          icon = icon("vial"),
+          class = "btn-info",
+          style = "margin-right: 10px;"
+        ),
+        # Main validation button
+        actionButton(
+          "validate_btn",
+          "Validate",
+          class = "continue-btn"
+        )
+      )
+    ),
+    
+    # Results section with static HTML structure
+    div(
+      class = "section-box",
+      style = "margin-top: 20px;",
+      div(class = "section-title", "Validation Results"),
+      
+      # Static validation checklist - JavaScript will update this
+      div(
+        id = ns("validation_results_ui"),
+        h3("Validation Progress"),
+        
+        div(
+          class = "validation-checklist",
+          style = "max-height: 500px; overflow-y: auto;",
+          
+          # Render all steps with their substeps using lapply for proper list handling
+          lapply(validation_steps, function(superStep) {
+            div(
+              class = "step-item",
+              `data-step-key` = superStep$key,
+              style = "margin-bottom: 15px; padding: 10px; border-radius: 5px; background-color: #f9f9f9; border: 1px solid #ddd;",
+              
+              div(
+                class = "step-header",
+                style = "font-weight: bold; display: flex; align-items: center;",
+                span(
+                  class = "step-icon",
+                  "⋯", 
+                  style = "color: #ffc107; margin-right: 10px; font-size: 18px;"
+                ),
+                span(
+                  class = "step-message",
+                  superStep$message$imperative,
+                  `data-imperative` = superStep$message$imperative,
+                  `data-past-tense` = superStep$message$pastTense
+                )
+              ),
+              
+              # Issue placeholder will be added by JavaScript when needed
+              div(class = "step-issue-container"),
+              
+              # Render substeps if any
+              if (length(superStep$subSteps) > 0) {
+                div(
+                  class = "substeps",
+                  style = "margin-top: 10px; margin-left: 20px; padding-left: 10px; border-left: 2px solid #ddd;",
+                  
+                  # Use lapply for substeps as well
+                  lapply(superStep$subSteps, function(subStep) {
+                    div(
+                      class = "substep-item",
+                      `data-step-key` = subStep$key,
+                      style = "margin-bottom: 8px; padding: 5px; display: flex; align-items: flex-start;",
+                      
+                      span(
+                        class = "step-icon",
+                        "⋯", 
+                        style = "color: #ffc107; margin-right: 10px; font-size: 14px;"
+                      ),
+                      div(
+                        style = "flex: 1;",
+                        span(
+                          class = "step-message",
+                          subStep$message$imperative,
+                          `data-imperative` = subStep$message$imperative,
+                          `data-past-tense` = subStep$message$pastTense
+                        ),
+                        # Issue placeholder for substep
+                        div(class = "step-issue-container")
+                      )
+                    )
+                  })
+                )
+              }
+            )
+          })
+        )
+      ),
+      
+      # Results summary section - will be shown/hidden by JavaScript
+      div(
+        id = ns("validation_summary"),
+        style = "display: none; margin-top: 20px;",
+        h3("Results Summary"),
+        div(
+          id = ns("summary_content"),
+          style = "padding: 15px; border-radius: 5px; background-color: #e8f5e9;"
+        )
+      )
+    )
+  )
+}

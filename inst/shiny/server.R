@@ -85,6 +85,7 @@ step_navigation <- function(id, state, session) {
   })
 }
 
+
 # Main server function
 server <- function(input, output, session) {
   # Initialize application state
@@ -93,31 +94,131 @@ server <- function(input, output, session) {
   # Add a reactive value to store the last create tab step
   last_create_step <- reactiveVal(1)
 
-  # Handle sidebar menu selection
-  observeEvent(input$sidebar, {
-    if (input$sidebar == "create") {
-      # If we're on create dataset tab, use the last remembered step
-      # instead of always defaulting to 1
-      if (!is.null(last_create_step()) && last_create_step() > 0) {
-        state$current_step <- last_create_step()
-      } else if (is.null(state$current_step) || state$current_step == 0) {
-        # Only use the default step 1 if we never set a step before
-        state$current_step <- 1
-      }
-    } else {
-      # For other tabs, remember the current step before switching away
-      if (!is.null(state$current_step) && state$current_step > 0) {
-        last_create_step(state$current_step)
-      }
+  # Track validator loading status
+  validator_status <- reactiveVal(FALSE)
 
-      # For other tabs, set current step to 0 (no step active)
-      state$current_step <- 0
+  # Observe when the validator is ready
+  observeEvent(input$validator_ready, {
+    if (input$validator_ready) {
+      validator_status(TRUE)
+      message("Validator loaded successfully and is ready to use!")
+    }
+  }, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+  # Observe validation results
+  observeEvent(input$validation_results, {
+    results <- input$validation_results
+    message("Received validation results")
+
+    # Remove the loading notification if it exists
+    removeNotification(id = "validate_notif")
+
+    # Show a success message
+    showNotification("Validation complete!", type = "message")
+
+    # Store the results in state for use in the validation module
+    state$validation_results <- results
+  }, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+  # Handle validation errors
+  observeEvent(input$validation_error, {
+    error_msg <- input$validation_error
+    warning("Validation error: ", error_msg)
+
+    # Remove the loading notification if it exists
+    removeNotification(id = "validate_notif")
+
+    showNotification(paste("Validation error:", error_msg), type = "error")
+  }, ignoreNULL = TRUE, ignoreInit = TRUE)
+
+  # Handle validator loading event
+  observeEvent(input$validator_loaded, {
+    validator_status(input$validator_loaded)
+    if (input$validator_loaded) {
+      message("JavaScript validator successfully loaded")
+    } else {
+      warning("JavaScript validator was not loaded correctly. Check validator.js file")
     }
   })
 
+  # Function to prepare and run validation
+  runValidation <- function(directory) {
+    # Check if validator is loaded
+    if (!validator_status()) {
+      showNotification("JavaScript validator not loaded", type = "error")
+      return(FALSE)
+    }
+
+    tryCatch({
+      # Prepare the file tree structure expected by the validator
+      # This is a simplified version - the real implementation would need to
+      # recursively build a proper tree structure of the directory
+      files <- list.files(directory, recursive = TRUE)
+      file_tree <- list()
+
+      # Build a simple file tree structure for testing
+      for (file in files) {
+        file_tree[[file]] <- list(
+          type = "file",
+          file = list(
+            name = basename(file),
+            path = file,
+            text = function() {
+              # This would be a promise in the real implementation
+              return(readLines(file.path(directory, file), warn = FALSE))
+            }
+          )
+        )
+      }
+
+      # Send the file tree to the JavaScript validator
+      session$sendCustomMessage("run_validation", file_tree)
+      return(TRUE)
+    }, error = function(e) {
+      showNotification(paste("Error preparing validation:", e$message), type = "error")
+      return(FALSE)
+    })
+  }
+
+  # Handle sidebar menu selection
+  observeEvent(input$sidebar, {
+  if (input$sidebar == "create") {
+    # If we're on create dataset tab, use the last remembered step
+    # instead of always defaulting to 1
+    if (!is.null(last_create_step()) && last_create_step() > 0) {
+      state$current_step <- last_create_step()
+    } else if (is.null(state$current_step) || state$current_step == 0) {
+      # Only use the default step 1 if we never set a step before
+      state$current_step <- 1
+    }
+  } else if (input$sidebar == "validate") {
+    # For validate tab, set the validation directory to the created dataset if available
+    if (!is.null(state$created_dataset_dir) && state$created_dataset_dir != "" && dir.exists(state$created_dataset_dir)) {
+      updateTextInput(session, "validate_dir", value = state$created_dataset_dir)
+      
+      # Also reset the validation UI
+      session$sendCustomMessage("reset_validation_ui", list())
+    }
+    
+    # For tabs other than create, remember the current step before switching away
+    if (!is.null(state$current_step) && state$current_step > 0) {
+      last_create_step(state$current_step)
+    }
+    
+    # Set current step to 0 (no step active)
+    state$current_step <- 0
+  } else {
+    # For other tabs, remember the current step before switching away
+    if (!is.null(state$current_step) && state$current_step > 0) {
+      last_create_step(state$current_step)
+    }
+
+    # For other tabs, set current step to 0 (no step active)
+    state$current_step <- 0
+  }
+})
+
   stepNavServer <- step_navigation("step_nav", state, session)
-
-
 
   # Dynamically render the Create Dataset UI based on current step
   output$create_dataset_ui <- renderUI({
@@ -136,6 +237,10 @@ server <- function(input, output, session) {
   step2Server("step2", state, session)
   step3Server("step3", state, session)
 
+  # Initialize validation module
+  validateServer("validate_dataset", state, session)
+
+
   # Handle Validate Dataset tab
   volumes <- c(Home = "~")
   if (.Platform$OS.type == "windows") {
@@ -152,35 +257,106 @@ server <- function(input, output, session) {
   )
 
   observeEvent(input$validate_dir_select, {
+    if (!is.null(input$validate_dir) && input$validate_dir != "") {
+    # Send a message to JavaScript to reset the checklist
+    session$sendCustomMessage("reset_validation_ui", list())
+    }
     if (!is.null(input$validate_dir_select)) {
       selected_dir <- parseDirPath(volumes, input$validate_dir_select)
       updateTextInput(session, "validate_dir", value = selected_dir)
     }
   })
 
-  observeEvent(input$validate_btn, {
-    if (input$validate_dir == "") {
-      showModal(modalDialog(
-        title = "Error",
-        "Please select a dataset directory first.",
-        easyClose = TRUE,
-        footer = modalButton("OK")
-      ))
-    } else {
-      # In a real implementation, this would validate the dataset
-      # For now, just show a placeholder
-      showModal(modalDialog(
-        title = "Validation Results",
-        div(
-          p("Dataset validation would run here."),
-          p("The selected directory is:"),
-          p(strong(input$validate_dir))
-        ),
-        easyClose = TRUE,
-        footer = modalButton("Close")
-      ))
-    }
+  # Modify your validate_btn event handler
+observeEvent(input$validate_btn, {
+  if (input$validate_dir == "") {
+    showModal(modalDialog(
+      title = "Error",
+      "Please select a dataset directory first.",
+      easyClose = TRUE,
+      footer = modalButton("OK")
+    ))
+  } else {
+    withProgress(message = "Validating dataset...", value = 0.1, {
+      if (!dir.exists(input$validate_dir)) {
+        setProgress(1)
+        showNotification("Directory does not exist", type = "error")
+        return()
+      }
+      
+      setProgress(0.3, detail = "Building file tree...")
+      tryCatch({
+        # Build the file tree
+        fileTree <- buildFileTree(input$validate_dir)
+        
+        # Basic validation of the tree
+        if (length(fileTree) == 0) {
+          setProgress(1)
+          showNotification("No files found in directory", type = "error")
+          return()
+        }
+        
+        # Send to the validator
+        setProgress(0.6, detail = "Running validator...")
+        message("Sending file tree to validator with ", length(fileTree), " top-level entries")
+        session$sendCustomMessage("run_validation", fileTree)
+        
+      }, error = function(e) {
+        setProgress(1)
+        message("Error during validation: ", e$message)
+        showNotification(paste("Error during validation:", e$message), type = "error")
+      })
+    })
+  }
+})
+
+observeEvent(input$test_validation, {
+  # Create a test file tree
+  testTree <- createTestFileTree()
+  
+  # Show a validation in progress notification
+  withProgress(message = "Testing validation with basic data...", value = 0.2, {
+    # Log the tree
+    message("Created test file tree with ", length(testTree), " top-level entries")
+    message("Test tree contains: ", paste(names(testTree), collapse = ", "))
+    
+    # Send the test tree for validation
+    session$sendCustomMessage("run_validation", testTree)
+    
+    # Increment progress
+    setProgress(0.8, detail = "Validation in progress...")
   })
+})
+
+observeEvent(input$validation_results, {
+  if (is.null(input$validation_results)) return()
+  
+  results <- input$validation_results
+  message("Received validation results: valid=", results$valid)
+  
+  # Store results in state for the validation module to use
+  state$validation_results <- results
+  
+  # Show notification
+  showNotification(
+    ifelse(results$valid, 
+           "Dataset is valid!", 
+           "Dataset has issues - see details below"),
+    type = ifelse(results$valid, "message", "warning"),
+    duration = 5
+  )
+}, ignoreNULL = TRUE)
+
+
+
+# Handle validation step updates
+observeEvent(input$validation_step_status, {
+  status_data <- input$validation_step_status
+  message("Validation step status updated:", capture.output(str(status_data)))
+  
+  # Store step status for UI updates
+  state$validation_step_status <- status_data
+}, ignoreNULL = TRUE, ignoreInit = TRUE)
 
   # Handle Update Dictionary tab
   # Set up directory selection for dictionary tab
