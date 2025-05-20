@@ -3,8 +3,6 @@
 #' This file contains server-side logic for the modular UI components.
 #' Each module handles its own state and communicates with the global state.
 
-source(file.path(getwd(), "validation.R"))
-
 #' Directory Input Server Module - Fixed Version
 #'
 #' Handles directory selection and validation
