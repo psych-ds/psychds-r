@@ -866,3 +866,36 @@ table.dataTable tbody tr:hover {
   border: 1px dashed #3498db !important;
   border-radius: 15px !important;
 }
+
+.valid-status {
+  background-color: #e6ffe6;
+  padding: 10px;
+  border-radius: 5px;
+  margin-bottom: 15px;
+}
+
+.invalid-status {
+  background-color: #ffe6e6;
+  padding: 10px;
+  border-radius: 5px;
+  margin-bottom: 15px;
+}
+
+.validation-issue {
+  margin-bottom: 15px;
+  padding: 10px;
+  border-left: 4px solid #ddd;
+}
+
+.validation-summary {
+  margin-top: 15px;
+  padding: 10px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+}
+
+.evidence {
+  margin-left: 20px;
+  font-style: italic;
+  color: #666;
+}

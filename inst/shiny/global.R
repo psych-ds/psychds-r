@@ -254,3 +254,282 @@ organize_directory_hierarchy <- function(files) {
 
   return(result)
 }
+
+#' Correct Recursive File Tree Builder
+#'
+#' Recursively builds a nested file tree that persists changes to the main list.
+#'
+#' @param directory Path to the dataset directory
+#' @return List representing the file tree
+buildFileTree <- function(directory) {
+  # Normalize and verify the directory path
+  directory <- normalizePath(directory, mustWork = TRUE)
+  message("Building file tree for: ", directory)
+
+  # Helper to read file content - only for allowed text file types
+  readFileText <- function(path) {
+    # Only attempt to read contents for CSV and JSON files
+    file_ext <- tolower(tools::file_ext(path))
+    if (file_ext %in% c("csv", "json", "md", "txt")) {
+      tryCatch({
+        paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+      }, error = function(e) {
+        message("Error reading file: ", path, " - ", e$message)
+        ""
+      })
+    } else {
+      # For non-text files, return empty string
+      message("Skipping content read for non-text file: ", path)
+      ""
+    }
+  }
+
+  # Recursive helper to insert file into nested list
+  insertIntoTree <- function(tree, parts, fileInfo) {
+    part <- parts[[1]]
+    if (length(parts) == 1) {
+      # We're at the file level
+      tree[[part]] <- list(
+        type = "file",
+        file = fileInfo
+      )
+      return(tree)
+    } else {
+      # We're at a directory level
+      if (is.null(tree[[part]])) {
+        tree[[part]] <- list(
+          type = "directory",
+          contents = list()
+        )
+      }
+      tree[[part]]$contents <- insertIntoTree(tree[[part]]$contents, parts[-1], fileInfo)
+      return(tree)
+    }
+  }
+
+  fileTree <- list()
+
+  allFiles <- list.files(directory, recursive = TRUE, full.names = TRUE)
+  message("Found ", length(allFiles), " files")
+
+  for (filePath in allFiles) {
+    if (dir.exists(filePath)) next
+
+    relPath <- sub(paste0("^", directory, "/?"), "", filePath)
+    relPath <- gsub("\\\\", "/", relPath)
+    parts <- strsplit(relPath, "/")[[1]]
+
+    fileName <- parts[[length(parts)]]
+
+    fileInfo <- list(
+      name = fileName,
+      path = paste0("/", relPath),
+      text = readFileText(filePath)
+    )
+
+    fileTree <- insertIntoTree(fileTree, parts, fileInfo)
+
+    message("Added file: ", fileName, " to path: ", paste(parts[-length(parts)], collapse = "/"))
+  }
+
+  message("✅ File tree built with ", length(fileTree), " top-level entries")
+  return(fileTree)
+}
+
+#' Summarize a directory's contents
+#'
+#' @param contents Directory contents
+#' @return Named list with counts of files and directories
+summarizeDirectory <- function(contents) {
+  files <- 0
+  dirs <- 0
+  totalItems <- 0
+  
+  # Recursive helper function
+  countItems <- function(items) {
+    if (is.null(items) || length(items) == 0) return()
+    
+    for (name in names(items)) {
+      item <- items[[name]]
+      if (identical(item$type, "directory")) {
+        dirs <<- dirs + 1
+        totalItems <<- totalItems + 1
+        countItems(item[["contents"]])
+      } else if (identical(item$type, "file")) {
+        files <<- files + 1
+        totalItems <<- totalItems + 1
+      }
+    }
+  }
+  
+  # Count items
+  countItems(contents)
+  
+  # Return summary
+  return(list(
+    files = files,
+    dirs = dirs,
+    total = totalItems
+  ))
+}
+
+#' Print a comprehensive visualization of the file tree
+#'
+#' @param tree File tree structure
+#' @param prefix Prefix for indentation (used in recursion)
+#' @param isLast Whether the current item is the last in its list (used in recursion)
+#' @return None, prints to console
+printFileTree <- function(tree, prefix = "", isLast = TRUE) {
+  if (is.null(tree) || length(tree) == 0) return()
+  
+  # Get all names and iterate
+  names <- names(tree)
+  for (i in seq_along(names)) {
+    name <- names[i]
+    item <- tree[[name]]
+    isLastItem <- (i == length(names))
+    
+    # Print the current item
+    cat(prefix)
+    if (isLast && isLastItem) {
+      cat("└── ")
+      newPrefix <- paste0(prefix, "    ")
+    } else {
+      cat("├── ")
+      newPrefix <- paste0(prefix, "│   ")
+    }
+    
+    if (identical(item$type, "directory")) {
+      cat(crayon::blue(name), "\n")
+      # Recursively print contents
+      printFileTree(item[["contents"]], newPrefix, isLastItem)
+    } else {
+      cat(name, "\n")
+    }
+  }
+}
+
+#' Validate the file tree structure
+#'
+#' @param fileTree The file tree to validate
+#' @return Logical indicating if the structure is valid
+validateFileTree <- function(fileTree) {
+  # Count files and directories
+  fileCount <- 0
+  dirCount <- 0
+  nestedFileCount <- 0
+  
+  # Helper function to recursively count items
+  countItems <- function(node) {
+    if (is.null(node) || length(node) == 0) return()
+    
+    for (name in names(node)) {
+      item <- node[[name]]
+      if (identical(item$type, "directory")) {
+        dirCount <<- dirCount + 1
+        # Recursively count items in the directory
+        countItems(item[["contents"]])
+      } else if (identical(item$type, "file")) {
+        if (identical(node, fileTree)) {
+          fileCount <<- fileCount + 1
+        } else {
+          nestedFileCount <<- nestedFileCount + 1
+        }
+      }
+    }
+  }
+  
+  # Count everything
+  countItems(fileTree)
+  
+  # Print results
+  cat("File Tree Validation Results:\n")
+  cat("----------------------------\n")
+  cat("Top-level directories:", dirCount, "\n")
+  cat("Top-level files:", fileCount, "\n")
+  cat("Nested files:", nestedFileCount, "\n")
+  cat("Total items:", dirCount + fileCount + nestedFileCount, "\n\n")
+  
+  # Show first level of tree
+  cat("Top-level structure:\n")
+  for (name in names(fileTree)) {
+    item <- fileTree[[name]]
+    if (identical(item$type, "directory")) {
+      itemCount <- length(item[["contents"]])
+      cat(sprintf("📁 %s (%d items)\n", name, itemCount))
+    } else {
+      cat(sprintf("📄 %s\n", name))
+    }
+  }
+  
+  # Return TRUE if structure looks good
+  return(dirCount > 0 && (fileCount + nestedFileCount) > 0)
+}
+
+createTestFileTree <- function() {
+  # This time using string values instead of functions
+  fileTree <- list(
+    `dataset_description.json` = list(
+      type = "file",
+      file = list(
+        name = "dataset_description.json",
+        path = "/dataset_description.json",
+        text = '{"name":"Test Dataset","description":"A test dataset","@type":"Dataset","@context":"https://schema.org","variableMeasured":[{"name":"id"},{"name":"value"}]}'
+      )
+    ),
+    
+    `README.md` = list(
+      type = "file",
+      file = list(
+        name = "README.md",
+        path = "/README.md",
+        text = '# Test Dataset\nThis is a test dataset for validation.'
+      )
+    ),
+    
+    `CHANGES.md` = list(
+      type = "file",
+      file = list(
+        name = "CHANGES.md",
+        path = "/CHANGES.md",
+        text = '# Changes\n- Initial version'
+      )
+    ),
+    
+    `data` = list(
+      type = "directory",
+      contents = list(
+        `sub-01_task-test_data.csv` = list(
+          type = "file",
+          file = list(
+            name = "sub-01_task-test_data.csv",
+            path = "/data/sub-01_task-test_data.csv",
+            text = 'id,value\n1,10\n2,20'
+          )
+        )
+      )
+    ),
+    
+    `analysis` = list(
+      type = "directory",
+      contents = list()
+    ),
+    
+    `results` = list(
+      type = "directory",
+      contents = list()
+    ),
+    
+    `materials` = list(
+      type = "directory",
+      contents = list()
+    ),
+    
+    `documentation` = list(
+      type = "directory",
+      contents = list()
+    )
+  )
+  
+  return(fileTree)
+}
