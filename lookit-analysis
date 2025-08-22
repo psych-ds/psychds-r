@@ -1,0 +1,1496 @@
+---
+title: "Psych-DS Overview Analysis Report"
+subtitle: "Participant Demographics & Study Summary"
+author: "Brian Leonard"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: cosmo
+    highlight: tango
+    code_folding: hide
+    df_print: paged
+  pdf_document:
+    toc: true
+params:
+  study_name: "Your Study Name"
+  data_directory: ""  # Will be set interactively
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 10,
+  fig.height = 6
+)
+
+# Load required libraries
+library(tidyverse)
+library(jsonlite)
+library(janitor)
+library(lubridate)
+library(DT)
+library(plotly)
+library(viridis)
+library(knitr)
+library(kableExtra)
+library(ggplot2)
+library(patchwork)
+
+# Set theme for all plots
+theme_set(theme_minimal() + 
+          theme(plot.title = element_text(face = "bold"),
+                legend.position = "bottom"))
+
+# Color palette
+colors <- c("#2E7D32", "#1976D2", "#F57C00", "#7B1FA2", "#C62828", 
+            "#00796B", "#5D4037", "#455A64", "#FF6F00", "#4527A0")
+```
+
+```{r setup-paths, include=FALSE}
+# Flexible setup that works whether the Rmd is in root directory or analysis/ subdirectory
+# This allows the workflow: Download data → Place Rmd in root OR analysis/ → Knit
+
+# Start with current directory
+current_dir <- getwd()
+
+# Function to find the root directory containing the data
+find_data_root <- function(start_dir) {
+  # Check if data directory exists in current location
+  if (dir.exists(file.path(start_dir, "data"))) {
+    return(start_dir)
+  }
+  
+  # Check if we're in analysis/ and data is one level up
+  parent_dir <- dirname(start_dir)
+  if (dir.exists(file.path(parent_dir, "data"))) {
+    return(parent_dir)
+  }
+  
+  # If neither location has data, return NULL
+  return(NULL)
+}
+
+# Find the root directory
+root_dir <- find_data_root(current_dir)
+
+if (is.null(root_dir)) {
+  stop(paste(
+    "Could not locate the data directory.\n",
+    "Please ensure this Rmd file is placed either:\n",
+    "  • In the root directory (next to the data/ folder), OR\n",
+    "  • In an analysis/ subdirectory within the root\n\n",
+    "Current directory:", current_dir, "\n",
+    "Expected data directory locations:\n",
+    "  •", file.path(current_dir, "data"), "\n",
+    "  •", file.path(dirname(current_dir), "data")
+  ))
+}
+
+# Set up standard Psych-DS paths
+paths <- list(
+  root = root_dir,
+  data = file.path(root_dir, "data"),
+  overview = file.path(root_dir, "data", "overview"),
+  demographic = file.path(root_dir, "data", "demographic"),
+  analysis = file.path(root_dir, "analysis")  # Always create analysis in root
+)
+
+# Create analysis directory if it doesn't exist
+dir.create(paths$analysis, showWarnings = FALSE, recursive = TRUE)
+
+# Verify we're in the right place by checking for Psych-DS indicators
+psych_ds_indicators <- c(
+  file.exists(file.path(root_dir, "dataset_description.json")),
+  dir.exists(paths$overview),
+  dir.exists(paths$data),
+  length(list.files(root_dir, pattern = "_data\\.csv$", recursive = TRUE)) > 0
+)
+
+if (!any(psych_ds_indicators)) {
+  stop(paste(
+    "This doesn't appear to be a Lookit/Psych-DS data directory.\n",
+    "The root directory should contain:\n",
+    "  • dataset_description.json file\n",
+    "  • data/ subdirectory with overview/ folder\n",
+    "  • CSV files with '_data.csv' in the name\n\n",
+    "Found root directory:", root_dir, "\n",
+    "Current working directory:", current_dir
+  ))
+}
+
+# Verify overview directory exists
+if (!dir.exists(paths$overview)) {
+  stop(paste(
+    "Overview directory not found at:", paths$overview, "\n",
+    "Please ensure your Lookit data download is complete and unzipped properly."
+  ))
+}
+
+# Report where we found everything
+cat("✅ Lookit data directory detected\n")
+cat(paste("📁 Root directory:", root_dir, "\n"))
+cat(paste("📊 Overview data:", paths$overview, "\n"))
+cat(paste("📈 Analysis directory:", paths$analysis, "\n"))
+
+if (current_dir != root_dir) {
+  cat(paste("📍 Running from:", basename(current_dir), "subdirectory\n"))
+} else {
+  cat("📍 Running from root directory\n")
+}
+```
+
+# 📊 Lookit Data Analysis Report
+
+
+**Instructions for Use:**
+
+1. Download your study data from Lookit (it will be a zip file)
+
+2. Unzip the data to create a folder with your study files
+
+3. This file should already be downloaded in your `analysis` folder. If not, Save this Rmd file in **either location**:
+   - **Root directory** (next to `dataset_description.json` and `data/` folder), OR
+   - **Analysis subdirectory** (create an `analysis/` folder and place the Rmd there)
+   
+4. Click "Knit" to generate your analysis report
+
+This analysis focuses on participant demographics and overall study statistics using the overview data files from your Lookit study. The script will automatically detect whether you're running from the root or analysis directory.
+
+## Study Information
+
+```{r load-metadata, results='asis'}
+# Load global metadata
+metadata_file <- file.path(paths$root, "dataset_description.json")
+if (file.exists(metadata_file)) {
+  global_metadata <- fromJSON(metadata_file, flatten = TRUE)
+  
+  # Create a nice summary table
+  metadata_summary <- tibble(
+    Field = c("Study Name", "Description", "Schema Version", "Date Created", "Total Variables"),
+    Value = c(
+      global_metadata$name %||% "Not specified",
+      substr(global_metadata$description %||% "Not specified", 1, 200),
+      global_metadata$schemaVersion %||% "Not specified",
+      as.character(global_metadata$dateCreated %||% Sys.Date()),
+      length(global_metadata$variableMeasured) %||% 0
+    )
+  )
+  
+  metadata_summary %>%
+    kable(format = "html", escape = FALSE) %>%
+    kable_styling(bootstrap_options = c("striped", "hover"), 
+                  full_width = FALSE,
+                  position = "left") %>%
+    column_spec(1, bold = TRUE, width = "200px") %>%
+    column_spec(2, width = "600px")
+} else {
+  cat("⚠️ No dataset_description.json found. Please ensure you have a valid Psych-DS dataset.")
+}
+```
+
+# 🔍 Data Loading & Structure
+
+```{r load-overview-data, results='hide'}
+# Load overview files
+overview_files <- list.files(paths$overview, pattern = "_data\\.csv$", full.names = TRUE)
+
+if (length(overview_files) == 0) {
+  stop("No overview data files found. Please check your data directory structure.")
+}
+
+# Load all overview data
+overview_data <- map(overview_files, function(file) {
+  read_csv(file, show_col_types = FALSE) %>% clean_names()
+})
+names(overview_data) <- basename(overview_files)
+
+# Identify children and responses files
+children_file <- overview_data[[which(str_detect(names(overview_data), "children"))]]
+responses_file <- overview_data[[which(str_detect(names(overview_data), "responses"))]]
+
+cat("✅ Loaded overview data files:\n")
+for (i in seq_along(overview_data)) {
+  cat(paste("  •", names(overview_data)[i], "-", nrow(overview_data[[i]]), "rows\n"))
+}
+```
+
+## Data Summary Statistics
+
+```{r data-summary}
+# Calculate summary statistics from overview data
+if (!is.null(children_file) && !is.null(responses_file)) {
+  summary_stats <- list(
+    "Total Children" = nrow(children_file),
+    "Total Responses" = nrow(responses_file),
+    "Completed Responses" = sum(responses_file$response_completed == TRUE, na.rm = TRUE),
+    "Unique Participants" = n_distinct(responses_file$participant_hashed_id),
+    "Preview Responses" = sum(responses_file$response_is_preview == TRUE, na.rm = TRUE),
+    "Withdrawn Responses" = sum(responses_file$response_withdrawn == TRUE, na.rm = TRUE)
+  )
+} else if (!is.null(responses_file)) {
+  summary_stats <- list(
+    "Total Responses" = nrow(responses_file),
+    "Completed Responses" = sum(responses_file$response_completed == TRUE, na.rm = TRUE),
+    "Unique Participants" = n_distinct(responses_file$participant_hashed_id),
+    "Preview Responses" = sum(responses_file$response_is_preview == TRUE, na.rm = TRUE),
+    "Withdrawn Responses" = sum(responses_file$response_withdrawn == TRUE, na.rm = TRUE),
+    "Data Files Processed" = length(overview_files)
+  )
+} else {
+  summary_stats <- list(
+    "Data Files Found" = length(overview_files),
+    "Total Rows" = sum(map_dbl(overview_data, nrow))
+  )
+}
+
+# Create summary display
+summary_df <- tibble(
+  Metric = names(summary_stats),
+  Value = as.character(summary_stats)
+)
+
+summary_df %>%
+  kable(format = "html", col.names = NULL) %>%
+  kable_styling(bootstrap_options = c("striped"), full_width = FALSE) %>%
+  column_spec(1, bold = TRUE, color = "white", background = "#1976D2") %>%
+  column_spec(2, bold = TRUE, background = "#E3F2FD")
+```
+
+# 👥 Participant Demographics
+
+## Age Distribution
+
+```{r age-analysis, fig.height=8}
+# Find age data in overview files
+age_data <- NULL
+
+# First try children file
+if (!is.null(children_file)) {
+  age_data <- children_file
+  data_source <- "children file"
+} else if (!is.null(responses_file)) {
+  age_data <- responses_file
+  data_source <- "responses file"
+}
+
+if (!is.null(age_data) && nrow(age_data) > 0) {
+  
+  # First, check what age columns we actually have
+  age_columns <- names(age_data)[str_detect(names(age_data), "age|birth")]
+  cat("📋 Available age-related columns:", paste(age_columns, collapse = ", "), "\n\n")
+  
+  # Process age data - look for various age columns that actually exist
+  age_processed <- age_data
+  
+  # Initialize age columns
+  age_processed$age_days <- NA_real_
+  age_processed$age_months <- NA_real_
+  age_processed$age_years <- NA_real_
+  
+  # Try different age column patterns
+  if ("child_age_in_days" %in% names(age_data)) {
+    age_processed$age_days <- as.numeric(age_processed$child_age_in_days)
+    age_processed$age_months <- age_processed$age_days / 30.44
+    cat("✅ Using child_age_in_days column\n")
+  } else if ("child_age_rounded" %in% names(age_data)) {
+    # child_age_rounded is typically in days
+    age_processed$age_days <- as.numeric(age_processed$child_age_rounded)
+    age_processed$age_months <- age_processed$age_days / 30.44
+    cat("✅ Using child_age_rounded column (assuming days)\n")
+  } else {
+    cat("⚠️ No recognized age columns found\n")
+  }
+  
+  # Calculate age years and groups with smart bucketing
+  age_processed <- age_processed %>%
+    mutate(
+      age_years = age_months / 12,
+      # Smart age grouping: 3-month buckets up to 24 months, then yearly
+      age_group = case_when(
+        is.na(age_months) ~ "Unknown",
+        age_months < 3 ~ "0-2 months",
+        age_months < 6 ~ "3-5 months", 
+        age_months < 9 ~ "6-8 months",
+        age_months < 12 ~ "9-11 months",
+        age_months < 15 ~ "12-14 months",
+        age_months < 18 ~ "15-17 months",
+        age_months < 21 ~ "18-20 months",
+        age_months < 24 ~ "21-23 months",
+        age_months < 36 ~ "2 years",
+        age_months < 48 ~ "3 years",
+        age_months < 60 ~ "4 years",
+        age_months < 72 ~ "5 years",
+        age_months < 84 ~ "6 years",
+        age_months < 96 ~ "7 years",
+        age_months < 108 ~ "8 years",
+        age_months < 120 ~ "9 years",
+        TRUE ~ "10+ years"
+      )
+    ) %>%
+    filter(!is.na(age_months) & age_months > 0 & age_months < 240)
+  
+  # Create adaptive age groups based on actual data distribution
+  if (nrow(age_processed) > 0) {
+    min_age <- min(age_processed$age_months)
+    max_age <- max(age_processed$age_months)
+    age_range <- max_age - min_age
+    
+    # For very narrow age ranges (< 6 months), create meaningful sub-month groups
+    if (age_range < 6) {
+      # Create groups based on weeks/half-months for very narrow studies
+      age_processed <- age_processed %>%
+        mutate(
+          adaptive_age_group = case_when(
+            age_months < min_age + 0.5 ~ paste0(floor(min_age), ".0-", floor(min_age), ".5 months"),
+            age_months < min_age + 1.0 ~ paste0(floor(min_age), ".5-", floor(min_age + 1), ".0 months"),
+            age_months < min_age + 1.5 ~ paste0(floor(min_age + 1), ".0-", floor(min_age + 1), ".5 months"),
+            age_months < min_age + 2.0 ~ paste0(floor(min_age + 1), ".5-", floor(min_age + 2), ".0 months"),
+            age_months < min_age + 2.5 ~ paste0(floor(min_age + 2), ".0-", floor(min_age + 2), ".5 months"),
+            TRUE ~ paste0(floor(min_age + 2), ".5-", ceiling(max_age), ".0 months")
+          )
+        )
+    } else if (age_range < 12) {
+      # For narrow ranges, use 2-month groups
+      age_processed <- age_processed %>%
+        mutate(
+          adaptive_age_group = case_when(
+            age_months < ceiling(min_age/2)*2 + 2 ~ paste0(floor(min_age), "-", ceiling(min_age/2)*2 + 1, " months"),
+            age_months < ceiling(min_age/2)*2 + 4 ~ paste0(ceiling(min_age/2)*2 + 2, "-", ceiling(min_age/2)*2 + 3, " months"), 
+            age_months < ceiling(min_age/2)*2 + 6 ~ paste0(ceiling(min_age/2)*2 + 4, "-", ceiling(min_age/2)*2 + 5, " months"),
+            TRUE ~ paste0(ceiling(min_age/2)*2 + 6, "-", ceiling(max_age), " months")
+          )
+        )
+    } else {
+      # Use the standard smart grouping for wider ranges
+      age_processed$adaptive_age_group <- age_processed$age_group
+    }
+  }
+  
+  if (nrow(age_processed) > 0) {
+    # Calculate detailed statistics
+    cat("📊 Age Distribution Statistics:\n")
+    cat(paste("  • Data source:", data_source, "\n"))
+    cat(paste("  • Sample size:", nrow(age_processed), "children\n"))
+    cat(paste("  • Mean age:", round(mean(age_processed$age_months, na.rm = TRUE), 1), "months (", 
+              round(mean(age_processed$age_years, na.rm = TRUE), 2), "years)\n"))
+    cat(paste("  • Median age:", round(median(age_processed$age_months, na.rm = TRUE), 1), "months\n"))
+    cat(paste("  • Age range:", round(min_age, 1), "-", round(max_age, 1), "months\n"))
+    cat(paste("  • Standard deviation:", round(sd(age_processed$age_months, na.rm = TRUE), 1), "months\n"))
+    cat(paste("  • Age span covered:", round(age_range, 1), "months\n"))
+    
+    
+    cat("\n")
+    
+    # Age distribution histogram with better binning
+    # Calculate optimal bin width based on data range
+    age_range <- max(age_processed$age_months) - min(age_processed$age_months)
+    bin_width <- case_when(
+      age_range < 2 ~ 0.2,     # Very narrow: 0.2 month bins (about 6 days)
+      age_range < 6 ~ 0.5,     # Narrow: 0.5 month bins (about 2 weeks)  
+      age_range < 12 ~ 1,      # Moderate: 1 month bins
+      age_range < 36 ~ 3,      # Wide: 3 month bins
+      TRUE ~ 6                 # Very wide: 6 month bins
+    )
+    
+    # Set reasonable axis breaks
+    if (age_range < 6) {
+      x_breaks <- seq(floor(min(age_processed$age_months)), 
+                      ceiling(max(age_processed$age_months)), by = 0.5)
+    } else if (age_range < 24) {
+      x_breaks <- seq(floor(min(age_processed$age_months)), 
+                      ceiling(max(age_processed$age_months)), by = 3)
+    } else {
+      x_breaks <- seq(floor(min(age_processed$age_months)), 
+                      ceiling(max(age_processed$age_months)), by = 12)
+    }
+    
+    p1 <- ggplot(age_processed, aes(x = age_months)) +
+      geom_histogram(binwidth = bin_width, fill = colors[3], alpha = 0.8, color = "white") +
+      geom_vline(aes(xintercept = mean(age_months, na.rm = TRUE)), 
+                 color = "red", linetype = "dashed", size = 1) +
+      geom_vline(aes(xintercept = median(age_months, na.rm = TRUE)), 
+                 color = "blue", linetype = "dashed", size = 1) +
+      labs(title = "Age Distribution of Participants",
+           subtitle = paste("Red line = mean, Blue line = median | Bin width:", bin_width, "months"),
+           x = "Age (months)",
+           y = "Number of Children") +
+      scale_x_continuous(breaks = x_breaks) +
+      theme_minimal() +
+      theme(
+        plot.margin = margin(20, 20, 20, 20),
+        axis.text.x = element_text(angle = 0, hjust = 0.5, size = 10)
+      )
+    
+    # Age groups bar chart - ordered by age, not count
+    age_group_summary <- age_processed %>%
+      count(adaptive_age_group) %>%
+      mutate(percentage = n / sum(n) * 100)
+    
+    # Create ordered factor based on age progression
+    age_order <- c("0-2 months", "3-5 months", "6-8 months", "9-11 months", 
+                   "12-14 months", "15-17 months", "18-20 months", "21-23 months",
+                   "2 years", "3 years", "4 years", "5 years", "6 years", 
+                   "7 years", "8 years", "9 years", "10+ years")
+    
+    # Filter to only include age groups that exist in the data and preserve order
+    existing_age_groups <- intersect(age_order, age_group_summary$adaptive_age_group)
+    
+    # Add any age groups not in our predefined order (for adaptive grouping) at the end
+    additional_groups <- setdiff(age_group_summary$adaptive_age_group, age_order)
+    final_age_order <- c(existing_age_groups, sort(additional_groups))
+    
+    age_group_summary$adaptive_age_group <- factor(age_group_summary$adaptive_age_group, 
+                                                   levels = final_age_order)
+    
+    p2 <- ggplot(age_group_summary, aes(x = adaptive_age_group, y = n, fill = adaptive_age_group)) +
+      geom_col(alpha = 0.8) +
+      geom_text(aes(label = paste0(n, "\n(", round(percentage, 1), "%)")), 
+                hjust = -0.1, size = 3) +
+      coord_flip() +
+      scale_fill_viridis_d() +
+      labs(title = "Participants by Age Group",
+           subtitle = paste("Ordered by age progression | Study range:", 
+                           round(min_age, 1), "-", round(max_age, 1), "months"),
+           x = "Age Group",
+           y = "Number of Children") +
+      theme_minimal() +
+      theme(
+        legend.position = "none",
+        plot.margin = margin(20, 20, 20, 20)
+      ) +
+      expand_limits(y = max(age_group_summary$n) * 1.15)
+    
+    
+    # Display plots with full width
+    print(p1)  # Histogram full width
+    print(p2)  # Age groups full width  
+    # Age by Gender Cross-tabulation
+    if ("child_gender" %in% names(age_processed)) {
+      # Create cross-tabulation data
+      age_gender_crosstab <- age_processed %>%
+        mutate(
+          gender_label = case_when(
+            child_gender == "f" ~ "Female",
+            child_gender == "m" ~ "Male", 
+            child_gender == "o" ~ "Other",
+            child_gender == "na" ~ "Not specified",
+            TRUE ~ as.character(child_gender)
+          )
+        ) %>%
+        count(adaptive_age_group, gender_label) %>%
+        pivot_wider(names_from = gender_label, values_from = n, values_fill = 0) %>%
+        arrange(adaptive_age_group)
+      
+      # Add row totals
+      if (ncol(age_gender_crosstab) > 1) {
+        age_gender_crosstab <- age_gender_crosstab %>%
+          rowwise() %>%
+          mutate(Total = sum(c_across(-adaptive_age_group), na.rm = TRUE)) %>%
+          ungroup()
+        
+        # Add column totals
+        totals_row <- age_gender_crosstab %>%
+          summarise(
+            adaptive_age_group = "Total",
+            across(-adaptive_age_group, sum, na.rm = TRUE)
+          )
+        
+        age_gender_crosstab <- bind_rows(age_gender_crosstab, totals_row)
+        
+        # Create interactive table
+        datatable(age_gender_crosstab,
+                  options = list(
+                    pageLength = 20,
+                    scrollX = TRUE,
+                    dom = 'Bfrtip',
+                    buttons = c('copy', 'csv', 'excel')
+                  ),
+                  caption = "Participant Count by Age Group and Gender",
+                  colnames = c("Age Group" = "adaptive_age_group")) %>%
+          formatStyle(
+            "Total",
+            backgroundColor = "#e3f2fd",
+            fontWeight = "bold"
+          ) %>%
+          formatStyle(
+            1:nrow(age_gender_crosstab),
+            target = "row",
+            backgroundColor = styleEqual("Total", "#f5f5f5")
+          )
+      }
+    } else {
+      cat("ℹ️ Gender data not available for cross-tabulation with age groups.\n")
+    }
+  }
+} else {
+  cat("ℹ️ No age data found in overview files.\n")
+}
+```
+
+## Gender Distribution
+
+```{r gender-analysis}
+if (!is.null(age_data) && "child_gender" %in% names(age_data)) {
+  gender_summary <- age_data %>%
+    filter(!is.na(child_gender)) %>%
+    count(child_gender) %>%
+    mutate(
+      percentage = n / sum(n) * 100,
+      gender_label = case_when(
+        child_gender == "f" ~ "Female",
+        child_gender == "m" ~ "Male",
+        child_gender == "o" ~ "Other",
+        child_gender == "na" ~ "Prefer not to answer",
+        TRUE ~ as.character(child_gender)
+      )
+    )
+  
+  # Create pie chart - full width
+  plot_ly(gender_summary, 
+          labels = ~gender_label, 
+          values = ~n,
+          type = 'pie',
+          textposition = 'inside',
+          textinfo = 'label+percent',
+          marker = list(colors = colors[1:nrow(gender_summary)]),
+          hovertemplate = "%{label}<br>Count: %{value}<br>Percentage: %{percent}<extra></extra>",
+          width = 1000, height = 500) %>%
+    layout(title = list(text = "Gender Distribution<br><sub>Parent-reported gender identity</sub>"),
+           showlegend = TRUE,
+           margin = list(l = 50, r = 50, t = 100, b = 50))
+} else {
+  cat("ℹ️ No gender data found in overview files.\n")
+}
+```
+
+## Language Information
+
+```{r language-analysis}
+if (!is.null(age_data) && "child_language_list" %in% names(age_data)) {
+  # Process language data - keep combinations together
+  language_data <- age_data %>%
+    filter(!is.na(child_language_list) & child_language_list != "") %>%
+    mutate(
+      # Clean up language combinations and sort languages within each combination
+      language_combination = map_chr(child_language_list, function(lang_string) {
+        # Split, sort, and rejoin to standardize order (e.g., "es en" becomes "en es")
+        langs <- str_split(lang_string, " ")[[1]]
+        langs <- langs[langs != ""]  # Remove empty strings
+        paste(sort(langs), collapse = " ")
+      })
+    ) %>%
+    count(language_combination, sort = TRUE) %>%
+    head(15)  # Top 15 language combinations
+  
+  if (nrow(language_data) > 0) {
+    # Create bar chart - full width
+    ggplot(language_data, aes(x = reorder(language_combination, n), y = n)) +
+      geom_col(fill = colors[4], alpha = 0.8) +
+      geom_text(aes(label = n), hjust = -0.1, size = 3.5) +
+      coord_flip() +
+      labs(title = "Language Combinations Spoken by Participants",
+           subtitle = "Top 15 most common language combinations",
+           x = "Language Combination",
+           y = "Number of Children") +
+      theme_minimal() +
+      theme(plot.margin = margin(20, 20, 20, 20)) +
+      expand_limits(y = max(language_data$n) * 1.15)
+  }
+} else {
+  cat("ℹ️ No language data found in overview files.\n")
+}
+```
+
+# 📈 Response Analysis
+
+## Response Completion Status
+
+```{r response-completion}
+if (!is.null(responses_file)) {
+  # Check which response columns exist
+  response_cols <- names(responses_file)
+  
+  # Response completion analysis - handle missing columns gracefully
+  completion_summary <- responses_file %>%
+    summarise(
+      total_responses = n(),
+      completed = ifelse("response_completed" %in% names(responses_file), 
+                        sum(response_completed == TRUE, na.rm = TRUE), 0),
+      incomplete = ifelse("response_completed" %in% names(responses_file),
+                         sum(response_completed == FALSE, na.rm = TRUE), 0),
+      preview = ifelse("response_is_preview" %in% names(responses_file),
+                      sum(response_is_preview == TRUE, na.rm = TRUE), 0),
+      withdrawn = ifelse("response_withdrawn" %in% names(responses_file),
+                        sum(response_withdrawn == TRUE, na.rm = TRUE), 0)
+    ) %>%
+    mutate(
+      completion_rate = ifelse(completed + incomplete > 0, 
+                              round(completed / (completed + incomplete) * 100, 1), 
+                              NA_real_)
+    )
+  
+  # Create completion status visualization only for available columns
+  status_data <- tibble(
+    Status = character(),
+    Count = numeric(),
+    Percentage = numeric()
+  )
+  
+  if ("response_completed" %in% names(responses_file)) {
+    status_data <- bind_rows(status_data,
+      tibble(Status = c("Completed", "Incomplete"),
+             Count = c(completion_summary$completed, completion_summary$incomplete)))
+  }
+  
+  if ("response_is_preview" %in% names(responses_file) && completion_summary$preview > 0) {
+    status_data <- bind_rows(status_data,
+      tibble(Status = "Preview", Count = completion_summary$preview))
+  }
+  
+  if ("response_withdrawn" %in% names(responses_file) && completion_summary$withdrawn > 0) {
+    status_data <- bind_rows(status_data,
+      tibble(Status = "Withdrawn", Count = completion_summary$withdrawn))
+  }
+  
+  if (nrow(status_data) > 0) {
+    status_data <- status_data %>%
+      mutate(Percentage = round(Count / completion_summary$total_responses * 100, 1))
+    
+    plot_ly(status_data, 
+            x = ~Status, 
+            y = ~Count, 
+            type = 'bar',
+            marker = list(color = colors[1:nrow(status_data)]),
+            text = ~paste("Count:", Count, "<br>Percentage:", Percentage, "%"),
+            hovertemplate = "%{x}<br>%{text}<extra></extra>",
+            width = 1000, height = 500) %>%
+      layout(title = list(text = ifelse(!is.na(completion_summary$completion_rate),
+                                       paste("Response Completion Status<br><sub>Overall completion rate:", 
+                                           completion_summary$completion_rate, "%</sub>"),
+                                       "Response Status Overview")),
+             xaxis = list(title = "Response Status"),
+             yaxis = list(title = "Number of Responses"),
+             margin = list(l = 50, r = 50, t = 100, b = 50))
+  }
+  
+  # Summary statistics table
+  cat("\n📊 Response Summary:\n")
+  cat(paste("  • Total responses:", completion_summary$total_responses, "\n"))
+  if ("response_completed" %in% names(responses_file)) {
+    cat(paste("  • Completed responses:", completion_summary$completed, "\n"))
+    if (!is.na(completion_summary$completion_rate)) {
+      cat(paste("  • Completion rate:", completion_summary$completion_rate, "%\n"))
+    }
+  }
+  if ("response_is_preview" %in% names(responses_file)) {
+    cat(paste("  • Preview responses:", completion_summary$preview, "\n"))
+  }
+  if ("response_withdrawn" %in% names(responses_file)) {
+    cat(paste("  • Withdrawn responses:", completion_summary$withdrawn, "\n"))
+  }
+}
+```
+
+# 📊 JSON Data Loading (Optimized)
+
+```{r load-json-data, include=FALSE}
+# Load JSON data once and process efficiently
+json_file <- file.path(paths$data, "raw", "all_responses_identifiable.json")
+all_responses_data <- NULL
+json_processing_time <- NULL
+
+if (file.exists(json_file)) {
+  cat("📁 Loading detailed response data...\n")
+  start_time <- Sys.time()
+  
+  # Load JSON data once
+  all_responses_data <- fromJSON(json_file, flatten = TRUE)
+  
+  # Pre-process all the data we need in vectorized operations
+  if (!is.null(all_responses_data) && nrow(all_responses_data) > 0) {
+    
+    # Filter out preview responses once
+    non_preview_mask <- !all_responses_data$response.is_preview
+    
+    # Extract basic info
+    response_info <- tibble(
+      response_uuid = all_responses_data$response.uuid[non_preview_mask],
+      completed = all_responses_data$response.completed[non_preview_mask],
+      is_preview = all_responses_data$response.is_preview[non_preview_mask]
+    )
+    
+    # Process sequences efficiently
+    sequences_list <- all_responses_data$response.sequence[non_preview_mask]
+    sequence_info <- map_dfr(seq_along(sequences_list), function(i) {
+      seq_data <- sequences_list[[i]]
+      if (!is.null(seq_data) && length(seq_data) > 0) {
+        tibble(
+          response_uuid = response_info$response_uuid[i],
+          total_frames = length(seq_data),
+          last_frame = seq_data[length(seq_data)],
+          sequence_preview = if(length(seq_data) > 3) {
+            paste(c(seq_data[1:3], "..."), collapse = " → ")
+          } else {
+            paste(seq_data, collapse = " → ")
+          }
+        )
+      } else {
+        tibble(
+          response_uuid = response_info$response_uuid[i],
+          total_frames = 0,
+          last_frame = "No sequence data",
+          sequence_preview = "No sequence data"
+        )
+      }
+    })
+    
+    # Process conditions efficiently
+    conditions_list <- all_responses_data$response.conditions[non_preview_mask]
+    condition_info <- map_dfr(seq_along(conditions_list), function(i) {
+      cond_data <- conditions_list[[i]]
+      if (!is.null(cond_data) && length(cond_data) > 0) {
+        # Handle different condition data structures
+        if (is.data.frame(cond_data)) {
+          condition_df <- cond_data
+        } else if (is.list(cond_data)) {
+          condition_df <- bind_rows(cond_data)
+        } else {
+          return(tibble(
+            response_uuid = response_info$response_uuid[i],
+            frame_name = "No conditions",
+            condition_num = NA_real_
+          ))
+        }
+        
+        if (nrow(condition_df) > 0) {
+          return(tibble(
+            response_uuid = response_info$response_uuid[i],
+            frame_name = condition_df$frameName,
+            condition_num = condition_df$conditionNum
+          ))
+        }
+      }
+      
+      return(tibble(
+        response_uuid = response_info$response_uuid[i],
+        frame_name = "No conditions",
+        condition_num = NA_real_
+      ))
+    })
+    
+    # Store processed data globally for reuse
+    processed_json_data <- list(
+      response_info = response_info,
+      sequence_info = sequence_info,
+      condition_info = condition_info
+    )
+    
+    end_time <- Sys.time()
+    json_processing_time <- round(as.numeric(difftime(end_time, start_time, units = "secs")), 2)
+    
+    cat("✅ JSON data processed in", json_processing_time, "seconds\n")
+    cat("📊 Processed", nrow(response_info), "non-preview responses\n")
+    
+  } else {
+    cat("⚠️ JSON file found but could not be processed\n")
+  }
+} else {
+  cat("ℹ️ all_responses_identifiable.json not found - some analyses will be limited\n")
+}
+```
+
+## Incomplete Response Analysis
+
+```{r incomplete-responses}
+if (!is.null(responses_file) && "response_completed" %in% names(responses_file)) {
+  # Find incomplete responses
+  incomplete_responses <- responses_file %>%
+    filter(
+      response_is_preview == FALSE,
+      response_completed == FALSE
+    )
+  
+  if (nrow(incomplete_responses) > 0) {
+    cat("📊 Incomplete Response Summary:\n")
+    cat(paste("  • Total incomplete responses:", nrow(incomplete_responses), "\n"))
+    cat(paste("  • Completion rate:", 
+              round(mean(responses_file$response_completed == TRUE, na.rm = TRUE) * 100, 1), 
+              "%\n\n"))
+    
+    # Use pre-processed JSON data if available
+    if (exists("processed_json_data") && !is.null(processed_json_data)) {
+      cat("📁 Using pre-processed sequence data for dropout analysis\n\n")
+      
+      # Filter sequence data for incomplete responses only
+      incomplete_sequence_data <- processed_json_data$sequence_info %>%
+        filter(response_uuid %in% incomplete_responses$response_uuid)
+      
+      # Merge with incomplete responses data
+      incomplete_summary <- incomplete_responses %>%
+        left_join(incomplete_sequence_data, by = "response_uuid") %>%
+        select(response_uuid, child_hashed_id, total_frames, last_frame, sequence_preview,
+               any_of(c("response_date_created", "consent_ruling"))) %>%
+        arrange(desc(total_frames))
+      
+      # Display summary statistics
+      if (any(!is.na(incomplete_summary$total_frames) & incomplete_summary$total_frames > 0)) {
+        valid_frames <- incomplete_summary$total_frames[!is.na(incomplete_summary$total_frames) & incomplete_summary$total_frames > 0]
+        
+        cat("📊 Dropout Analysis Results:\n")
+        cat(paste("  • Responses with sequence data:", length(valid_frames), "of", nrow(incomplete_responses), "\n"))
+        cat(paste("  • Average frames completed before dropout:", round(mean(valid_frames), 1), "\n"))
+        cat(paste("  • Median frames completed:", round(median(valid_frames), 1), "\n"))
+        cat(paste("  • Range of frames completed:", min(valid_frames), "-", max(valid_frames), "\n"))
+        
+        # Find most common dropout points
+        dropout_frames <- incomplete_summary$last_frame[incomplete_summary$last_frame != "No sequence data" & 
+                                                       incomplete_summary$last_frame != "No frames"]
+        if (length(dropout_frames) > 0) {
+          common_dropouts <- table(dropout_frames) %>% 
+            sort(decreasing = TRUE) %>% 
+            head(5)
+          
+          cat("\n🎯 Most common dropout points:\n")
+          for (i in 1:length(common_dropouts)) {
+            cat(paste("  •", names(common_dropouts)[i], ":", common_dropouts[i], "participants\n"))
+          }
+        }
+        cat("\n")
+      }
+      
+      # Create interactive table
+      datatable(incomplete_summary,
+                options = list(
+                  pageLength = 15,
+                  scrollX = TRUE,
+                  dom = 'Bfrtip',
+                  buttons = c('copy', 'csv', 'excel'),
+                  columnDefs = list(
+                    list(width = '200px', targets = c(0, 1)),
+                    list(width = '100px', targets = 2),
+                    list(width = '150px', targets = 3),
+                    list(width = '300px', targets = 4)
+                  )
+                ),
+                filter = 'top',
+                caption = "Incomplete Responses with Sequence Analysis",
+                colnames = c(
+                  "Response UUID" = "response_uuid",
+                  "Child Hashed ID" = "child_hashed_id",
+                  "Frames Completed" = "total_frames",
+                  "Last Frame" = "last_frame",
+                  "Sequence Preview" = "sequence_preview",
+                  "Date Created" = "response_date_created",
+                  "Consent" = "consent_ruling"
+                )) %>%
+        formatStyle(
+          "Frames Completed",
+          backgroundColor = styleInterval(c(5, 15, 30), 
+                                        c("#ffcdd2", "#ffecb3", "#fff3e0", "#e8f5e8")),
+          fontWeight = "bold"
+        )
+      
+    } else {
+      cat("⚠️ No pre-processed JSON data available\n")
+      cat("   Using basic incomplete response information instead\n\n")
+      
+      # Fallback: Just show incomplete responses without sequence analysis  
+      incomplete_summary <- incomplete_responses %>%
+        select(response_uuid, child_hashed_id, 
+               any_of(c("response_date_created", "consent_ruling", "response_eligibility_0")))
+      
+      datatable(incomplete_summary,
+                options = list(
+                  pageLength = 15,
+                  scrollX = TRUE,
+                  dom = 'Bfrtip',
+                  buttons = c('copy', 'csv', 'excel')
+                ),
+                filter = 'top',
+                caption = "Incomplete Responses",
+                colnames = c(
+                  "Response UUID" = "response_uuid",
+                  "Child Hashed ID" = "child_hashed_id",
+                  "Date Created" = "response_date_created",
+                  "Consent" = "consent_ruling"
+                ))
+    }
+    
+  } else {
+    cat("✅ All responses were completed successfully!\n")
+  }
+} else {
+  cat("ℹ️ No completion status information available.\n")
+}
+```
+
+## Condition Assignment Distribution
+
+```{r condition-analysis}
+# Use pre-processed JSON data if available
+if (exists("processed_json_data") && !is.null(processed_json_data)) {
+  cat("📊 Analyzing experimental conditions from pre-processed data...\n\n")
+  
+  # Use pre-processed condition data
+  condition_data <- processed_json_data$condition_info
+  
+  if (nrow(condition_data) > 0) {
+    # Summary statistics
+    total_responses <- n_distinct(condition_data$response_uuid)
+    responses_with_conditions <- sum(!is.na(condition_data$condition_num))
+    unique_frames <- n_distinct(condition_data$frame_name[!is.na(condition_data$condition_num)])
+    unique_conditions <- n_distinct(condition_data$condition_num[!is.na(condition_data$condition_num)])
+    
+    cat("📋 Condition Assignment Summary:\n")
+    cat(paste("  • Total responses analyzed:", total_responses, "\n"))
+    cat(paste("  • Responses with conditions:", responses_with_conditions, "\n"))
+    cat(paste("  • Unique randomization frames:", unique_frames, "\n"))
+    cat(paste("  • Unique condition numbers:", unique_conditions, "\n\n"))
+    
+    # Condition distribution analysis
+    if (responses_with_conditions > 0) {
+      # Overall condition distribution
+      condition_summary <- condition_data %>%
+        filter(!is.na(condition_num)) %>%
+        count(condition_num) %>%
+        mutate(
+          percentage = round(n / sum(n) * 100, 1),
+          condition_label = paste0("Condition ", condition_num)
+        ) %>%
+        arrange(condition_num)
+      
+      # Create bar chart
+      if (nrow(condition_summary) > 0) {
+        p_conditions <- ggplot(condition_summary, aes(x = factor(condition_num), y = n, fill = condition_label)) +
+          geom_col(alpha = 0.8) +
+          geom_text(aes(label = paste0(n, "\n(", percentage, "%)")), 
+                    vjust = -0.5, size = 3.5) +
+          scale_fill_viridis_d(option = "turbo") +
+          labs(title = "Distribution of Experimental Conditions",
+               subtitle = paste("Randomization across", unique_conditions, "conditions |", 
+                               responses_with_conditions, "participants assigned"),
+               x = "Condition Number",
+               y = "Number of Participants") +
+          theme_minimal() +
+          theme(
+            legend.position = "none",
+            plot.margin = margin(20, 20, 20, 20)
+          ) +
+          expand_limits(y = max(condition_summary$n) * 1.15)
+        
+        print(p_conditions)
+      }
+      
+      
+    } else {
+      cat("ℹ️ No condition assignments found in the data\n")
+    }
+    
+  } else {
+    cat("ℹ️ No condition data could be extracted from responses\n")
+  }
+  
+} else {
+  cat("ℹ️ No pre-processed JSON data available for condition analysis\n")
+}
+```
+
+## Response Timeline
+
+```{r response-timeline}
+if (!is.null(responses_file) && "response_date_created" %in% names(responses_file)) {
+  # Process dates
+  timeline_data <- responses_file %>%
+    mutate(
+      date = as.Date(response_date_created),
+      week = floor_date(date, "week"),
+      month = floor_date(date, "month")
+    ) %>%
+    filter(!is.na(date))
+  
+  # Filter out preview responses if that column exists
+  if ("response_is_preview" %in% names(timeline_data)) {
+    timeline_data <- timeline_data %>% filter(response_is_preview == FALSE)
+  }
+  
+  if (nrow(timeline_data) > 0) {
+    # Overall responses over time
+    weekly_responses <- timeline_data %>%
+      count(week) %>%
+      arrange(week)
+    
+    p_timeline <- ggplot(weekly_responses, aes(x = week, y = n)) +
+      geom_line(color = colors[2], size = 1.2) +
+      geom_point(color = colors[2], size = 3) +
+      labs(title = "Response Collection Timeline",
+           subtitle = "Number of responses per week",
+           x = "Date",
+           y = "Number of Responses") +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 45, hjust = 1),
+        plot.margin = margin(20, 20, 20, 20)
+      ) +
+      scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "1 week")
+    
+    # Age-stratified timeline (if we have age data)
+    if (exists("age_processed") && nrow(age_processed) > 0) {
+      # Merge timeline data with age groups
+      timeline_with_age <- timeline_data %>%
+        left_join(
+          age_processed %>% select(child_hashed_id, adaptive_age_group),
+          by = "child_hashed_id"
+        ) %>%
+        filter(!is.na(adaptive_age_group))
+      
+      if (nrow(timeline_with_age) > 0) {
+        # Create complete date sequence for all weeks
+        all_weeks <- seq(min(timeline_data$week), max(timeline_data$week), by = "week")
+        all_age_groups <- unique(timeline_with_age$adaptive_age_group)
+        
+        # Create complete grid of all week-age combinations
+        complete_grid <- expand_grid(
+          week = all_weeks,
+          adaptive_age_group = all_age_groups
+        )
+        
+        # Weekly responses by age group - with zeros for missing combinations
+        weekly_by_age <- timeline_with_age %>%
+          count(week, adaptive_age_group) %>%
+          right_join(complete_grid, by = c("week", "adaptive_age_group")) %>%
+          mutate(n = replace_na(n, 0)) %>%
+          arrange(week, adaptive_age_group)
+        
+        # Create age-stratified timeline with continuous lines
+        p_timeline_age <- ggplot(weekly_by_age, aes(x = week, y = n, color = adaptive_age_group)) +
+          geom_line(size = 1.2) +
+          geom_point(size = 2.5) +
+          scale_color_viridis_d(option = "turbo", name = "Age Group") +
+          labs(title = "Response Collection Timeline by Age Group",
+               subtitle = "Separate lines for each age group - helps identify recruitment patterns",
+               x = "Date",
+               y = "Number of Responses") +
+          theme_minimal() +
+          theme(
+            axis.text.x = element_text(angle = 45, hjust = 1),
+            legend.position = "bottom",
+            legend.title = element_text(size = 10),
+            legend.text = element_text(size = 9),
+            plot.margin = margin(20, 20, 20, 20)
+          ) +
+          scale_x_date(date_labels = "%Y-%m-%d", date_breaks = "1 week") +
+          guides(color = guide_legend(nrow = 2, byrow = TRUE))
+        
+        # Show both plots at full width
+        print(p_timeline)
+        print(p_timeline_age)
+        
+        # Provide interpretation
+        cat("\n📊 Timeline Analysis:\n")
+        age_recruitment_summary <- weekly_by_age %>%
+          group_by(adaptive_age_group) %>%
+          summarise(
+            total_responses = sum(n),
+            weeks_active = n_distinct(week),
+            avg_per_week = round(mean(n), 1),
+            .groups = "drop"
+          ) %>%
+          arrange(desc(total_responses))
+        
+        cat("Age group recruitment patterns:\n")
+        for (i in 1:nrow(age_recruitment_summary)) {
+          cat(paste("  •", age_recruitment_summary$adaptive_age_group[i], ":", 
+                    age_recruitment_summary$total_responses[i], "responses over",
+                    age_recruitment_summary$weeks_active[i], "weeks\n"))
+        }
+        
+      } else {
+        print(p_timeline)
+        cat("\n⚠️ Could not create age-stratified timeline - no age data linked to responses\n")
+      }
+    } else {
+      print(p_timeline)
+      cat("\n📊 Overall timeline shown - no age data available for stratification\n")
+    }
+  }
+} else {
+  cat("ℹ️ No date information found for timeline analysis.\n")
+}
+```
+
+# 🔧 Data Quality Assessment
+
+## Consent Status
+
+```{r consent-analysis}
+if (!is.null(responses_file) && "consent_ruling" %in% names(responses_file)) {
+  consent_summary <- responses_file %>%
+    filter(response_is_preview == FALSE) %>%
+    count(consent_ruling) %>%
+    mutate(percentage = round(n / sum(n) * 100, 1))
+  
+  # Consent status chart - full width
+  plot_ly(consent_summary, 
+          labels = ~consent_ruling, 
+          values = ~n,
+          type = 'pie',
+          textposition = 'inside',
+          textinfo = 'label+percent',
+          marker = list(colors = c("#4CAF50", "#F44336", "#FF9800")),
+          hovertemplate = "%{label}<br>Count: %{value}<br>Percentage: %{percent}<extra></extra>",
+          width = 1000, height = 500) %>%
+    layout(title = list(text = "Consent Status Distribution<br><sub>Essential for ethical compliance</sub>"),
+           margin = list(l = 50, r = 50, t = 100, b = 50))
+  
+  cat("\n📊 Consent Analysis:\n")
+  for (i in 1:nrow(consent_summary)) {
+    cat(paste("  •", consent_summary$consent_ruling[i], ":", 
+              consent_summary$n[i], "(", consent_summary$percentage[i], "%)\n"))
+  }
+}
+```
+
+## Eligibility Overview
+
+```{r eligibility-analysis}
+if (!is.null(responses_file) && any(str_detect(names(responses_file), "eligibility"))) {
+  # Check eligibility columns
+  eligible_responses <- responses_file %>%
+    filter(response_is_preview == FALSE) %>%
+    summarise(
+      total = n(),
+      eligible = sum(str_detect(response_eligibility_0 %||% "", "Eligible"), na.rm = TRUE),
+      too_young = sum(str_detect(response_eligibility_0 %||% "", "TooYoung"), na.rm = TRUE),
+      too_old = sum(str_detect(response_eligibility_0 %||% "", "TooOld"), na.rm = TRUE),
+      other_ineligible = total - eligible - too_young - too_old
+    )
+  
+  eligibility_data <- tibble(
+    Status = c("Eligible", "Too Young", "Too Old", "Other Ineligible"),
+    Count = c(eligible_responses$eligible, 
+              eligible_responses$too_young,
+              eligible_responses$too_old,
+              eligible_responses$other_ineligible)
+  ) %>%
+    filter(Count > 0) %>%
+    mutate(Percentage = round(Count / sum(Count) * 100, 1))
+  
+  if (nrow(eligibility_data) > 0) {
+    plot_ly(eligibility_data, 
+            x = ~Status, 
+            y = ~Count, 
+            type = 'bar',
+            marker = list(color = colors[1:nrow(eligibility_data)]),
+            text = ~paste("Count:", Count, "<br>Percentage:", Percentage, "%"),
+            hovertemplate = "%{x}<br>%{text}<extra></extra>",
+            width = 1000, height = 500) %>%
+      layout(title = "Participant Eligibility Status",
+             xaxis = list(title = "Eligibility Status"),
+             yaxis = list(title = "Number of Responses"),
+             margin = list(l = 50, r = 50, t = 100, b = 50))
+  }
+}
+```
+
+## Video Privacy Preferences
+
+```{r video-privacy}
+if (!is.null(responses_file) && "response_video_privacy" %in% names(responses_file)) {
+  privacy_summary <- responses_file %>%
+    filter(!is.na(response_video_privacy) & response_video_privacy != "") %>%
+    count(response_video_privacy) %>%
+    mutate(
+      percentage = round(n / sum(n) * 100, 1),
+      privacy_label = case_when(
+        response_video_privacy == "private" ~ "Private (IRB only)",
+        response_video_privacy == "scientific" ~ "Scientific/Educational", 
+        response_video_privacy == "public" ~ "Public sharing allowed",
+        response_video_privacy == "None" ~ "None specified",
+        TRUE ~ as.character(response_video_privacy)
+      )
+    )
+  
+  # Create pie chart - full width
+  plot_ly(privacy_summary, 
+          labels = ~privacy_label, 
+          values = ~n,
+          type = 'pie',
+          textposition = 'inside',
+          textinfo = 'label+percent',
+          marker = list(colors = colors[1:nrow(privacy_summary)]),
+          hovertemplate = "%{label}<br>Count: %{value}<br>Percentage: %{percent}<extra></extra>",
+          width = 1000, height = 500) %>%
+    layout(title = list(text = "Video Privacy Preferences<br><sub>How parents want their videos to be used</sub>"),
+           showlegend = TRUE,
+           margin = list(l = 50, r = 50, t = 100, b = 50))
+           
+} else {
+  cat("ℹ️ No video privacy column found in overview files.\n")
+}
+```
+
+## Birthdate Verification
+
+```{r birthdate-differences}
+if (!is.null(responses_file) && "response_birthdate_difference" %in% names(responses_file)) {
+  # Find rows with non-zero, non-blank birthdate differences
+  birthdate_issues <- responses_file %>%
+    filter(
+      !is.na(response_birthdate_difference) & 
+      response_birthdate_difference != 0 & 
+      response_birthdate_difference != "" &
+      response_birthdate_difference != "None"
+    ) %>%
+    select(
+      child_hashed_id,
+      response_uuid,
+      response_birthdate_difference
+    ) %>%
+    arrange(desc(abs(as.numeric(response_birthdate_difference))))
+  
+  if (nrow(birthdate_issues) > 0) {
+    # Create interactive table
+    datatable(birthdate_issues,
+              options = list(
+                pageLength = 15,
+                scrollX = TRUE,
+                dom = 'Bfrtip',
+                buttons = c('copy', 'csv', 'excel')
+              ),
+              filter = 'top',
+              caption = "Birthdate Discrepancies Found",
+              colnames = c(
+                "Child Hashed ID" = "child_hashed_id",
+                "Response UUID" = "response_uuid", 
+                "Birthdate Difference (days)" = "response_birthdate_difference"
+              )) %>%
+      formatStyle(
+        "Birthdate Difference (days)",
+        backgroundColor = styleInterval(c(-30, 30), c("#ffcdd2", "#fff3e0", "#ffcdd2")),
+        fontWeight = "bold"
+      )
+  } else {
+    cat("✅ No birthdate discrepancies found.\n")
+  }
+} else {
+  cat("ℹ️ No birthdate difference column found in overview files.\n")
+}
+```
+
+## Parent Feedback
+
+```{r parent-feedback}
+if (!is.null(responses_file) && "response_parent_feedback" %in% names(responses_file)) {
+  # Find rows with parent feedback (excluding "None" and blank values)
+  parent_feedback_data <- responses_file %>%
+    filter(
+      !is.na(response_parent_feedback) & 
+      response_parent_feedback != "" &
+      response_parent_feedback != "None"
+    ) %>%
+    select(
+      response_uuid,
+      child_hashed_id,
+      response_parent_feedback
+    ) %>%
+    arrange(response_uuid)
+  
+  if (nrow(parent_feedback_data) > 0) {
+    # Create interactive table
+    datatable(parent_feedback_data,
+              options = list(
+                pageLength = 15,
+                scrollX = TRUE,
+                dom = 'Bfrtip',
+                buttons = c('copy', 'csv', 'excel')
+              ),
+              filter = 'top',
+              caption = "Parent Feedback Responses",
+              colnames = c(
+                "Response UUID" = "response_uuid",
+                "Child Hashed ID" = "child_hashed_id", 
+                "Parent Feedback" = "response_parent_feedback"
+              )) %>%
+      formatStyle(
+        "Parent Feedback",
+        backgroundColor = "#e8f5e8",
+        fontWeight = "bold"
+      )
+    
+  } else {
+    cat("ℹ️ No parent feedback found (all responses were 'None' or blank).\n")
+  }
+} else {
+  cat("ℹ️ No parent feedback column found in overview files.\n")
+}
+```
+
+# 💰 Payment Status Analysis
+
+## Payment Overview
+
+```{r payment-analysis}
+if (!is.null(responses_file) && "response_researcher_payment_status" %in% names(responses_file)) {
+  # Calculate payment statistics
+  payment_summary <- responses_file %>%
+    filter(response_is_preview == FALSE) %>%
+    mutate(
+      payment_status_clean = case_when(
+        is.na(response_researcher_payment_status) ~ "Blank",
+        response_researcher_payment_status == "" ~ "Blank", 
+        response_researcher_payment_status == "To pay" ~ "To pay",
+        TRUE ~ as.character(response_researcher_payment_status)
+      )
+    ) %>%
+    count(payment_status_clean) %>%
+    mutate(percentage = round(n / sum(n) * 100, 1))
+  
+  # Display summary statistics
+  cat("📊 Payment Status Summary:\n")
+  for (i in 1:nrow(payment_summary)) {
+    cat(paste("  •", payment_summary$payment_status_clean[i], ":", 
+              payment_summary$n[i], "(", payment_summary$percentage[i], "%)\n"))
+  }
+  
+  total_responses <- sum(payment_summary$n)
+  to_pay_count <- payment_summary$n[payment_summary$payment_status_clean == "To pay"]
+  to_pay_count <- if(length(to_pay_count) > 0) to_pay_count else 0
+  blank_count <- payment_summary$n[payment_summary$payment_status_clean == "Blank"]
+  blank_count <- if(length(blank_count) > 0) blank_count else 0
+  
+  cat(paste("\n💡 Payment Insights:\n"))
+  cat(paste("  • Total responses analyzed:", total_responses, "\n"))
+  cat(paste("  • Participants awaiting payment:", to_pay_count, "\n"))
+  cat(paste("  • Responses with no payment status:", blank_count, "\n"))
+  
+  if (to_pay_count > 0) {
+    cat(paste("  • Outstanding payment rate:", round(to_pay_count / total_responses * 100, 1), "%\n"))
+  }
+  
+} else {
+  cat("ℹ️ No response_researcher_payment_status column found in overview files.\n")
+}
+```
+
+## Payment Details Table
+
+```{r payment-details-table}
+if (!is.null(responses_file) && "response_researcher_payment_status" %in% names(responses_file)) {
+  # Filter for "To pay" and blank responses
+  payment_details <- responses_file %>%
+    filter(
+      response_is_preview == FALSE,
+      (response_researcher_payment_status == "To pay" | 
+       is.na(response_researcher_payment_status) | 
+       response_researcher_payment_status == "")
+    ) %>%
+    mutate(
+      payment_status_display = case_when(
+        response_researcher_payment_status == "To pay" ~ "To pay",
+        is.na(response_researcher_payment_status) ~ "Blank",
+        response_researcher_payment_status == "" ~ "Blank",
+        TRUE ~ as.character(response_researcher_payment_status)
+      )
+    ) %>%
+    count(response_uuid, child_hashed_id, payment_status_display) %>%
+    arrange(
+      factor(payment_status_display, levels = c("To pay", "Blank")), 
+      response_uuid
+    )
+  
+  if (nrow(payment_details) > 0) {
+    # Create interactive table
+    datatable(payment_details,
+              options = list(
+                pageLength = 15,
+                scrollX = TRUE,
+                dom = 'Bfrtip',
+                buttons = c('copy', 'csv', 'excel')
+              ),
+              filter = 'top',
+              caption = "Payment Status Details - Unpaid and Blank Responses",
+              colnames = c(
+                "Response UUID" = "response_uuid",
+                "Child Hashed ID" = "child_hashed_id", 
+                "Payment Status" = "payment_status_display",
+                "Count" = "n"
+              )) %>%
+      formatStyle(
+        "Payment Status",
+        backgroundColor = styleEqual(c("To pay", "Blank"), c("#fff3e0", "#ffebee")),
+        fontWeight = "bold"
+      )
+  } else {
+    cat("✅ All responses have been processed for payment.\n")
+  }
+} else {
+  cat("ℹ️ No response_researcher_payment_status column found for detailed analysis.\n")
+}
+```
+
+# 📁 Export Summary Data
+
+```{r export-summary}
+# Create analysis summary directory
+analysis_dir <- file.path(paths$root, "analysis")
+dir.create(analysis_dir, showWarnings = FALSE, recursive = TRUE)
+
+# Export summary statistics
+if (!is.null(responses_file)) {
+  summary_export <- responses_file %>%
+    filter(response_is_preview == FALSE) %>%
+    select(
+      response_id = response_id,
+      response_uuid = response_uuid,
+      child_hashed_id = child_hashed_id,
+      participant_hashed_id = participant_hashed_id,
+      date_created = response_date_created,
+      completed = response_completed,
+      withdrawn = response_withdrawn,
+      consent_ruling = consent_ruling,
+      any_of(c("child_age_rounded", "child_gender", "child_language_list"))
+    )
+  
+  export_file <- file.path(analysis_dir, paste0("study_summary_", Sys.Date(), ".csv"))
+  write_csv(summary_export, export_file)
+  
+  cat("✅ Summary data exported to:", export_file, "\n")
+  cat("📁 Analysis directory:", analysis_dir, "\n")
+}
+```
+
+# 📖 Summary & Next Steps
+
+## Key Findings
+
+```{r key-findings, results='asis'}
+if (!is.null(responses_file)) {
+  cat("### Study Overview\n\n")
+  cat(paste("- **Total Participants:**", n_distinct(responses_file$child_hashed_id), "children\n"))
+  cat(paste("- **Total Responses:**", nrow(responses_file %>% filter(response_is_preview == FALSE)), "sessions\n"))
+  
+  if ("response_completed" %in% names(responses_file)) {
+    completion_rate <- round(mean(responses_file$response_completed == TRUE, na.rm = TRUE) * 100, 1)
+    cat(paste("- **Completion Rate:**", completion_rate, "%\n"))
+  }
+  
+  if (!is.null(age_processed) && nrow(age_processed) > 0) {
+    cat(paste("- **Age Range:**", 
+              round(min(age_processed$age_months, na.rm = TRUE)/12, 1), "-", 
+              round(max(age_processed$age_months, na.rm = TRUE)/12, 1), "years\n"))
+  }
+  
+  
+}
+```
+
+---
+
+*Generated with the Psych-DS Overview Analysis Template*  
+*Report generated on `r Sys.Date()`*  
+*Template focuses on participant demographics and study overview*
