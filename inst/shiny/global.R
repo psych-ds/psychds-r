@@ -255,9 +255,10 @@ organize_directory_hierarchy <- function(files) {
   return(result)
 }
 
-#' Correct Recursive File Tree Builder
+#' Enhanced File Tree Builder that includes empty directories
 #'
-#' Recursively builds a nested file tree that persists changes to the main list.
+#' Recursively builds a nested file tree that includes both files and directories,
+#' even if directories are empty.
 #'
 #' @param directory Path to the dataset directory
 #' @return List representing the file tree
@@ -285,14 +286,11 @@ buildFileTree <- function(directory) {
   }
 
   # Recursive helper to insert file into nested list
-  insertIntoTree <- function(tree, parts, fileInfo) {
+  insertIntoTree <- function(tree, parts, itemInfo) {
     part <- parts[[1]]
     if (length(parts) == 1) {
-      # We're at the file level
-      tree[[part]] <- list(
-        type = "file",
-        file = fileInfo
-      )
+      # We're at the final level - could be file or directory
+      tree[[part]] <- itemInfo
       return(tree)
     } else {
       # We're at a directory level
@@ -302,16 +300,39 @@ buildFileTree <- function(directory) {
           contents = list()
         )
       }
-      tree[[part]]$contents <- insertIntoTree(tree[[part]]$contents, parts[-1], fileInfo)
+      tree[[part]]$contents <- insertIntoTree(tree[[part]]$contents, parts[-1], itemInfo)
       return(tree)
     }
   }
 
   fileTree <- list()
 
+  # Get all files first
   allFiles <- list.files(directory, recursive = TRUE, full.names = TRUE)
   message("Found ", length(allFiles), " files")
 
+  # Get all directories (including empty ones)
+  allDirs <- list.dirs(directory, recursive = TRUE, full.names = TRUE)
+  # Remove the root directory itself
+  allDirs <- allDirs[allDirs != directory]
+  message("Found ", length(allDirs), " directories")
+
+  # Process directories first
+  for (dirPath in allDirs) {
+    relPath <- sub(paste0("^", directory, "/?"), "", dirPath)
+    relPath <- gsub("\\\\", "/", relPath)
+    parts <- strsplit(relPath, "/")[[1]]
+    
+    dirInfo <- list(
+      type = "directory",
+      contents = list()
+    )
+    
+    fileTree <- insertIntoTree(fileTree, parts, dirInfo)
+    message("Added directory: ", relPath)
+  }
+
+  # Then process files
   for (filePath in allFiles) {
     if (dir.exists(filePath)) next
 
@@ -322,13 +343,15 @@ buildFileTree <- function(directory) {
     fileName <- parts[[length(parts)]]
 
     fileInfo <- list(
-      name = fileName,
-      path = paste0("/", relPath),
-      text = readFileText(filePath)
+      type = "file",
+      file = list(
+        name = fileName,
+        path = paste0("/", relPath),
+        text = readFileText(filePath)
+      )
     )
 
     fileTree <- insertIntoTree(fileTree, parts, fileInfo)
-
     message("Added file: ", fileName, " to path: ", paste(parts[-length(parts)], collapse = "/"))
   }
 

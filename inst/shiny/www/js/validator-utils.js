@@ -433,8 +433,12 @@ function isShinyReady() {
                 
                 // Send updates to Shiny
                 if (isShinyReady()) {
+                  var formattedSteps = Object.entries(stepStatus).map(function(entry) {
+                    return [entry[0], entry[1]]; // [stepKey, stepData]
+                  });
+              
                   Shiny.setInputValue('validation_step_status', {
-                    stepStatus: Object.entries(stepStatus)
+                    stepStatus: formattedSteps
                   }, {priority: 'event'});
                 }
               });
