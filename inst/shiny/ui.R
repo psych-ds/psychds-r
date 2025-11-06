@@ -39,7 +39,22 @@ ui <- dashboardPage(
       # Include the external CSS file with cache-busting
       tags$link(rel = "stylesheet", type = "text/css", 
                href = paste0("css/styles.css?v=", format(Sys.time(), "%Y%m%d%H%M%S"))),
-      
+      # Change pop-up positioning
+      tags$style(HTML("
+        #shiny-notification-panel {
+          position: fixed;
+          top: 70px;
+          right: 20px;
+          bottom: auto;
+          left: auto;
+          width: 350px;
+        }
+        
+        .shiny-notification {
+          position: relative;
+          margin-bottom: 10px;
+        }
+      ")),
       # Include SortableJS library for drag-and-drop functionality
       tags$script(src = "https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js"),
       
@@ -48,12 +63,10 @@ ui <- dashboardPage(
       
       # Include jsonld library for validation
       tags$script(src = "js/jsonld.min.js"),
-      
-      # Include the validator.js module
-      tags$script(src = "js/validator.js", type = "module"),
-      
 
-      tags$script(src = "js/validator-utils.js"),
+      # Include the validator.js module
+      tags$script(src = paste0("js/validator.js?v=", as.numeric(Sys.time())), type = "module"),
+      tags$script(src = paste0("js/validator-utils.js?v=", as.numeric(Sys.time())))
     ),
 
     # JavaScript handlers for UI interactions
@@ -69,6 +82,18 @@ ui <- dashboardPage(
           $this.width(w+1);
           setTimeout(function() { $this.width(w); }, 50);
         });
+      });
+    ")),
+
+    tags$script(HTML("
+      Shiny.addCustomMessageHandler('scrollToElement', function(message) {
+        var element = document.getElementById(message.elementId);
+        if (element) {
+          element.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+          });
+        }
       });
     ")),
     
@@ -91,6 +116,9 @@ ui <- dashboardPage(
           tabItem.click();
         }
       });
+      Shiny.addCustomMessageHandler('scrollToTop', function(message) {
+        window.scrollTo({top: 0, behavior: 'smooth'});
+      });
     ")),
 
     # Application tab items
@@ -110,130 +138,21 @@ ui <- dashboardPage(
       # Update Dictionary Tab
       tabItem(
         tabName = "dictionary",
-        h2("Update Dictionary"),
-        p("This feature will allow you to update the data dictionary of an existing Psych-DS dataset."),
-        div(
-          class = "section-box",
-          div(class = "section-title", "Select Dataset"),
-          div(class = "section-description",
-              "Select a Psych-DS dataset to update its data dictionary."),
-
-          div(
-            class = "directory-input",
-            textInput(
-              "dictionary_dir",
-              label = NULL,
-              value = "",
-              placeholder = "Path to Psych-DS dataset",
-              width = "100%"
-            ),
-            shinyDirButton(
-              "dictionary_dir_select",
-              label = "...",
-              title = "Select a dataset directory",
-              class = "browse-btn"
-            )
-          ),
-
-          div(
-            style = "text-align: right; margin-top: 20px;",
-            actionButton(
-              "dictionary_btn",
-              "Continue",
-              class = "continue-btn"
-            )
-          )
-        )
+        dataDictionaryUI("data_dictionary")
       ),
 
       # Dataset Explorer Tab
       tabItem(
         tabName = "explorer",
-        h2("Dataset Explorer"),
-        p("This feature will allow you to explore and visualize Psych-DS datasets."),
-        div(
-          class = "section-box",
-          div(class = "section-title", "Select Dataset"),
-          div(class = "section-description",
-              "Select a Psych-DS dataset to explore."),
-
-          div(
-            class = "directory-input",
-            textInput(
-              "explorer_dir",
-              label = NULL,
-              value = "",
-              placeholder = "Path to Psych-DS dataset",
-              width = "100%"
-            ),
-            shinyDirButton(
-              "explorer_dir_select",
-              label = "...",
-              title = "Select a dataset directory",
-              class = "browse-btn"
-            )
-          ),
-
-          div(
-            style = "text-align: right; margin-top: 20px;",
-            actionButton(
-              "explorer_btn",
-              "Explore",
-              class = "continue-btn"
-            )
-          )
-        )
+        datasetExplorerUI("dataset_explorer")
       ),
 
       # Upload to OSF Tab
       tabItem(
         tabName = "upload",
-        h2("Upload to OSF"),
-        p("This feature will allow you to upload Psych-DS datasets to the Open Science Framework (OSF)."),
-        div(
-          class = "section-box",
-          div(class = "section-title", "Select Dataset"),
-          div(class = "section-description",
-              "Select a Psych-DS dataset to upload to OSF."),
-
-          div(
-            class = "directory-input",
-            textInput(
-              "upload_dir",
-              label = NULL,
-              value = "",
-              placeholder = "Path to Psych-DS dataset",
-              width = "100%"
-            ),
-            shinyDirButton(
-              "upload_dir_select",
-              label = "...",
-              title = "Select a dataset directory",
-              class = "browse-btn"
-            )
-          ),
-
-          div(
-            class = "section-title",
-            style = "margin-top: 20px;",
-            "OSF Project"
-          ),
-          div(class = "section-description",
-              "Enter your OSF project information."),
-
-          textInput("osf_project", "Project ID", placeholder = "OSF project ID"),
-          passwordInput("osf_token", "OSF Token", placeholder = "Your OSF personal access token"),
-
-          div(
-            style = "text-align: right; margin-top: 20px;",
-            actionButton(
-              "upload_btn",
-              "Upload",
-              class = "continue-btn"
-            )
-          )
-        )
+        osfUploadUI("osf_upload")
       ),
+
 
       # Help Tab
       tabItem(
@@ -260,8 +179,7 @@ ui <- dashboardPage(
           p("For more information about the Psych-DS standard, visit the following resources:"),
           tags$ul(
             tags$li(tags$a(href = "https://psych-ds.github.io/", "Psych-DS Website", target = "_blank")),
-            tags$li(tags$a(href = "https://github.com/psych-ds/psych-DS", "Psych-DS GitHub Repository", target = "_blank")),
-            tags$li(tags$a(href = "https://psych-ds.github.io/psych-DS/DATA_DICTIONARY.html", "Psych-DS Data Dictionary Guide", target = "_blank"))
+            tags$li(tags$a(href = "https://github.com/psych-ds/psych-DS", "Psych-DS GitHub Repository", target = "_blank"))
           )
         )
       )

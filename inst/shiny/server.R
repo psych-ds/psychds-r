@@ -182,41 +182,92 @@ server <- function(input, output, session) {
 
   # Handle sidebar menu selection
   observeEvent(input$sidebar, {
-  if (input$sidebar == "create") {
-    # If we're on create dataset tab, use the last remembered step
-    # instead of always defaulting to 1
-    if (!is.null(last_create_step()) && last_create_step() > 0) {
-      state$current_step <- last_create_step()
-    } else if (is.null(state$current_step) || state$current_step == 0) {
-      # Only use the default step 1 if we never set a step before
-      state$current_step <- 1
-    }
-  } else if (input$sidebar == "validate") {
-    # For validate tab, set the validation directory to the created dataset if available
-    if (!is.null(state$created_dataset_dir) && state$created_dataset_dir != "" && dir.exists(state$created_dataset_dir)) {
-      updateTextInput(session, "validate_dir", value = state$created_dataset_dir)
+    # Scroll to top when changing tabs
+    session$sendCustomMessage("scrollToTop", list())
+    
+    if (input$sidebar == "create") {
+      # If we're on create dataset tab, use the last remembered step
+      # instead of always defaulting to 1
+      if (!is.null(last_create_step()) && last_create_step() > 0) {
+        state$current_step <- last_create_step()
+      } else if (is.null(state$current_step) || state$current_step == 0) {
+        # Only use the default step 1 if we never set a step before
+        state$current_step <- 1
+      }
+    } else if (input$sidebar == "validate") {
+      # For validate tab, set the validation directory to the created dataset if available
+      if (!is.null(state$created_dataset_dir) && state$created_dataset_dir != "" && dir.exists(state$created_dataset_dir)) {
+        updateTextInput(session, "validate_dir", value = state$created_dataset_dir)
+        
+        # Also reset the validation UI
+        session$sendCustomMessage("reset_validation_ui", list())
+      }
       
-      # Also reset the validation UI
-      session$sendCustomMessage("reset_validation_ui", list())
-    }
-    
-    # For tabs other than create, remember the current step before switching away
-    if (!is.null(state$current_step) && state$current_step > 0) {
-      last_create_step(state$current_step)
-    }
-    
-    # Set current step to 0 (no step active)
-    state$current_step <- 0
-  } else {
-    # For other tabs, remember the current step before switching away
-    if (!is.null(state$current_step) && state$current_step > 0) {
-      last_create_step(state$current_step)
-    }
+      # For tabs other than create, remember the current step before switching away
+      if (!is.null(state$current_step) && state$current_step > 0) {
+        last_create_step(state$current_step)
+      }
+      
+      # Set current step to 0 (no step active)
+      state$current_step <- 0
+    } else if (input$sidebar == "dictionary") {
+      # When switching to dictionary tab, pre-populate with validated dataset
+      if (!is.null(state$validated_dataset_dir) && state$validated_dataset_dir != "" && dir.exists(state$validated_dataset_dir)) {
+        updateTextInput(session, "data_dictionary-dataset_dir", value = state$validated_dataset_dir)
+        showNotification("Using validated dataset for data dictionary", type = "message", duration = 3)
+      }
+      
+      # For tabs other than create, remember the current step before switching away
+      if (!is.null(state$current_step) && state$current_step > 0) {
+        last_create_step(state$current_step)
+      }
+      
+      # Set current step to 0 (no step active)
+      state$current_step <- 0
+    } else if (input$sidebar == "explorer") {
+      # When switching to explorer tab, check for datasets from different sources
+      dataset_to_load <- NULL
+      
+      # Priority 1: From dictionary module
+      if (!is.null(state$dictionary_dataset_dir) && dir.exists(state$dictionary_dataset_dir)) {
+        dataset_to_load <- state$dictionary_dataset_dir
+        message_text <- "Loading dataset from data dictionary"
+      }
+      # Priority 2: From validation
+      else if (!is.null(state$validated_dataset_dir) && dir.exists(state$validated_dataset_dir)) {
+        dataset_to_load <- state$validated_dataset_dir
+        message_text <- "Loading validated dataset"
+      }
+      # Priority 3: From creation
+      else if (!is.null(state$created_dataset_dir) && dir.exists(state$created_dataset_dir)) {
+        dataset_to_load <- state$created_dataset_dir
+        message_text <- "Loading created dataset"
+      }
+      
+      # Update the explorer if we have a dataset
+      if (!is.null(dataset_to_load)) {
+        updateTextInput(session, "dataset_explorer-dataset_dir", value = dataset_to_load)
+        showNotification(message_text, type = "message", duration = 3)
+      }
+      
+      # Remember current step before switching away
+      if (!is.null(state$current_step) && state$current_step > 0) {
+        last_create_step(state$current_step)
+      }
+      
+      # Set current step to 0 (no step active)
+      state$current_step <- 0
+    } else {
+      # For other tabs, remember the current step before switching away
+      if (!is.null(state$current_step) && state$current_step > 0) {
+        last_create_step(state$current_step)
+      }
 
-    # For other tabs, set current step to 0 (no step active)
-    state$current_step <- 0
-  }
-})
+      # For other tabs, set current step to 0 (no step active)
+      state$current_step <- 0
+    }
+    
+  })
 
   stepNavServer <- step_navigation("step_nav", state, session)
 
@@ -256,14 +307,16 @@ server <- function(input, output, session) {
     restrictions = system.file(package = "base")
   )
 
+  dataDictionaryServer("data_dictionary", state, session)
+  datasetExplorerServer("dataset_explorer", state, session)
+  osfUploadServer("osf_upload", state, session)
+
   observeEvent(input$validate_dir_select, {
-    if (!is.null(input$validate_dir) && input$validate_dir != "") {
-    # Send a message to JavaScript to reset the checklist
-    session$sendCustomMessage("reset_validation_ui", list())
-    }
     if (!is.null(input$validate_dir_select)) {
       selected_dir <- parseDirPath(volumes, input$validate_dir_select)
-      updateTextInput(session, "validate_dir", value = selected_dir)
+      if (length(selected_dir) > 0 && selected_dir != "") {
+        updateTextInput(session, "validate_dir", value = selected_dir)
+      }
     }
   })
 
@@ -346,17 +399,6 @@ observeEvent(input$validation_results, {
     duration = 5
   )
 }, ignoreNULL = TRUE)
-
-
-
-# Handle validation step updates
-observeEvent(input$validation_step_status, {
-  status_data <- input$validation_step_status
-  message("Validation step status updated:", capture.output(str(status_data)))
-  
-  # Store step status for UI updates
-  state$validation_step_status <- status_data
-}, ignoreNULL = TRUE, ignoreInit = TRUE)
 
   # Handle Update Dictionary tab
   # Set up directory selection for dictionary tab
@@ -495,5 +537,18 @@ observeEvent(input$validation_step_status, {
         footer = modalButton("Close")
       ))
     }
+  })
+
+  observeEvent(input$`validate_dataset-continue`, {
+    current_dir <- input$validate_dir
+    cat("Continue button clicked, validate_dir:", current_dir, "\n")
+    
+    if (!is.null(current_dir) && current_dir != "") {
+      state$validated_dataset_dir <- current_dir
+      cat("Stored validated dataset dir:", current_dir, "\n")
+    }
+    
+    # Switch to the data dictionary tab
+    session$sendCustomMessage("changeTab", list(tabName = "dictionary"))
   })
 }
