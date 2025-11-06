@@ -217,6 +217,24 @@ step1UI <- function(id) {
       sub_title = "Step 1: Project Directory and Canonical Data Files",
       current_step = 1
     ),
+
+    # Data Safety Banner
+    div(
+      class = "alert",
+      style = "background-color: #d1ecf1; border: 1px solid #bee5eb; border-radius: 4px; padding: 15px; margin-bottom: 20px; display: flex; align-items: start;",
+      icon("shield-alt", style = "color: #0c5460; font-size: 24px; margin-right: 15px; margin-top: 2px;"),
+      div(
+        style = "flex: 1;",
+        strong("Your Original Files Are Safe", style = "color: #0c5460; display: block; margin-bottom: 5px; font-size: 16px;"),
+        span(
+          style = "color: #0c5460; line-height: 1.5;",
+          "This tool will create a new Psych-DS dataset in a location you choose at the end of Step 3. ",
+          strong("Your original files and directories will never be modified."),
+          " We only read from your existing files to create standardized copies."
+        )
+      )
+    ),
+    
     
     sectionBox(
       title = "Project Directory",
@@ -332,10 +350,10 @@ step2UI <- function(id) {
   )
 }
 
-#' Step 3 UI: Standardize Filenames
+#' Step 3 UI: Standardize Filenames - Enhanced Version
 #'
-#' @param id The module ID
-#' @return UI for Step 3
+#' @param id Namespace ID for the module
+#' @return UI for Step 3 with multi-select and auto-naming features
 step3UI <- function(id) {
   ns <- NS(id)
   
@@ -349,22 +367,43 @@ step3UI <- function(id) {
     div(
       class = "section-description",
       style = "margin-bottom: 20px;",
-      "Rename your data files to follow Psych-DS naming conventions. Each filename will be composed of a set of keywords and custom values to create a clear, consistent description."
+      "Rename your data files to follow Psych-DS naming conventions. Each filename will be composed of a set of keywords and custom values to create a clear, consistent description.",
+      tags$br(), tags$br(),
+      strong("New features:"), 
+      " Check boxes to select multiple files and apply keywords in batch. Use Auto-Name to automatically fill keyword values from constant columns in your data."
     ),
     
     fluidRow(
+      # LEFT COLUMN - File Selection and Auto-Naming
       column(
         width = 6,
         sectionBox(
-          title = "File Mapping",
-          description = "Select each file to configure its standardized filename.",
+          title = "1. File Mapping",
+          description = "Check boxes to select multiple files. Click a file to configure its keywords individually.",
+          # Select All / Deselect All buttons
+          div(
+            style = "margin-bottom: 10px; display: flex; gap: 10px;",
+            actionButton(
+              ns("select_all_files"),
+              "Select All",
+              class = "btn btn-sm btn-info",
+              style = "flex: 1;"
+            ),
+            actionButton(
+              ns("deselect_all_files"),
+              "Deselect All",
+              class = "btn btn-sm btn-default",
+              style = "flex: 1;"
+            )
+          ),
           div(
             class = "file-browser",
             style = "height: 250px; overflow-y: auto; margin-bottom: 15px;",
             div(
               class = "file-list-header",
               fluidRow(
-                column(6, strong("Original Filename")),
+                column(1, HTML("&nbsp;")),  # Space for checkbox
+                column(5, strong("Original Filename")),
                 column(6, strong("New Filename"))
               )
             ),
@@ -372,6 +411,18 @@ step3UI <- function(id) {
               id = ns("file_mapping_list"),
               class = "file-mapping-list",
               uiOutput(ns("file_mapping_rows"))
+            )
+          ),
+          # Batch operations section
+          div(
+            style = "margin-top: 10px; padding: 10px; background-color: #f0f8ff; border-radius: 4px;",
+            strong("Batch Operations:"),
+            div(
+              style = "margin-top: 8px;",
+              uiOutput(ns("selected_count_text")),
+              conditionalPanel(
+                condition = paste0("output['", ns("has_selection"), "']")
+              )
             )
           )
         ),
@@ -384,7 +435,70 @@ step3UI <- function(id) {
         ),
         
         sectionBox(
-          title = "Choose Keywords",
+          title = "2. Auto-Name from Data",
+          description = "Automatically fill keyword values from constant columns across all selected files. This will apply the keyword and generate filenames for all selected files.",
+          div(
+            id = ns("auto_name_section"),
+            conditionalPanel(
+              condition = paste0("output['", ns("has_constant_columns"), "']"),
+              fluidRow(
+                column(
+                  width = 5,
+                  selectInput(
+                    ns("auto_keyword"),
+                    "Keyword to fill:",
+                    choices = NULL,
+                    width = "100%"
+                  )
+                ),
+                column(
+                  width = 5,
+                  selectInput(
+                    ns("auto_column"),
+                    "From column:",
+                    choices = NULL,
+                    width = "100%"
+                  )
+                ),
+                column(
+                  width = 2,
+                  tags$label(HTML("&nbsp;"), style = "display: block;"),
+                  actionButton(
+                    ns("apply_auto_name"),
+                    icon("magic"),
+                    class = "btn btn-success",
+                    style = "width: 100%;",
+                    title = "Apply auto-naming to selected files"
+                  )
+                )
+              ),
+              div(
+                style = "margin-top: 10px; padding: 8px; background-color: #fff3cd; border-radius: 4px;",
+                icon("info-circle", style = "color: #856404; margin-right: 5px;"),
+                tags$small(
+                  style = "color: #856404;",
+                  "This will apply to ALL selected files and generate provisional filenames."
+                )
+              )
+            ),
+            conditionalPanel(
+              condition = paste0("!output['", ns("has_constant_columns"), "']"),
+              div(
+                style = "padding: 15px; text-align: center; color: #999;",
+                "No constant-value columns detected. Select files to see available columns.",
+                tags$br(),
+                tags$small("(Constant columns are those where all non-empty cells have the same value)")
+              )
+            )
+          )
+        )
+      ),
+      
+      # RIGHT COLUMN - Manual Keyword Configuration
+      column(
+        width = 6,
+        sectionBox(
+          title = "3. Choose Keywords",
           div(id = ns("choose_keywords_section"), style = "position: relative; top: -20px;"),
           div(
             class = "section-description",
@@ -407,7 +521,7 @@ step3UI <- function(id) {
             lapply(c("session", "subject", "study", "task", "condition", "stimulus", "trial", "description"), function(keyword) {
               actionButton(
                 ns(paste0("keyword_", keyword)), 
-                tools::toTitleCase(keyword), 
+                keyword, 
                 class = "btn btn-sm btn-primary keyword-chip"
               )
             })
@@ -422,7 +536,7 @@ step3UI <- function(id) {
         ),
         
         sectionBox(
-          title = "Add Custom Keyword",
+          title = "4. Add Custom Keyword",
           description = "Custom keywords must contain only lowercase letters (a-z). No numbers, spaces, or punctuation.",
           div(
             class = "input-group",
@@ -439,13 +553,10 @@ step3UI <- function(id) {
             id = ns("custom_keyword_validation"),
             style = "margin-top: 5px; min-height: 20px;"
           )
-        )
-      ),
-      
-      column(
-        width = 6,
+        ),
+        
         sectionBox(
-          title = "Keyword Values",
+          title = "5. Keyword Values",
           div(
             class = "keyword-values-section",
             style = "min-height: 250px;",
@@ -454,15 +565,16 @@ step3UI <- function(id) {
         ),
         
         sectionBox(
-          title = "Filename Preview",
+          title = "6. Filename Preview",
           div(
             class = "well well-sm filename-preview",
             style = "background-color: #f8f9fa; border: 1px solid #ced4da; padding: 15px; text-align: center; margin: 10px 0; min-height: 60px;",
             uiOutput(ns("filename_preview"))
           ),
           div(
-            style = "text-align: center;",
-            actionButton(ns("generate_filename"), "Generate Filename", class = "btn btn-primary", style = "width: 100%;")
+            style = "text-align: center; display: flex; gap: 10px;",
+            actionButton(ns("preview_filename"), "Preview Filename", class = "btn btn-secondary", style = "flex: 1;"),
+            actionButton(ns("generate_filename"), "Generate Filename", class = "btn btn-primary", style = "flex: 1;")
           )
         ),
         
@@ -681,7 +793,8 @@ dataDictionaryUI <- function(id) {
           class = "alert alert-info",
           style = "margin-top: 20px;",
           uiOutput(ns("dataset_info"))
-        )
+        ),
+        
       )
     ),
     
@@ -778,7 +891,7 @@ dataDictionaryUI <- function(id) {
                       style = "margin-bottom: 20px;",
                       tags$label("Unit of Measurement", style = "font-weight: bold; margin-bottom: 8px; display: block; color: #333;"),
                       conditionalPanel(
-                        condition = paste0("input['", ns("var_type"), "'] != 'categorical' && input['", ns("var_type"), "'] != 'boolean'"),
+                        condition = paste0("input['", ns("var_type"), "'] == 'number' || input['", ns("var_type"), "'] == 'integer'"),
                         textInput(
                           ns("var_unit"),
                           label = NULL,
@@ -787,7 +900,7 @@ dataDictionaryUI <- function(id) {
                         )
                       ),
                       conditionalPanel(
-                        condition = paste0("input['", ns("var_type"), "'] == 'categorical' || input['", ns("var_type"), "'] == 'boolean'"),
+                        condition = paste0("input['", ns("var_type"), "'] != 'number' && input['", ns("var_type"), "'] != 'integer'"),
                         div(
                           style = "padding: 8px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; color: #6c757d;",
                           "Not applicable for this data type"
@@ -797,35 +910,7 @@ dataDictionaryUI <- function(id) {
                   )
                 ),
                 
-                # Conditional constraints section - only show for numeric types
-                conditionalPanel(
-                  condition = paste0("input['", ns("var_type"), "'] == 'number' || input['", ns("var_type"), "'] == 'integer'"),
-                  div(
-                    class = "constraints-section",
-                    style = "margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 4px;",
-                    tags$label("Value Constraints", style = "font-weight: bold; margin-bottom: 15px; display: block; color: #333;"),
-                    fluidRow(
-                      column(
-                        width = 6,
-                        textInput(
-                          ns("var_min"),
-                          "Minimum Value",
-                          placeholder = "Minimum allowed value",
-                          width = "100%"
-                        )
-                      ),
-                      column(
-                        width = 6,
-                        textInput(
-                          ns("var_max"),
-                          "Maximum Value", 
-                          placeholder = "Maximum allowed value",
-                          width = "100%"
-                        )
-                      )
-                    )
-                  )
-                ),
+               
                 
                 # Categorical Values Editor - only show for categorical type
                 conditionalPanel(
@@ -900,51 +985,108 @@ dataDictionaryUI <- function(id) {
                 
                 
                 # Validation Properties Section
-                div(
-                  class = "validation-section",
-                  style = "margin-bottom: 20px; padding: 15px; background-color: #f0f8ff; border-radius: 4px; border: 1px solid #bee5eb;",
-                  tags$label("Validation Properties", style = "font-weight: bold; margin-bottom: 15px; display: block; color: #333;"),
-                  
-                  fluidRow(
-                    column(
-                      width = 4,
-                      div(
-                        class = "form-group",
-                        checkboxInput(
-                          ns("var_required"),
-                          "Required",
-                          value = FALSE
-                        ),
-                        tags$small("Must have a value", style = "color: #666;")
+                # Conditional constraints section - only show for numeric types
+                conditionalPanel(
+                  condition = paste0("input['", ns("var_type"), "'] == 'number' || input['", ns("var_type"), "'] == 'integer'"),
+                  div(
+                    class = "constraints-section",
+                    style = "margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 4px;",
+                    tags$label("Value Constraints", style = "font-weight: bold; margin-bottom: 15px; display: block; color: #333;"),
+                    
+                    # Use min/max checkbox
+                    div(
+                      style = "margin-bottom: 10px;",
+                      checkboxInput(
+                        ns("var_use_minmax"),
+                        "Use min/max constraints",
+                        value = FALSE
+                      ),
+                      tags$small(
+                        style = "color: #6c757d; margin-left: 20px;",
+                        "Specify the valid range of values for this variable"
                       )
                     ),
-                    column(
-                      width = 4,
-                      div(
-                        class = "form-group",
-                        checkboxInput(
-                          ns("var_unique"),
-                          "Unique",
-                          value = FALSE
+                    
+                    conditionalPanel(
+                      condition = paste0("input['", ns("var_use_minmax"), "']"),
+                      fluidRow(
+                        column(
+                          width = 6,
+                          textInput(
+                            ns("var_min"),
+                            "Minimum Value",
+                            placeholder = "Minimum allowed value",
+                            width = "100%"
+                          )
                         ),
-                        tags$small("All values must be unique", style = "color: #666;")
+                        column(
+                          width = 6,
+                          textInput(
+                            ns("var_max"),
+                            "Maximum Value", 
+                            placeholder = "Maximum allowed value",
+                            width = "100%"
+                          )
+                        )
                       )
                     ),
-                    column(
-                      width = 4,
+                    
+                    conditionalPanel(
+                      condition = paste0("!input['", ns("var_use_minmax"), "']"),
                       div(
-                        class = "form-group",
-                        textInput(
-                          ns("var_pattern"),
-                          "Pattern (Regex)",
-                          placeholder = "e.g., ^[A-Z]{2}\\d{4}$",
-                          width = "100%"
-                        ),
-                        tags$small("Regular expression for validation", style = "color: #666;")
+                        style = "padding: 8px; background-color: #e9ecef; border: 1px solid #dee2e6; border-radius: 4px; color: #6c757d; text-align: center;",
+                        "Min/max constraints disabled"
                       )
                     )
                   )
                 ),
+
+# Data Quality Constraints - shown for ALL data types
+div(
+  class = "constraints-section",
+  style = "margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 4px;",
+  tags$label("Data Quality Constraints", style = "font-weight: bold; margin-bottom: 15px; display: block; color: #333;"),
+  
+  div(
+    style = "margin-bottom: 15px;",
+    checkboxInput(
+      ns("var_required"),
+      "Required",
+      value = FALSE
+    ),
+    tags$small(
+      style = "color: #6c757d; margin-left: 20px; display: block; margin-top: -10px;",
+      "This variable must have a value (cannot be empty or missing)"
+    )
+  ),
+  
+  div(
+    style = "margin-bottom: 15px;",
+    checkboxInput(
+      ns("var_unique"),
+      "Unique",
+      value = FALSE
+    ),
+    tags$small(
+      style = "color: #6c757d; margin-left: 20px; display: block; margin-top: -10px;",
+      "All values in this variable must be unique (e.g., participant IDs)"
+    )
+  ),
+  
+  div(
+    style = "margin-bottom: 0;",
+    textInput(
+      ns("var_pattern"),
+      "Pattern (Regular Expression)",
+      placeholder = "e.g., ^[A-Z]{2}\\d{4}$ for format like AB1234",
+      width = "100%"
+    ),
+    tags$small(
+      style = "color: #6c757d; display: block; margin-top: 5px;",
+      "Regular expression pattern that values must match (optional, for advanced validation)"
+    )
+  )
+),
                 
                 div(
                   class = "metadata-section",
@@ -962,22 +1104,6 @@ dataDictionaryUI <- function(id) {
                 )
               )
             ),
-            
-            div(
-              class = "variable-actions",
-              style = "margin-top: 20px; text-align: right; padding-top: 15px; border-top: 1px solid #e0e0e0;",
-              actionButton(
-                ns("reset_variable"),
-                "Reset Changes",
-                class = "btn btn-secondary",
-                style = "margin-right: 10px;"
-              ),
-              actionButton(
-                ns("save_variable"),
-                "Save Variable",
-                class = "btn btn-primary"
-              )
-            )
           ),
           
           conditionalPanel(
@@ -993,6 +1119,51 @@ dataDictionaryUI <- function(id) {
         )
       )
     ),
+    sectionBox(
+      title = "Global Missing Value Codes",
+      description = "Define values that should be treated as missing/NA across all variables in this dataset.",
+      
+      div(
+        id = ns("missing_values_container"),
+        style = "border: 1px solid #ced4da; border-radius: 4px; margin-bottom: 10px; background-color: white;",
+        
+        # Table header
+        div(
+          style = "display: flex; background-color: #e9ecef; padding: 8px; border-bottom: 1px solid #ced4da; font-weight: bold;",
+          div(style = "flex: 3; padding-right: 10px;", "Missing Value Code"),
+          div(style = "flex: 0; width: 60px;", "Actions")
+        ),
+        
+        # Dynamic table content
+        uiOutput(ns("missing_values_table"))
+      ),
+      
+      # Add new value form
+      div(
+        style = "padding: 10px; background-color: white; border: 1px solid #ced4da; border-radius: 4px;",
+        fluidRow(
+          column(
+            width = 9,
+            textInput(
+              ns("new_missing_value"),
+              label = NULL,
+              placeholder = "e.g., NA, -999, NULL, missing"
+            )
+          ),
+          column(
+            width = 3,
+            br(),
+            actionButton(
+              ns("add_missing_value"),
+              "Add",
+              class = "btn btn-primary",
+              style = "width: 100%; margin-top: 0px;"
+            )
+          )
+        )
+      )
+    ),
+
     
     commonNavigation(ns, show_back = FALSE, continue_text = "Save Dictionary & Continue →")
   )
@@ -1069,7 +1240,7 @@ datasetExplorerUI <- function(id) {
             # Keyword Search
             div(
               style = "margin-bottom: 20px;",
-              tags$label("Keyword Search", style = "font-weight: bold; margin-bottom: 8px; display: block; color: #333;"),
+              tags$label("Filter Files by Keyword/Value", style = "font-weight: bold; margin-bottom: 8px; display: block; color: #333;"),
               fluidRow(
                 column(
                   width = 5,
@@ -1108,7 +1279,7 @@ datasetExplorerUI <- function(id) {
             
             # Column Search
             div(
-              tags$label("Column Search", style = "font-weight: bold; margin-bottom: 8px; display: block; color: #333;"),
+              tags$label("Filter Rows by Column/Value", style = "font-weight: bold; margin-bottom: 8px; display: block; color: #333;"),
               fluidRow(
                 column(
                   width = 5,
@@ -1175,7 +1346,6 @@ datasetExplorerUI <- function(id) {
               )
             ),
             
-            # Variable Statistics
             div(
               tags$label("Variable Statistics", style = "font-weight: bold; margin-bottom: 8px; display: block; color: #555;"),
               selectInput(
@@ -1184,23 +1354,12 @@ datasetExplorerUI <- function(id) {
                 choices = character(0),
                 width = "100%"
               ),
-              fluidRow(
-                column(
-                  width = 6,
-                  div(
-                    style = "padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; text-align: center;",
-                    div("Unique", style = "font-size: 12px; color: #6c757d;"),
-                    div(textOutput(ns("unique_count"), inline = TRUE), style = "font-weight: bold; font-size: 18px;")
-                  )
-                ),
-                column(
-                  width = 6,
-                  div(
-                    style = "padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; text-align: center;",
-                    div("Total", style = "font-size: 12px; color: #6c757d;"),
-                    div(textOutput(ns("total_count"), inline = TRUE), style = "font-weight: bold; font-size: 18px;")
-                  )
-                )
+              
+              # Statistics display area
+              div(
+                id = ns("stats_container"),
+                style = "margin-top: 10px;",
+                uiOutput(ns("variable_statistics"))
               )
             )
           )
@@ -1223,6 +1382,276 @@ datasetExplorerUI <- function(id) {
           DT::dataTableOutput(ns("data_table"))
         )
       )
+    )
+  )
+}
+
+#' OSF Upload UI Module
+#'
+#' @param id The module ID
+#' @return UI elements for OSF upload
+osfUploadUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    commonHeader(
+      main_title = "Upload to OSF",
+      sub_title = NULL,
+      show_progress = FALSE
+    ),
+    
+    div(
+      class = "section-description",
+      style = "margin-bottom: 20px;",
+      "Upload your validated Psych-DS dataset to the Open Science Framework (OSF). You'll need an OSF account and a Personal Access Token."
+    ),
+    
+    # Authentication Section
+    sectionBox(
+      title = "OSF Authentication",
+      description = "Generate a Personal Access Token from your OSF account settings at osf.io/settings/tokens",
+      
+      div(
+        style = "margin-bottom: 15px;",
+        passwordInput(
+          ns("osf_token"),
+          "Personal Access Token",
+          placeholder = "Paste your OSF token here",
+          width = "100%"
+        )
+      ),
+      
+      div(
+        style = "text-align: right;",
+        actionButton(
+          ns("test_auth"),
+          "Test Connection",
+          icon = icon("plug"),
+          class = "btn btn-info"
+        )
+      ),
+      
+      # Auth status display
+      div(
+        id = ns("auth_status"),
+        style = "margin-top: 15px;",
+        uiOutput(ns("auth_status_display"))
+      )
+    ),
+    
+    # Dataset Selection Section
+    conditionalPanel(
+      condition = paste0("output['", ns("authenticated"), "']"),
+      
+      sectionBox(
+        title = "Select Dataset",
+        description = "Choose a validated Psych-DS dataset to upload",
+        
+        div(
+          class = "directory-input",
+          textInput(
+            ns("dataset_dir"),
+            label = NULL,
+            value = "",
+            placeholder = "Path to validated Psych-DS dataset",
+            width = "100%"
+          ),
+          shinyDirButton(
+            ns("dataset_dir_select"),
+            label = "...",
+            title = "Select dataset directory",
+            class = "browse-btn"
+          )
+        ),
+        
+        # Quick validation check
+        conditionalPanel(
+          condition = paste0("input['", ns("dataset_dir"), "'] != ''"),
+          div(
+            style = "margin-top: 10px;",
+            actionButton(
+              ns("check_dataset"),
+              "Verify Dataset",
+              icon = icon("check"),
+              class = "btn btn-secondary"
+            )
+          )
+        ),
+        
+        div(
+          id = ns("dataset_status"),
+          style = "margin-top: 15px;",
+          uiOutput(ns("dataset_status_display"))
+        )
+      )
+    ),
+    
+    # OSF Project Selection Section - Wrapped in div with ID for shinyjs
+    div(
+      id = ns("osf_project_section"),
+      style = "display: none;",  # Hidden by default
+      
+      sectionBox(
+        title = "OSF Project Configuration",
+        
+        div(
+          style = "margin-bottom: 15px;",
+          radioButtons(
+            ns("project_option"),
+            "Upload destination:",
+            choices = list(
+              "Select existing project" = "existing",
+              "Create new project" = "new"
+            ),
+            selected = "existing",
+            inline = TRUE
+          )
+        ),
+        
+        # Existing project selection
+        conditionalPanel(
+          condition = paste0("input['", ns("project_option"), "'] == 'existing'"),
+          
+          div(
+            style = "margin-bottom: 15px;",
+            selectInput(
+              ns("project_select"),
+              "Your OSF Projects",
+              choices = list("Loading..." = ""),
+              width = "100%"
+            ),
+            actionButton(
+              ns("refresh_projects"),
+              icon = icon("refresh"),
+              label = NULL,
+              class = "btn btn-sm",
+              style = "margin-top: 5px;"
+            )
+          ),
+          
+          div(
+            style = "margin-bottom: 15px;",
+            textInput(
+              ns("project_id_manual"),
+              "Or enter Project ID manually",
+              placeholder = "e.g., abc123",
+              width = "100%"
+            )
+          )
+        ),
+        
+        # New project creation
+        conditionalPanel(
+          condition = paste0("input['", ns("project_option"), "'] == 'new'"),
+          
+          div(
+            style = "margin-bottom: 15px;",
+            textInput(
+              ns("new_project_title"),
+              "Project Title *",
+              placeholder = "e.g., Visual Attention Study 2024",
+              width = "100%"
+            )
+          ),
+          
+          div(
+            style = "margin-bottom: 15px;",
+            textAreaInput(
+              ns("new_project_description"),
+              "Project Description",
+              placeholder = "Brief description of your research project",
+              height = "100px",
+              width = "100%"
+            )
+          ),
+          
+          div(
+            style = "margin-bottom: 15px;",
+            checkboxInput(
+              ns("make_public"),
+              "Make project public immediately",
+              value = FALSE
+            )
+          )
+        ),
+        
+        # Component selection (for existing projects)
+        conditionalPanel(
+          condition = paste0("input['", ns("project_option"), "'] == 'existing'"),
+          div(
+            style = "margin-bottom: 15px;",
+            selectInput(
+              ns("component_select"),
+              "Upload to component (optional)",
+              choices = list("Main project" = "main"),
+              width = "100%"
+            )
+          )
+        ),
+        
+        # Upload path configuration
+        div(
+          style = "margin-bottom: 15px;",
+          textInput(
+            ns("upload_path"),
+            "Folder path on OSF (optional)",
+            placeholder = "e.g., data/wave1 (leave empty for root)",
+            width = "100%"
+          )
+        ),
+        
+        # Additional options
+        div(
+          style = "margin-bottom: 15px;",
+          checkboxInput(
+            ns("preserve_structure"),
+            "Preserve dataset folder structure",
+            value = TRUE
+          )
+        ),
+        
+        div(
+          style = "margin-bottom: 15px;",
+          checkboxInput(
+            ns("create_readme"),
+            "Generate and upload README file",
+            value = TRUE
+          )
+        )
+      )
+    ),
+    
+    # Upload Progress Section - Also wrapped for shinyjs control
+    div(
+      id = ns("upload_summary_section"),
+      style = "display: none;",  # Hidden by default
+      
+      sectionBox(
+        title = "Upload Summary",
+        
+        div(
+          id = ns("upload_summary"),
+          style = "margin-bottom: 15px;",
+          uiOutput(ns("upload_summary_display"))
+        ),
+        
+        div(
+          style = "text-align: right;",
+          actionButton(
+            ns("start_upload"),
+            "Start Upload",
+            icon = icon("cloud-upload"),
+            class = "btn btn-success btn-lg"
+          )
+        )
+      )
+    ),
+    
+    # Upload progress display
+    div(
+      id = ns("upload_progress"),
+      style = "margin-top: 20px; display: none;",
+      uiOutput(ns("upload_progress_display"))
     )
   )
 }

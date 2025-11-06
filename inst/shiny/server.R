@@ -309,15 +309,14 @@ server <- function(input, output, session) {
 
   dataDictionaryServer("data_dictionary", state, session)
   datasetExplorerServer("dataset_explorer", state, session)
+  osfUploadServer("osf_upload", state, session)
 
   observeEvent(input$validate_dir_select, {
-    if (!is.null(input$validate_dir) && input$validate_dir != "") {
-    # Send a message to JavaScript to reset the checklist
-    session$sendCustomMessage("reset_validation_ui", list())
-    }
     if (!is.null(input$validate_dir_select)) {
       selected_dir <- parseDirPath(volumes, input$validate_dir_select)
-      updateTextInput(session, "validate_dir", value = selected_dir)
+      if (length(selected_dir) > 0 && selected_dir != "") {
+        updateTextInput(session, "validate_dir", value = selected_dir)
+      }
     }
   })
 

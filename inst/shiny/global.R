@@ -13,6 +13,7 @@ library(DT)
 library(jsonlite)
 library(tools)
 library(utils)
+library(osfr)
 
 #' Initialize Reactive Value Store
 #'
@@ -263,101 +264,188 @@ organize_directory_hierarchy <- function(files) {
 #' @param directory Path to the dataset directory
 #' @return List representing the file tree
 buildFileTree <- function(directory) {
-  # Normalize and verify the directory path
   directory <- normalizePath(directory, mustWork = TRUE)
   message("Building file tree for: ", directory)
-
-  # Helper to read file content - only for allowed text file types
-  readFileText <- function(path) {
-    # Only attempt to read contents for CSV and JSON files
-    file_ext <- tolower(tools::file_ext(path))
-    if (file_ext %in% c("csv", "json", "md", "txt")) {
-      tryCatch({
-        paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-      }, error = function(e) {
-        message("Error reading file: ", path, " - ", e$message)
-        ""
-      })
-    } else {
-      # For non-text files, return empty string
-      message("Skipping content read for non-text file: ", path)
-      ""
-    }
-  }
-
-  # Recursive helper to insert file into nested list
-  insertIntoTree <- function(tree, parts, itemInfo) {
-    part <- parts[[1]]
-    if (length(parts) == 1) {
-      # We're at the final level - could be file or directory
-      tree[[part]] <- itemInfo
-      return(tree)
-    } else {
-      # We're at a directory level
-      if (is.null(tree[[part]])) {
-        tree[[part]] <- list(
-          type = "directory",
-          contents = list()
-        )
-      }
-      tree[[part]]$contents <- insertIntoTree(tree[[part]]$contents, parts[-1], itemInfo)
-      return(tree)
-    }
-  }
-
-  fileTree <- list()
-
+  
   # Get all files first
-  allFiles <- list.files(directory, recursive = TRUE, full.names = TRUE)
-  message("Found ", length(allFiles), " files")
-
-  # Get all directories (including empty ones)
-  allDirs <- list.dirs(directory, recursive = TRUE, full.names = TRUE)
-  # Remove the root directory itself
-  allDirs <- allDirs[allDirs != directory]
-  message("Found ", length(allDirs), " directories")
-
-  # Process directories first
-  for (dirPath in allDirs) {
+  all_files <- list.files(directory, recursive = TRUE, full.names = TRUE)
+  all_dirs <- list.dirs(directory, recursive = TRUE, full.names = TRUE)
+  all_dirs <- all_dirs[all_dirs != directory]
+  
+  total_files <- length(all_files)
+  message("Found ", total_files, " files to process")
+  
+  # Helper to check binary files
+  isLikelyBinary <- function(path) {
+    tryCatch({
+      con <- file(path, "rb")
+      bytes <- readBin(con, "raw", n = 1024)
+      close(con)
+      return(any(bytes == as.raw(0)))
+    }, error = function(e) TRUE)
+  }
+  
+  # Read file content
+  readFileText <- function(path) {
+    file_ext <- tolower(tools::file_ext(path))
+    
+    # Skip known binary types
+    if (file_ext %in% c("xlsx", "xls", "pdf", "zip", "mp4", "jpg", "png")) {
+      return("")
+    }
+    
+    # Read CSV files completely
+    if (file_ext == "csv") {
+      tryCatch({
+        # Read the entire CSV file
+        content <- readLines(path, warn = FALSE, encoding = "UTF-8")
+        
+        # Check for encoding issues
+        if (any(is.na(content))) {
+          # Try latin1 if UTF-8 fails
+          content <- readLines(path, warn = FALSE, encoding = "latin1")
+        }
+        
+        return(paste(content, collapse = "\n"))
+        
+      }, error = function(e) {
+        message("Error reading CSV: ", basename(path), " - ", e$message)
+        return(paste0("ERROR: ", e$message))
+      })
+    }
+    
+    # Read other text files
+    if (file_ext %in% c("json", "md", "txt")) {
+      if (isLikelyBinary(path)) {
+        return("ERROR_BINARY_FILE")
+      }
+      
+      tryCatch({
+        content <- readLines(path, warn = FALSE, encoding = "UTF-8")
+        return(paste(content, collapse = "\n"))
+      }, error = function(e) {
+        return(paste0("ERROR: ", e$message))
+      })
+    }
+    
+    return("")
+  }
+  
+  # Helper to build tree structure
+  insertIntoTree <- function(tree, parts, itemInfo) {
+    if (length(parts) == 1) {
+      tree[[parts[1]]] <- itemInfo
+    } else {
+      if (is.null(tree[[parts[1]]])) {
+        tree[[parts[1]]] <- list(type = "directory", contents = list())
+      }
+      tree[[parts[1]]]$contents <- insertIntoTree(
+        tree[[parts[1]]]$contents, 
+        parts[-1], 
+        itemInfo
+      )
+    }
+    return(tree)
+  }
+  
+  # Initialize tree
+  fileTree <- list()
+  
+  # Add all directories first
+  for (dirPath in all_dirs) {
     relPath <- sub(paste0("^", directory, "/?"), "", dirPath)
     relPath <- gsub("\\\\", "/", relPath)
     parts <- strsplit(relPath, "/")[[1]]
     
-    dirInfo <- list(
+    fileTree <- insertIntoTree(fileTree, parts, list(
       type = "directory",
       contents = list()
-    )
-    
-    fileTree <- insertIntoTree(fileTree, parts, dirInfo)
-    message("Added directory: ", relPath)
+    ))
   }
-
-  # Then process files
-  for (filePath in allFiles) {
-    if (dir.exists(filePath)) next
-
-    relPath <- sub(paste0("^", directory, "/?"), "", filePath)
-    relPath <- gsub("\\\\", "/", relPath)
-    parts <- strsplit(relPath, "/")[[1]]
-
-    fileName <- parts[[length(parts)]]
-
-    fileInfo <- list(
-      type = "file",
-      file = list(
-        name = fileName,
-        path = paste0("/", relPath),
-        text = readFileText(filePath)
-      )
-    )
-
-    fileTree <- insertIntoTree(fileTree, parts, fileInfo)
-    message("Added file: ", fileName, " to path: ", paste(parts[-length(parts)], collapse = "/"))
+  
+  # Process files with progress bar
+  if (total_files > 10) {
+    # Use progress bar for larger datasets
+    withProgress(message = 'Reading dataset files', value = 0, {
+      
+      for (i in seq_along(all_files)) {
+        filePath <- all_files[i]
+        
+        if (!dir.exists(filePath)) {
+          # Parse file path
+          relPath <- sub(paste0("^", directory, "/?"), "", filePath)
+          relPath <- gsub("\\\\", "/", relPath)
+          parts <- strsplit(relPath, "/")[[1]]
+          fileName <- parts[[length(parts)]]
+          
+          # Read file content (this reads the ENTIRE file)
+          fileContent <- readFileText(filePath)
+          
+          # Create file entry
+          fileInfo <- list(
+            type = "file",
+            file = list(
+              name = fileName,
+              path = paste0("/", relPath),
+              text = fileContent
+            )
+          )
+          
+          # Add to tree
+          fileTree <- insertIntoTree(fileTree, parts, fileInfo)
+        }
+        
+        # Update progress every 5 files or at the end
+        if (i %% 5 == 0 || i == total_files) {
+          setProgress(
+            value = i / total_files,
+            detail = paste('Processing file', i, 'of', total_files)
+          )
+          
+          # CRITICAL: Allow Shiny to process other events
+          # This prevents the UI from freezing
+          shinyjs::delay(1, {})  # 1ms delay
+          
+          # Alternative if shinyjs not available:
+          # Sys.sleep(0.001)
+        }
+      }
+    })
+  } else {
+    # For small datasets, just process without progress bar
+    for (filePath in all_files) {
+      if (!dir.exists(filePath)) {
+        relPath <- sub(paste0("^", directory, "/?"), "", filePath)
+        relPath <- gsub("\\\\", "/", relPath)
+        parts <- strsplit(relPath, "/")[[1]]
+        fileName <- parts[[length(parts)]]
+        
+        fileContent <- readFileText(filePath)
+        
+        fileInfo <- list(
+          type = "file",
+          file = list(
+            name = fileName,
+            path = paste0("/", relPath),
+            text = fileContent
+          )
+        )
+        
+        fileTree <- insertIntoTree(fileTree, parts, fileInfo)
+      }
+    }
   }
-
-  message("✅ File tree built with ", length(fileTree), " top-level entries")
+  
+  message("Successfully processed all ", total_files, " files")
+  
+  # Clean up memory for large datasets
+  if (total_files > 50) {
+    gc()
+  }
+  
   return(fileTree)
 }
+
 
 #' Summarize a directory's contents
 #'

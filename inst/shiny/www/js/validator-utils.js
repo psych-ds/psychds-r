@@ -119,7 +119,16 @@ function isShinyReady() {
           // Convert any string text values to functions
           // This is necessary because R functions don't serialize properly to JavaScript
           console.log('Processing file tree to ensure text fields are functions');
+
+          // Process the file tree to convert text to functions
           processFileTree(fileData);
+
+          // Validate the tree structure before sending to validator
+          if (!validateFileTree || !validateFileTree(fileData)) {
+            console.warn('File tree validation failed, but continuing anyway');
+          }
+
+          // Validation setup complete - ready to start
           
           // Create event emitter for tracking validation progress
           var eventEmitter = new EventEmitter3();
@@ -292,12 +301,6 @@ function isShinyReady() {
   
           // Function to update UI elements directly
           function updateStepUI(stepKey, success, issue) {
-            // If validation has already failed, don't update any more steps
-            if (validationFailed && !stepStatus[stepKey].complete) {
-              console.log(`Skipping UI update for ${stepKey} because validation already failed`);
-              return;
-            }
-            
             // Find the step element by its data attribute
             var stepElement = document.querySelector(`[data-step-key="${stepKey}"]`);
             if (!stepElement) {
@@ -320,53 +323,73 @@ function isShinyReady() {
               messageElement.textContent = messageElement.getAttribute('data-past-tense');
             }
             
-            // Handle issues
-            if (issue) {
+            // Handle issues - ONLY display if this is the first failure
+            if (issue && !success) {
+              var currentStepIndex = stepOrder[stepKey];
+              
+              // CRITICAL: Only show error if this is THE first failure
+              if (currentStepIndex === firstFailedStepIndex) {
+                console.log(`Showing error for ${stepKey} as it is the first failure at index ${firstFailedStepIndex}`);
+                
+                var issueContainer = stepElement.querySelector('.step-issue-container');
+                if (issueContainer) {
+                  issueContainer.innerHTML = '';
+                  var issueElement = document.createElement('div');
+                  issueElement.className = 'step-issue';
+                  issueElement.style.marginTop = '10px';
+                  issueElement.style.color = '#f44336';
+                  issueElement.style.paddingLeft = '20px';
+                  
+                  var strongEl = document.createElement('strong');
+                  strongEl.textContent = 'Issue: ';
+                  issueElement.appendChild(strongEl);
+                  issueElement.appendChild(document.createTextNode(issue.reason || 'Unknown error'));
+                  
+                  // Add evidence if available
+                  if (issue.files && issue.files.size > 0) {
+                    var evidenceElement = document.createElement('div');
+                    evidenceElement.className = 'step-evidence';
+                    evidenceElement.style.marginTop = '5px';
+                    evidenceElement.style.color = '#666';
+                    evidenceElement.style.paddingLeft = '20px';
+                    evidenceElement.style.fontSize = '0.9em';
+                    
+                    // Create a formatted list of evidence items
+                    var evidenceList = document.createElement('ul');
+                    evidenceList.style.marginTop = '5px';
+                    evidenceList.style.paddingLeft = '20px';
+                    
+                    // Iterate through the files Map to get evidence
+                    issue.files.forEach(function(fileInfo, filePath) {
+                      if (fileInfo && fileInfo.evidence) {
+                        var evidenceItem = document.createElement('li');
+                        evidenceItem.textContent = `${fileInfo.name}: ${fileInfo.evidence}`;
+                        evidenceList.appendChild(evidenceItem);
+                      }
+                    });
+                    
+                    if (evidenceList.childNodes.length > 0) {
+                      evidenceElement.appendChild(document.createElement('strong')).textContent = 'Evidence: ';
+                      evidenceElement.appendChild(evidenceList);
+                      issueElement.appendChild(evidenceElement);
+                    }
+                  }
+                  
+                  issueContainer.appendChild(issueElement);
+                }
+              } else {
+                console.log(`NOT showing error for ${stepKey} at index ${currentStepIndex} - first failure is at ${firstFailedStepIndex}`);
+                // Clear any existing error display for this step
+                var issueContainer = stepElement.querySelector('.step-issue-container');
+                if (issueContainer) {
+                  issueContainer.innerHTML = '';
+                }
+              }
+            } else if (!issue) {
+              // No issue, clear any existing error display
               var issueContainer = stepElement.querySelector('.step-issue-container');
               if (issueContainer) {
                 issueContainer.innerHTML = '';
-                var issueElement = document.createElement('div');
-                issueElement.className = 'step-issue';
-                issueElement.style.marginTop = '10px';
-                issueElement.style.color = '#f44336';
-                issueElement.style.paddingLeft = '20px';
-                
-                var strongEl = document.createElement('strong');
-                strongEl.textContent = 'Issue: ';
-                issueElement.appendChild(strongEl);
-                issueElement.appendChild(document.createTextNode(issue.reason || 'Unknown error'));
-                
-                // Add evidence if available
-                if (issue.files && issue.files.size > 0) {
-                  var evidenceElement = document.createElement('div');
-                  evidenceElement.className = 'step-evidence';
-                  evidenceElement.style.marginTop = '5px';
-                  evidenceElement.style.color = '#666';
-                  evidenceElement.style.paddingLeft = '20px';
-                  evidenceElement.style.fontSize = '0.9em';
-                  
-                  // Create a formatted list of evidence items
-                  var evidenceList = document.createElement('ul');
-                  evidenceList.style.marginTop = '5px';
-                  evidenceList.style.paddingLeft = '20px';
-                  
-                  // Iterate through the files Map to get evidence
-                  issue.files.forEach(function(fileInfo, filePath) {
-                    if (fileInfo && fileInfo.evidence) {
-                      var evidenceItem = document.createElement('li');
-                      evidenceItem.textContent = `${fileInfo.name}: ${fileInfo.evidence}`;
-                      evidenceList.appendChild(evidenceItem);
-                    }
-                  });
-                  
-                  if (evidenceList.childNodes.length > 0) {
-                    evidenceElement.appendChild(document.createElement('strong')).textContent = 'Evidence: ';
-                    evidenceElement.appendChild(evidenceList);
-                    issueElement.appendChild(evidenceElement);
-                  }
-                }
-                
-                issueContainer.appendChild(issueElement);
               }
             }
           }
@@ -375,9 +398,30 @@ function isShinyReady() {
           function updateSuperStepStatus(superStep) {
             if (!superStep.subSteps || superStep.subSteps.length === 0) return;
             
-            // If validation has already failed, don't update any more steps
-            if (validationFailed && !stepStatus[superStep.key].complete) {
-              console.log(`Skipping superstep update for ${superStep.key} because validation already failed`);
+            // Don't update superstep if any of its substeps come after the first failure
+            if (firstFailedStepIndex !== -1) {
+              var hasSubstepsAfterFailure = superStep.subSteps.some(function(subStep) {
+                return stepOrder[subStep.key] > firstFailedStepIndex;
+              });
+              
+              if (hasSubstepsAfterFailure) {
+                console.log(`Skipping superstep update for ${superStep.key} because it has substeps after the failure point`);
+                return;
+              }
+            }
+            
+            // Check how many substeps have reported
+            var reportedSubsteps = superStep.subSteps.filter(function(subStep) {
+              return stepStatus[subStep.key] && stepStatus[subStep.key].complete;
+            });
+            
+            // Only update the superstep if ALL substeps have reported OR if there's a failure
+            var hasFailure = reportedSubsteps.some(function(subStep) {
+              return stepStatus[subStep.key] && !stepStatus[subStep.key].success;
+            });
+            
+            if (reportedSubsteps.length < superStep.subSteps.length && !hasFailure) {
+              console.log(`Skipping superstep update for ${superStep.key} - only ${reportedSubsteps.length}/${superStep.subSteps.length} substeps reported and no failure yet`);
               return;
             }
             
@@ -389,26 +433,189 @@ function isShinyReady() {
               return stepStatus[subStep.key] && stepStatus[subStep.key].success;
             });
             
+            // Only set the superstep as complete if all substeps are actually complete
             stepStatus[superStep.key] = {
               complete: allSubStepsComplete,
               success: allSubStepsSuccess
             };
             
-            // Update the UI for the superstep
-            updateStepUI(superStep.key, allSubStepsSuccess, null);
+            // Only update UI if the superstep is actually complete or failed
+            if (allSubStepsComplete || hasFailure) {
+              updateStepUI(superStep.key, allSubStepsSuccess, null);
+            }
           }
   
+          // Track which step failed first and its position
+          var firstFailedStepIndex = -1;
+          var stepOrder = {};
+          var stepIndex = 0;
+          
+          // Build a map of step keys to their order index
+          validationSteps.forEach(function(superStep) {
+            stepOrder[superStep.key] = stepIndex++;
+            if (superStep.subSteps && superStep.subSteps.length > 0) {
+              superStep.subSteps.forEach(function(subStep) {
+                stepOrder[subStep.key] = stepIndex++;
+              });
+            }
+          });
+          
+          console.log('DEBUG: Step order mapping:', stepOrder);
+          
+          // Helper function to get step message
+          function getStepMessage(stepKey, isPastTense) {
+            // Find the step configuration
+            for (var i = 0; i < validationSteps.length; i++) {
+              var step = validationSteps[i];
+              if (step.key === stepKey) {
+                return isPastTense ? step.message.pastTense : step.message.imperative;
+              }
+              // Check substeps
+              if (step.subSteps) {
+                for (var j = 0; j < step.subSteps.length; j++) {
+                  if (step.subSteps[j].key === stepKey) {
+                    return isPastTense ? step.subSteps[j].message.pastTense : step.subSteps[j].message.imperative;
+                  }
+                }
+              }
+            }
+            return '';
+          }
+          
           // Set up listeners for all steps and update the UI accordingly
           validationSteps.forEach(function(superStep) {
+            console.log('DEBUG: Setting up listener for step:', superStep.key);
             if (!superStep.subSteps || superStep.subSteps.length === 0) {
               // For supersteps without substeps
               eventEmitter.on(superStep.key, function(data) {
-                console.log(`Step event received for ${superStep.key}:`, data);
+                console.log(`DEBUG: Step event received for ${superStep.key}:`, data);
+                console.log(`DEBUG: Current firstFailedStepIndex:`, firstFailedStepIndex);
                 
-                // If validation has already failed, don't update any more steps
-                if (validationFailed) {
-                  console.log(`Skipping update for ${superStep.key} because validation already failed`);
+                var currentStepIndex = stepOrder[superStep.key];
+                
+                // Check if this step comes after the first failed step
+                if (firstFailedStepIndex !== -1 && currentStepIndex > firstFailedStepIndex) {
+                  console.log(`DEBUG: Skipping update for ${superStep.key} (index ${currentStepIndex}) because it comes after failed step at index ${firstFailedStepIndex}`);
                   return;
+                }
+                
+                // If this is a failure and it's earlier than any previous failure
+                if (!data.success) {
+                  if (firstFailedStepIndex === -1 || currentStepIndex < firstFailedStepIndex) {
+                    // This is now the first failure
+                    firstFailedStepIndex = currentStepIndex;
+                    validationFailed = true;
+                    console.log(`DEBUG: New first failure at step ${superStep.key} (index ${currentStepIndex})`);
+                    
+                    // CRITICAL: Remove ALL existing error displays immediately
+                    console.log('DEBUG: Removing all existing error displays due to new earlier failure');
+                    document.querySelectorAll('.step-issue').forEach(function(errorDiv) {
+                      console.log('DEBUG: Removing error div:', errorDiv);
+                      errorDiv.remove();
+                    });
+                    
+                    // Clear all issue containers to be safe
+                    document.querySelectorAll('.step-issue-container').forEach(function(container) {
+                      container.innerHTML = '';
+                    });
+                    
+                    // Clear any steps that come after this new first failure
+                    Object.keys(stepStatus).forEach(function(stepKey) {
+                      if (stepOrder[stepKey] > currentStepIndex && stepStatus[stepKey].complete) {
+                        console.log(`DEBUG: Clearing step ${stepKey} that comes after new first failure`);
+                        // Reset the UI for this step - use the correct selector
+                        var stepElement = document.querySelector('[data-step-key="' + stepKey + '"]');
+                        if (stepElement) {
+                          var icon = stepElement.querySelector('.step-icon');
+                          var message = stepElement.querySelector('.step-message');
+                          if (icon) {
+                            console.log('DEBUG: Resetting icon for ' + stepKey + ' to pending');
+                            icon.textContent = '⋯';
+                            icon.style.color = '#666666';
+                          }
+                          if (message && message.hasAttribute('data-imperative')) {
+                            console.log('DEBUG: Resetting message for ' + stepKey + ' to imperative form');
+                            message.textContent = message.getAttribute('data-imperative');
+                          }
+                          }
+                          // Remove any issue display
+                          var issueDiv = stepElement.querySelector('.step-issue');
+                          if (issueDiv) {
+                            issueDiv.remove();
+                          }
+                        }
+                        // Clear from stepStatus
+                        delete stepStatus[stepKey];
+                      });
+                    
+                    // Also clear any parent supersteps that contain cleared substeps
+                    validationSteps.forEach(function(step) {
+                      if (step.subSteps && step.subSteps.length > 0) {
+                        // Check if any of this superstep's substeps were cleared
+                        var hasCleared = step.subSteps.some(function(sub) {
+                          return stepOrder[sub.key] > currentStepIndex;
+                        });
+                        if (hasCleared) {
+                          console.log(`DEBUG: Clearing parent superstep ${step.key} because its substeps were cleared`);
+                          var stepElement = document.getElementById('validate_dataset-step-' + step.key);
+                          if (stepElement) {
+                            var icon = stepElement.querySelector('.step-icon');
+                            var message = stepElement.querySelector('.step-message');
+                            if (icon) {
+                              icon.classList.remove('step-success', 'step-error');
+                              icon.classList.add('step-pending');
+                              icon.innerHTML = '⋯';
+                            }
+                            if (message) {
+                              message.textContent = getStepMessage(step.key, false);
+                            }
+                            // Remove ALL issue displays (including nested ones)
+                            var allIssueDivs = stepElement.querySelectorAll('.step-issue');
+                            allIssueDivs.forEach(function(issueDiv) {
+                              issueDiv.remove();
+                            });
+                            
+                            // Also clear any substep containers that might have issues
+                            var substepContainer = stepElement.querySelector('.substep-container');
+                            if (substepContainer) {
+                              // Reset all substeps in the container
+                              var substepElements = substepContainer.querySelectorAll('[id^="validate_dataset-step-"]');
+                              substepElements.forEach(function(subElement) {
+                                var subIcon = subElement.querySelector('.step-icon');
+                                var subMessage = subElement.querySelector('.step-message');
+                                if (subIcon) {
+                                  subIcon.classList.remove('step-success', 'step-error');
+                                  subIcon.classList.add('step-pending');
+                                  subIcon.innerHTML = '⋯';
+                                }
+                                if (subMessage) {
+                                  // Get the substep key from the element ID
+                                  var subKey = subElement.id.replace('validate_dataset-step-', '');
+                                  subMessage.textContent = getStepMessage(subKey, false);
+                                }
+                                // Remove any issue displays from substeps
+                                var subIssueDivs = subElement.querySelectorAll('.step-issue');
+                                subIssueDivs.forEach(function(issueDiv) {
+                                  issueDiv.remove();
+                                });
+                              });
+                            }
+                          }
+                          // Clear from stepStatus
+                          delete stepStatus[step.key];
+                        }
+                      }
+                    });
+                    
+                    // Send the halt notification to Shiny
+                    if (isShinyReady()) {
+                      Shiny.setInputValue('validation_halted', true, {priority: 'event'});
+                    }
+                  } else {
+                    // This failure comes after the first failure, don't display it
+                    console.log(`DEBUG: Ignoring failure at ${superStep.key} (index ${currentStepIndex}) because first failure is at index ${firstFailedStepIndex}`);
+                    return;
+                  }
                 }
                 
                 // Update status for this step
@@ -420,16 +627,6 @@ function isShinyReady() {
                 
                 // Update the UI directly
                 updateStepUI(superStep.key, data.success, data.issue);
-                
-                // If this step failed, set the validation failed flag
-                if (!data.success) {
-                  validationFailed = true;
-                  
-                  // Send the halt notification to Shiny
-                  if (isShinyReady()) {
-                    Shiny.setInputValue('validation_halted', true, {priority: 'event'});
-                  }
-                }
                 
                 // Send updates to Shiny
                 if (isShinyReady()) {
@@ -448,10 +645,134 @@ function isShinyReady() {
                 eventEmitter.on(subStep.key, function(data) {
                   console.log(`Substep event received for ${subStep.key}:`, data);
                   
-                  // If validation has already failed, don't update any more steps
-                  if (validationFailed) {
-                    console.log(`Skipping update for ${subStep.key} because validation already failed`);
+                  var currentStepIndex = stepOrder[subStep.key];
+                  
+                  // Check if this step comes after the first failed step
+                  if (firstFailedStepIndex !== -1 && currentStepIndex > firstFailedStepIndex) {
+                    console.log(`DEBUG: Skipping update for ${subStep.key} (index ${currentStepIndex}) because it comes after failed step at index ${firstFailedStepIndex}`);
                     return;
+                  }
+                  
+                  // If this is a failure and it's earlier than any previous failure
+                  if (!data.success) {
+                    if (firstFailedStepIndex === -1 || currentStepIndex < firstFailedStepIndex) {
+                      // This is now the first failure
+                      firstFailedStepIndex = currentStepIndex;
+                      validationFailed = true;
+                      console.log(`DEBUG: New first failure at substep ${subStep.key} (index ${currentStepIndex})`);
+                      
+                      // CRITICAL: Remove ALL existing error displays immediately
+                      console.log('DEBUG: Removing all existing error displays due to new earlier failure');
+                      document.querySelectorAll('.step-issue').forEach(function(errorDiv) {
+                        console.log('DEBUG: Removing error div:', errorDiv);
+                        errorDiv.remove();
+                      });
+                      
+                      // Clear all issue containers to be safe
+                      document.querySelectorAll('.step-issue-container').forEach(function(container) {
+                        container.innerHTML = '';
+                      });
+                      
+                      // Clear any steps that come after this new first failure
+                      Object.keys(stepStatus).forEach(function(stepKey) {
+                        if (stepOrder[stepKey] > currentStepIndex && stepStatus[stepKey].complete) {
+                          console.log(`DEBUG: Clearing step ${stepKey} that comes after new first failure`);
+                          // Reset the UI for this step - use the correct selector
+                          var stepElement = document.querySelector('[data-step-key="' + stepKey + '"]');
+                          if (stepElement) {
+                            var icon = stepElement.querySelector('.step-icon');
+                            var message = stepElement.querySelector('.step-message');
+                            if (icon) {
+                              console.log('DEBUG: Resetting icon for ' + stepKey + ' to pending');
+                              icon.textContent = '⋯';
+                              icon.style.color = '#666666';
+                            }
+                            if (message && message.hasAttribute('data-imperative')) {
+                              console.log('DEBUG: Resetting message for ' + stepKey + ' to imperative form');
+                              message.textContent = message.getAttribute('data-imperative');
+                            }
+                            }
+                            if (message) {
+                              message.textContent = getStepMessage(stepKey, false);
+                            }
+                            // Remove any issue display
+                            var issueDiv = stepElement.querySelector('.step-issue');
+                            if (issueDiv) {
+                              issueDiv.remove();
+                            }
+                          }
+                          // Clear from stepStatus
+                          delete stepStatus[stepKey];
+                        });
+                      
+                      // Also clear any parent supersteps that contain cleared substeps
+                      validationSteps.forEach(function(step) {
+                        if (step.subSteps && step.subSteps.length > 0) {
+                          // Check if any of this superstep's substeps were cleared
+                          var hasCleared = step.subSteps.some(function(sub) {
+                            return stepOrder[sub.key] > currentStepIndex;
+                          });
+                          if (hasCleared) {
+                            console.log(`DEBUG: Clearing parent superstep ${step.key} because its substeps were cleared`);
+                            var stepElement = document.getElementById('validate_dataset-step-' + step.key);
+                            if (stepElement) {
+                              var icon = stepElement.querySelector('.step-icon');
+                              var message = stepElement.querySelector('.step-message');
+                              if (icon) {
+                                icon.classList.remove('step-success', 'step-error');
+                                icon.classList.add('step-pending');
+                                icon.innerHTML = '⋯';
+                              }
+                              if (message) {
+                                message.textContent = getStepMessage(step.key, false);
+                              }
+                              // Remove ALL issue displays (including nested ones)
+                              var allIssueDivs = stepElement.querySelectorAll('.step-issue');
+                              allIssueDivs.forEach(function(issueDiv) {
+                                issueDiv.remove();
+                              });
+                              
+                              // Also clear any substep containers that might have issues
+                              var substepContainer = stepElement.querySelector('.substep-container');
+                              if (substepContainer) {
+                                // Reset all substeps in the container
+                                var substepElements = substepContainer.querySelectorAll('[id^="validate_dataset-step-"]');
+                                substepElements.forEach(function(subElement) {
+                                  var subIcon = subElement.querySelector('.step-icon');
+                                  var subMessage = subElement.querySelector('.step-message');
+                                  if (subIcon) {
+                                    subIcon.classList.remove('step-success', 'step-error');
+                                    subIcon.classList.add('step-pending');
+                                    subIcon.innerHTML = '⋯';
+                                  }
+                                  if (subMessage) {
+                                    // Get the substep key from the element ID
+                                    var subKey = subElement.id.replace('validate_dataset-step-', '');
+                                    subMessage.textContent = getStepMessage(subKey, false);
+                                  }
+                                  // Remove any issue displays from substeps
+                                  var subIssueDivs = subElement.querySelectorAll('.step-issue');
+                                  subIssueDivs.forEach(function(issueDiv) {
+                                    issueDiv.remove();
+                                  });
+                                });
+                              }
+                            }
+                            // Clear from stepStatus
+                            delete stepStatus[step.key];
+                          }
+                        }
+                      });
+                      
+                      // Send the halt notification to Shiny
+                      if (isShinyReady()) {
+                        Shiny.setInputValue('validation_halted', true, {priority: 'event'});
+                      }
+                    } else {
+                      // This failure comes after the first failure, don't display it
+                      console.log(`DEBUG: Ignoring failure at ${subStep.key} (index ${currentStepIndex}) because first failure is at index ${firstFailedStepIndex}`);
+                      return;
+                    }
                   }
                   
                   // Update status for this substep
@@ -464,17 +785,10 @@ function isShinyReady() {
                   // Update the UI directly
                   updateStepUI(subStep.key, data.success, data.issue);
                   
-                  // Update the parent superstep's status
-                  updateSuperStepStatus(superStep);
-                  
-                  // If this step failed, set the validation failed flag
-                  if (!data.success) {
-                    validationFailed = true;
-                    
-                    // Send the halt notification to Shiny
-                    if (isShinyReady()) {
-                      Shiny.setInputValue('validation_halted', true, {priority: 'event'});
-                    }
+                  // Update the parent superstep's status only if this step is still valid
+                  // Don't update if there's a failure at an earlier index
+                  if (firstFailedStepIndex === -1 || currentStepIndex <= firstFailedStepIndex) {
+                    updateSuperStepStatus(superStep);
                   }
                   
                   // Send updates to Shiny
@@ -593,29 +907,193 @@ function isShinyReady() {
   
   // Helper function to process a file tree and convert string text values to functions
   function processFileTree(tree) {
-    if (!tree) return;
-    
+  if (!tree) {
+    console.warn('processFileTree called with null/undefined tree');
+    return;
+  }
+  
+  // Make sure we have an object to process
+  if (typeof tree !== 'object') {
+    console.warn('processFileTree called with non-object:', typeof tree);
+    return;
+  }
+  
+  try {
     Object.keys(tree).forEach(function(key) {
       var entry = tree[key];
       
+      if (!entry) {
+        console.warn('Null entry for key:', key);
+        return;
+      }
+      
       // Process file entries
-      if (entry && entry.type === 'file' && entry.file) {
-        // If text is a string, convert it to a function
-        if (typeof entry.file.text === 'string') {
+      if (entry.type === 'file' && entry.file) {
+        // Make sure file object exists
+        if (!entry.file) {
+          entry.file = {};
+        }
+        
+        // Handle the text field
+        if (entry.file.hasOwnProperty('text')) {
           var textContent = entry.file.text;
+          
+          // Check for error codes
+          if (textContent === 'ERROR_BINARY_FILE') {
+            console.warn('Binary file detected (likely Excel):', entry.file.path || key);
+            // Create a function that returns empty string
+            // This prevents the validator from crashing
+            entry.file.text = function() {
+              return '';
+            };
+            // Mark the file as problematic
+            entry.file.isBinary = true;
+            entry.file.validationError = 'File appears to be in binary format (possibly Excel), not valid CSV';
+            
+          } else if (textContent === 'ERROR_ENCODING') {
+            console.warn('Encoding error in file:', entry.file.path || key);
+            entry.file.text = function() {
+              return '';
+            };
+            entry.file.hasEncodingError = true;
+            entry.file.validationError = 'File contains characters that cannot be decoded as UTF-8';
+            
+          } else if (textContent === 'ERROR_READ_FAILED') {
+            console.warn('Read error for file:', entry.file.path || key);
+            entry.file.text = function() {
+              return '';
+            };
+            entry.file.hasReadError = true;
+            entry.file.validationError = 'Could not read file contents';
+            
+          } else if (typeof textContent === 'string') {
+            // Normal text content - wrap in function
+            var content = textContent;
+            entry.file.text = function() {
+              return content;
+            };
+            console.log('Converted text to function for:', entry.file.path || key);
+            
+          } else if (typeof textContent === 'function') {
+            // Already a function, leave it as is
+            console.log('Text already a function for:', entry.file.path || key);
+            
+          } else {
+            // Unexpected type - create empty function
+            console.warn('Unexpected text type for', entry.file.path || key, ':', typeof textContent);
+            entry.file.text = function() {
+              return '';
+            };
+          }
+        } else {
+          // No text field - add empty function
+          console.log('No text field for file, adding empty function:', entry.file.path || key);
           entry.file.text = function() {
-            return textContent;
+            return '';
           };
-          console.log('Converted text to function for:', entry.file.path || key);
+        }
+        
+        // Ensure path and name exist
+        if (!entry.file.path) {
+          entry.file.path = '/' + key;
+        }
+        if (!entry.file.name) {
+          entry.file.name = key;
         }
       }
       
       // Process directory entries recursively
-      if (entry && entry.type === 'directory' && entry.contents) {
-        processFileTree(entry.contents);
+      if (entry.type === 'directory') {
+        // Ensure contents exists
+        if (!entry.contents) {
+          entry.contents = {};
+          console.log('Added empty contents to directory:', key);
+        } else if (typeof entry.contents === 'object') {
+          // Recursively process contents
+          processFileTree(entry.contents);
+        } else {
+          console.warn('Invalid contents type for directory:', key, typeof entry.contents);
+          entry.contents = {};
+        }
+      }
+    });
+  } catch (e) {
+    console.error('Error in processFileTree:', e);
+    console.error('Stack trace:', e.stack);
+  }
+}
+
+// Also add this validation function to check the tree before sending to validator
+function validateFileTree(tree) {
+  console.log('Validating file tree structure...');
+  
+  if (!tree || typeof tree !== 'object') {
+    console.error('Invalid tree: not an object');
+    return false;
+  }
+  
+  var hasErrors = false;
+  
+  function checkNode(node, path) {
+    if (!node || typeof node !== 'object') {
+      console.error('Invalid node at path:', path);
+      hasErrors = true;
+      return;
+    }
+    
+    Object.keys(node).forEach(function(key) {
+      var entry = node[key];
+      var fullPath = path ? path + '/' + key : key;
+      
+      if (!entry) {
+        console.error('Null entry at:', fullPath);
+        hasErrors = true;
+        return;
+      }
+      
+      if (!entry.type) {
+        console.error('Missing type at:', fullPath);
+        hasErrors = true;
+      }
+      
+      if (entry.type === 'file') {
+        if (!entry.file) {
+          console.error('Missing file object at:', fullPath);
+          hasErrors = true;
+        } else {
+          if (typeof entry.file.text !== 'function') {
+            console.error('Text is not a function at:', fullPath);
+            hasErrors = true;
+          }
+        }
+      } else if (entry.type === 'directory') {
+        if (!entry.contents) {
+          console.warn('Missing contents for directory at:', fullPath);
+          // This is okay, just means empty directory
+        } else if (typeof entry.contents === 'object') {
+          checkNode(entry.contents, fullPath);
+        } else {
+          console.error('Invalid contents type at:', fullPath);
+          hasErrors = true;
+        }
+      } else {
+        console.warn('Unknown type at:', fullPath, ':', entry.type);
       }
     });
   }
+  
+  checkNode(tree, '');
+  
+  if (hasErrors) {
+    console.error('File tree validation failed');
+  } else {
+    console.log('File tree validation passed');
+  }
+  
+  return !hasErrors;
+}
+
+
   
   // Helper function to count files in a tree
   function countFilesInTree(tree) {
