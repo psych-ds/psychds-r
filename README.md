@@ -10,7 +10,7 @@ You can install the development version of psychds from GitHub:
 
 ```r
 # install.packages("devtools")
-devtools::install_github("psych-ds/psychds")
+devtools::install_github("psych-ds/psychds-r")
 ```
 
 ## Usage
