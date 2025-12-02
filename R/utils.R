@@ -270,3 +270,629 @@ validate_dataset <- function(dir_path) {
 
   results
 }
+
+
+#' Check and Load Package Dependencies
+#' 
+#' This function provides robust package management following CRAN policies.
+#' It checks versions, handles conflicts, and provides clear user feedback.
+#' 
+#' @param min_versions Named list of minimum required package versions
+#' @param recommended_versions Named list of recommended package versions  
+#' @param startup_mode Character: "strict", "recommended", or "minimal"
+#' @return Logical indicating success
+#' @export
+check_dependencies <- function(
+  min_versions = NULL,
+  recommended_versions = NULL, 
+  startup_mode = getOption("psychds.startup_mode", "recommended")
+) {
+  
+  # Define minimum required versions (absolutely necessary for app to function)
+  if (is.null(min_versions)) {
+    min_versions <- list(
+      shiny = "1.7.0",           # Minimum for modern JS handling
+      shinydashboard = "0.7.0",   # Basic dashboard functionality
+      shinyjs = "2.0.0",          # JavaScript integration
+      shinyFiles = "0.9.0",       # File system access
+      DT = "0.20",                # DataTables functionality
+      jsonlite = "1.7.0",         # JSON parsing
+      sortable = "0.4.0"          # Drag-and-drop support
+    )
+  }
+  
+  # Define recommended versions (known to work well together)
+  if (is.null(recommended_versions)) {
+    recommended_versions <- list(
+      shiny = "1.8.0",
+      shinydashboard = "0.7.2", 
+      shinyjs = "2.1.0",
+      shinyFiles = "0.9.3",
+      DT = "0.31",
+      jsonlite = "1.8.0",
+      sortable = "0.5.0",
+      zip = "2.2.0",
+      pointblank = "0.11.0",
+      osfr = "0.2.9"
+    )
+  }
+  
+  # Core packages that must be present
+  core_packages <- c("shiny", "shinydashboard", "shinyjs", "shinyFiles", 
+                     "DT", "jsonlite", "tools", "utils")
+  
+  # Optional packages that enhance functionality
+  optional_packages <- c("sortable", "zip", "pointblank", "osfr")
+  
+  # Initialize status tracking
+  status <- list(
+    missing_core = character(),
+    missing_optional = character(),
+    version_conflicts = character(),
+    warnings = character(),
+    success = TRUE
+  )
+  
+  # ---- Step 1: Check Core Package Availability ----
+  message("Checking package dependencies for psychds...")
+  
+  for (pkg in core_packages) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+      status$missing_core <- c(status$missing_core, pkg)
+      status$success <- FALSE
+    }
+  }
+  
+  # ---- Step 2: Check Optional Package Availability ----
+  for (pkg in optional_packages) {
+    if (!requireNamespace(pkg, quietly = TRUE)) {
+      status$missing_optional <- c(status$missing_optional, pkg)
+    }
+  }
+  
+  # ---- Step 3: Version Checking (if packages are available) ----
+  installed_packages <- core_packages[!core_packages %in% status$missing_core]
+  
+  for (pkg in installed_packages) {
+    current_version <- tryCatch(
+      utils::packageVersion(pkg),
+      error = function(e) NULL
+    )
+    
+    if (!is.null(current_version)) {
+      # Check against minimum version
+      if (pkg %in% names(min_versions)) {
+        min_ver <- package_version(min_versions[[pkg]])
+        if (current_version < min_ver) {
+          status$version_conflicts <- c(
+            status$version_conflicts,
+            sprintf("%s (have %s, need >= %s)", pkg, current_version, min_ver)
+          )
+          status$success <- FALSE
+        }
+      }
+      
+      # Check against recommended version (warning only)
+      if (startup_mode == "recommended" && pkg %in% names(recommended_versions)) {
+        rec_ver <- package_version(recommended_versions[[pkg]])
+        if (current_version < rec_ver) {
+          status$warnings <- c(
+            status$warnings,
+            sprintf("%s: version %s is older than recommended %s", 
+                   pkg, current_version, rec_ver)
+          )
+        }
+      }
+    }
+  }
+  
+  # ---- Step 4: Check for Known Conflicts ----
+  status <- check_known_conflicts(status)
+  
+  # ---- Step 5: Report Results ----
+  report_dependency_status(status, startup_mode)
+  
+  # ---- Step 6: Offer Installation Help (if needed) ----
+  if (!status$success && interactive()) {
+    offer_installation_help(status, min_versions)
+  }
+  
+  return(status$success)
+}
+
+#' Check for Known Package Conflicts
+#' @param status Current status list
+#' @return Updated status list
+#' @noRd
+check_known_conflicts <- function(status) {
+  # Check for shiny namespace conflicts
+  if ("package:shiny" %in% search()) {
+    loaded_shiny_ver <- utils::packageVersion("shiny")
+    # Check if miniUI or other packages might cause conflicts
+    conflicting_pkgs <- c("miniUI", "manipulateWidget", "colourpicker")
+    loaded_conflicts <- intersect(
+      gsub("package:", "", search()),
+      conflicting_pkgs
+    )
+    
+    if (length(loaded_conflicts) > 0) {
+      status$warnings <- c(
+        status$warnings,
+        sprintf("Potential conflict: %s is loaded and may interfere with Shiny %s",
+               paste(loaded_conflicts, collapse = ", "), loaded_shiny_ver)
+      )
+    }
+  }
+  
+  # Check for DT/crosstalk version compatibility
+  if (requireNamespace("DT", quietly = TRUE) && 
+      requireNamespace("crosstalk", quietly = TRUE)) {
+    dt_ver <- utils::packageVersion("DT")
+    ct_ver <- utils::packageVersion("crosstalk")
+    
+    # Known incompatible combinations
+    if (dt_ver >= "0.30" && ct_ver < "1.2.0") {
+      status$warnings <- c(
+        status$warnings,
+        "DT >= 0.30 requires crosstalk >= 1.2.0 for full compatibility"
+      )
+    }
+  }
+  
+  return(status)
+}
+
+#' Report Dependency Check Results
+#' @param status Status list from check_dependencies
+#' @param mode Startup mode
+#' @noRd
+report_dependency_status <- function(status, mode) {
+  
+  # Use cli package for nice output if available, otherwise basic messages
+  use_cli <- requireNamespace("cli", quietly = TRUE)
+  
+  if (length(status$missing_core) > 0) {
+    msg <- sprintf("Missing required packages: %s", 
+                  paste(status$missing_core, collapse = ", "))
+    if (use_cli) {
+      cli::cli_alert_danger(msg)
+    } else {
+      message("ERROR: ", msg)
+    }
+  }
+  
+  if (length(status$missing_optional) > 0) {
+    msg <- sprintf("Missing optional packages (some features may be unavailable): %s",
+                  paste(status$missing_optional, collapse = ", "))
+    if (use_cli) {
+      cli::cli_alert_warning(msg)
+    } else {
+      message("WARNING: ", msg)
+    }
+  }
+  
+  if (length(status$version_conflicts) > 0) {
+    msg <- "Package version conflicts:"
+    if (use_cli) {
+      cli::cli_alert_danger(msg)
+      for (conflict in status$version_conflicts) {
+        cli::cli_alert_danger(paste0("  ", conflict))
+      }
+    } else {
+      message("ERROR: ", msg)
+      for (conflict in status$version_conflicts) {
+        message("  - ", conflict)
+      }
+    }
+  }
+  
+  if (length(status$warnings) > 0 && mode != "minimal") {
+    if (use_cli) {
+      cli::cli_alert_info("Package compatibility notes:")
+      for (warning in status$warnings) {
+        cli::cli_alert_info(paste0("  ", warning))
+      }
+    } else {
+      message("INFO: Package compatibility notes:")
+      for (warning in status$warnings) {
+        message("  - ", warning)
+      }
+    }
+  }
+  
+  if (status$success) {
+    msg <- "All required dependencies satisfied"
+    if (use_cli) {
+      cli::cli_alert_success(msg)
+    } else {
+      message("SUCCESS: ", msg)
+    }
+  }
+}
+
+#' Offer Installation Help
+#' @param status Status list
+#' @param min_versions Minimum version requirements
+#' @noRd
+offer_installation_help <- function(status, min_versions) {
+  
+  cat("\n")
+  message("=== Installation Instructions ===")
+  
+  # Combine missing and outdated packages
+  packages_to_install <- c(status$missing_core)
+  
+  # Add packages with version conflicts
+  if (length(status$version_conflicts) > 0) {
+    # Extract package names from version conflict messages
+    conflict_pkgs <- gsub(" \\(.*", "", status$version_conflicts)
+    packages_to_install <- c(packages_to_install, conflict_pkgs)
+  }
+  
+  packages_to_install <- unique(packages_to_install)
+  
+  if (length(packages_to_install) > 0) {
+    message("\nTo install missing/outdated packages, run:")
+    cat(sprintf('install.packages(c(%s))\n', 
+               paste0('"', packages_to_install, '"', collapse = ", ")))
+    
+    message("\nOr for specific versions from CRAN archives:")
+    for (pkg in packages_to_install) {
+      if (pkg %in% names(min_versions)) {
+        cat(sprintf('# For %s >= %s:\n', pkg, min_versions[[pkg]]))
+        cat(sprintf('remotes::install_version("%s", version = "%s")\n', 
+                   pkg, min_versions[[pkg]]))
+      }
+    }
+  }
+  
+  if (length(status$missing_optional) > 0) {
+    message("\nOptional packages for full functionality:")
+    cat(sprintf('install.packages(c(%s))\n',
+               paste0('"', status$missing_optional, '"', collapse = ", ")))
+  }
+  
+  message("\nAfter installation, restart R and try again:")
+  message('.rs.restartR() # In RStudio')
+  message('# OR')
+  message('q("no") # Then restart R')
+}
+
+#' Safe Package Loading with Conflict Resolution
+#' 
+#' Loads packages while handling potential conflicts
+#' @param package_name Name of package to load
+#' @param required_version Minimum version required (optional)
+#' @param unload_conflicts Attempt to unload conflicting packages
+#' @return Logical indicating success
+#' @noRd
+safe_load_package <- function(package_name, 
+                              required_version = NULL,
+                              unload_conflicts = FALSE) {
+  
+  # Check if package is available
+  if (!requireNamespace(package_name, quietly = TRUE)) {
+    return(FALSE)
+  }
+  
+  # Check version if specified
+  if (!is.null(required_version)) {
+    current_ver <- utils::packageVersion(package_name)
+    if (current_ver < package_version(required_version)) {
+      message(sprintf("Package %s version %s is older than required %s",
+                     package_name, current_ver, required_version))
+      return(FALSE)
+    }
+  }
+  
+  # Check if already loaded
+  pkg_search_name <- paste0("package:", package_name)
+  if (pkg_search_name %in% search()) {
+    # Already loaded - check if it's the right version
+    if (!is.null(required_version)) {
+      loaded_ver <- utils::packageVersion(package_name)
+      if (loaded_ver < package_version(required_version)) {
+        if (unload_conflicts) {
+          # Try to unload and reload
+          tryCatch({
+            detach(pkg_search_name, unload = TRUE, character.only = TRUE)
+            library(package_name, character.only = TRUE)
+            return(TRUE)
+          }, error = function(e) {
+            message(sprintf("Could not reload %s: %s", package_name, e$message))
+            return(FALSE)
+          })
+        } else {
+          return(FALSE)
+        }
+      }
+    }
+    return(TRUE)  # Already loaded with acceptable version
+  }
+  
+  # Try to load the package
+  tryCatch({
+    library(package_name, character.only = TRUE)
+    TRUE
+  }, error = function(e) {
+    message(sprintf("Failed to load %s: %s", package_name, e$message))
+    FALSE
+  })
+}
+
+#' Initialize Shiny App with Robust Package Management
+#' 
+#' Main entry point that ensures all dependencies are met
+#' @param app_dir Directory containing the Shiny app
+#' @param ... Additional arguments passed to shiny::runApp
+#' @export
+run_app_safe <- function(app_dir = system.file("app", package = "psychds"),
+                        ...) {
+  
+  # ---- Pre-flight Checks ----
+  
+  # 1. Check R version
+  r_version <- getRversion()
+  if (r_version < "4.0.0") {
+    warning(sprintf("R version %s detected. This app is tested with R >= 4.0.0", r_version))
+  }
+  
+  # 2. Check if we're in RStudio and version
+  in_rstudio <- Sys.getenv("RSTUDIO") == "1"
+  if (in_rstudio) {
+    rs_version <- tryCatch(
+      RStudio.Version()$version,
+      error = function(e) NULL
+    )
+    
+    if (!is.null(rs_version) && rs_version < "1.4") {
+      warning("Old RStudio version detected. Some features may not work properly.")
+      message("Consider updating RStudio or running in external browser.")
+    }
+  }
+  
+  # 3. Check dependencies
+  if (!check_dependencies()) {
+    stop("Dependency check failed. Please install required packages and try again.")
+  }
+  
+  # 4. Load packages in correct order with conflict handling
+  package_load_order <- c(
+    "shiny",           # Load first
+    "shinydashboard",  # Before shinyjs
+    "shinyjs",         # Before custom JS
+    "shinyFiles",
+    "DT",
+    "jsonlite",
+    "tools",
+    "utils"
+  )
+  
+  # Optional packages (don't fail if not available)
+  optional_packages <- c("sortable", "zip", "pointblank", "osfr")
+  
+  message("Loading required packages...")
+  for (pkg in package_load_order) {
+    if (!safe_load_package(pkg)) {
+      stop(sprintf("Failed to load required package: %s", pkg))
+    }
+  }
+  
+  # Load optional packages (with warnings if missing)
+  for (pkg in optional_packages) {
+    if (!safe_load_package(pkg)) {
+      message(sprintf("Optional package %s not available. Some features may be limited.", pkg))
+    }
+  }
+  
+  # 5. Set recommended options
+  options(
+    shiny.maxRequestSize = 100 * 1024^2,  # 100MB upload limit
+    shiny.sanitize.errors = FALSE,        # Show detailed errors during development
+    shiny.reactlog = FALSE                # Disable reactlog unless debugging
+  )
+  
+  # 6. Browser handling for RStudio viewer issues
+  if (in_rstudio) {
+    # Check if we should force external browser
+    force_browser <- getOption("psychds.force_browser", FALSE)
+    
+    # Detect potential viewer issues
+    if (rs_version < "2023.06.0" || force_browser) {
+      message("Opening in external browser for better compatibility...")
+      options(shiny.launch.browser = TRUE)
+    }
+  }
+  
+  # 7. Check app directory exists
+  if (!dir.exists(app_dir)) {
+    stop(sprintf("App directory not found: %s", app_dir))
+  }
+  
+  # Check for required app files
+  required_files <- c("ui.R", "server.R", "global.R")
+  missing_files <- required_files[!file.exists(file.path(app_dir, required_files))]
+  
+  if (length(missing_files) > 0) {
+    stop(sprintf("Missing required app files: %s", 
+                paste(missing_files, collapse = ", ")))
+  }
+  
+  # 8. Run the app with error handling
+  message("Starting psychds Shiny application...")
+  
+  tryCatch({
+    shiny::runApp(app_dir, ...)
+  }, error = function(e) {
+    message("\n=== Application failed to start ===")
+    message("Error: ", e$message)
+    message("\nTroubleshooting steps:")
+    message("1. Restart R: .rs.restartR() or q('no')")
+    message("2. Update packages: update.packages(ask = FALSE)")
+    message("3. Force browser mode: options(psychds.force_browser = TRUE)")
+    message("4. Check package versions: psychds::check_dependencies()")
+    stop("Application startup failed", call. = FALSE)
+  })
+}
+
+check_pdf_capabilities <- function() {
+  
+  capabilities <- list(
+    has_rmarkdown = FALSE,
+    has_tinytex = FALSE,
+    has_system_latex = FALSE,
+    has_pagedown = FALSE,
+    can_generate_pdf = FALSE,
+    messages = character()
+  )
+  
+  # Check for rmarkdown
+  if (requireNamespace("rmarkdown", quietly = TRUE)) {
+    capabilities$has_rmarkdown <- TRUE
+  } else {
+    capabilities$messages <- c(capabilities$messages,
+      "Package 'rmarkdown' not installed (needed for formatted output)")
+  }
+  
+  # Check for LaTeX
+  if (Sys.which("pdflatex") != "") {
+    capabilities$has_system_latex <- TRUE
+    
+    # Check if it's TinyTeX specifically
+    if (requireNamespace("tinytex", quietly = TRUE)) {
+      if (tinytex::is_tinytex()) {
+        capabilities$has_tinytex <- TRUE
+      }
+    }
+  } else {
+    capabilities$messages <- c(capabilities$messages,
+      "LaTeX not found (needed for PDF generation)")
+  }
+  
+  # Check for pagedown (alternative PDF method)
+  if (requireNamespace("pagedown", quietly = TRUE)) {
+    capabilities$has_pagedown <- TRUE
+  }
+  
+  # Determine if we can generate PDFs
+  capabilities$can_generate_pdf <- 
+    capabilities$has_rmarkdown && 
+    (capabilities$has_system_latex || capabilities$has_pagedown)
+  
+  return(capabilities)
+}
+
+#' Setup PDF Generation Capabilities
+#' 
+#' Interactive function to help users set up PDF generation
+#' @param force Logical. Force setup even if already capable
+#' @export
+setup_pdf_generation <- function(force = FALSE) {
+  
+  caps <- check_pdf_capabilities()
+  
+  if (caps$can_generate_pdf && !force) {
+    message("✓ PDF generation is already set up!")
+    
+    if (caps$has_tinytex) {
+      message("  Using: TinyTeX")
+    } else if (caps$has_system_latex) {
+      message("  Using: System LaTeX")
+    } else if (caps$has_pagedown) {
+      message("  Using: pagedown (Chrome-based)")
+    }
+    
+    return(invisible(TRUE))
+  }
+  
+  # Interactive setup
+  message("Setting up PDF generation capabilities for psychds...")
+  message("")
+  
+  # Step 1: rmarkdown
+  if (!caps$has_rmarkdown) {
+    message("Step 1: Installing rmarkdown package...")
+    
+    if (interactive()) {
+      response <- readline("Install rmarkdown? (y/n): ")
+      if (tolower(response) == "y") {
+        install.packages("rmarkdown")
+        caps$has_rmarkdown <- TRUE
+      }
+    } else {
+      message("Run: install.packages('rmarkdown')")
+    }
+  } else {
+    message("✓ Step 1: rmarkdown already installed")
+  }
+  
+  # Step 2: PDF engine
+  if (!caps$has_system_latex && !caps$has_pagedown) {
+    message("")
+    message("Step 2: Choose PDF generation method:")
+    message("  1. TinyTeX (recommended, ~100MB, auto-manages LaTeX packages)")
+    message("  2. pagedown (uses Chrome, no LaTeX needed)")
+    message("  3. Skip (use HTML output only)")
+    
+    if (interactive()) {
+      choice <- readline("Enter choice (1/2/3): ")
+      
+      if (choice == "1") {
+        # Install TinyTeX
+        message("Installing TinyTeX...")
+        
+        if (!requireNamespace("tinytex", quietly = TRUE)) {
+          install.packages("tinytex")
+        }
+        
+        # Install TinyTeX distribution
+        tinytex::install_tinytex()
+        
+        # Verify installation
+        if (tinytex::is_tinytex()) {
+          message("✓ TinyTeX installed successfully!")
+          caps$has_tinytex <- TRUE
+          caps$has_system_latex <- TRUE
+        } else {
+          message("⚠ TinyTeX installation may have failed. Try manually:")
+          message("  tinytex::install_tinytex()")
+        }
+        
+      } else if (choice == "2") {
+        # Install pagedown
+        message("Installing pagedown...")
+        install.packages("pagedown")
+        caps$has_pagedown <- TRUE
+        message("✓ pagedown installed successfully!")
+        
+      } else {
+        message("Skipping PDF setup. HTML output will be available.")
+      }
+      
+    } else {
+      message("For PDF generation, run one of:")
+      message("  Option 1: tinytex::install_tinytex()")
+      message("  Option 2: install.packages('pagedown')")
+    }
+    
+  } else if (caps$has_tinytex) {
+    message("✓ Step 2: TinyTeX already installed")
+  } else if (caps$has_system_latex) {
+    message("✓ Step 2: System LaTeX detected")
+  } else if (caps$has_pagedown) {
+    message("✓ Step 2: pagedown already installed")
+  }
+  
+  # Final check
+  caps <- check_pdf_capabilities()
+  
+  message("")
+  if (caps$can_generate_pdf) {
+    message("✅ PDF generation setup complete!")
+  } else {
+    message("⚠ PDF generation not fully configured.")
+    message("  HTML output will be available instead.")
+  }
+  
+  return(invisible(caps$can_generate_pdf))
+}
