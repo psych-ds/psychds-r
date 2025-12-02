@@ -13,7 +13,6 @@ library(DT)
 library(jsonlite)
 library(tools)
 library(utils)
-library(osfr)
 
 #' Initialize Reactive Value Store
 #'

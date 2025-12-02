@@ -186,14 +186,12 @@ if (!interactive() || !exists("PSYCHDS_LOADING", envir = .GlobalEnv)) {
     has_sortable <- safe_library("sortable", required = FALSE)
     has_zip <- safe_library("zip", required = FALSE)
     has_pointblank <- safe_library("pointblank", required = FALSE)
-    has_osfr <- safe_library("osfr", required = FALSE)
     
     # Store feature availability in options for the app to check
     options(
       psychds.has_sortable = has_sortable,
       psychds.has_zip = has_zip,
-      psychds.has_pointblank = has_pointblank,
-      psychds.has_osfr = has_osfr
+      psychds.has_pointblank = has_pointblank
     )
     
     # Step 3: Source app components
