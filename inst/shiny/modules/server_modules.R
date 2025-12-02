@@ -1,7 +1,838 @@
+
+
 #' Server Module Definitions
 #'
 #' This file contains server-side logic for the modular UI components.
 #' Each module handles its own state and communicates with the global state.
+
+# =============================================================================
+# HTML Data Dictionary Generator
+# Generates professional, print-ready HTML data dictionaries
+# =============================================================================
+
+#' Null-safe accessor operator
+#' @noRd
+`%||%` <- function(x, y) {
+  if (is.null(x) || (is.character(x) && length(x) == 1 && x == "")) y else x
+}
+
+#' Generate Beautiful HTML Data Dictionary
+#' 
+#' Creates a professional, print-ready HTML document from data dictionary metadata.
+#' 
+#' @param dictionary_data List containing variables and missing_values
+#' @param dataset_info List containing dataset metadata
+#' @param output_file Character path for the output HTML file
+#' @param include_stats Logical whether to include variable statistics
+#' @return Path to the generated HTML file
+generate_html_dictionary <- function(dictionary_data, 
+                                     dataset_info = NULL, 
+                                     output_file = NULL,
+                                     include_stats = TRUE) {
+  
+  if (is.null(output_file)) {
+    output_file <- file.path(tempdir(), 
+                             paste0("data_dictionary_", format(Sys.Date(), "%Y%m%d"), ".html"))
+  }
+  
+  if (!grepl("\\.html$", output_file, ignore.case = TRUE)) {
+    output_file <- gsub("\\.[^.]+$", ".html", output_file)
+    if (!grepl("\\.html$", output_file)) {
+      output_file <- paste0(output_file, ".html")
+    }
+  }
+  
+  dir.create(dirname(output_file), showWarnings = FALSE, recursive = TRUE)
+  html_content <- generate_html_content(dictionary_data, dataset_info, include_stats)
+  writeLines(html_content, output_file, useBytes = TRUE)
+  message("HTML dictionary generated: ", output_file)
+  return(output_file)
+}
+
+#' Generate HTML Content
+#' @noRd
+generate_html_content <- function(dictionary_data, dataset_info, include_stats) {
+  
+  css <- get_dictionary_css()
+  
+  html_parts <- c('<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Data Dictionary', 
+  if (!is.null(dataset_info$name)) paste0(" - ", escape_html(dataset_info$name)) else "",
+  '</title>
+  <style>', css, '</style>
+</head>
+<body>
+  <header class="document-header">
+    <div class="header-content">
+      <h1 class="document-title">Data Dictionary</h1>')
+  
+  if (!is.null(dataset_info$name)) {
+    html_parts <- c(html_parts, '<h2 class="dataset-name">', escape_html(dataset_info$name), '</h2>')
+  }
+  
+  html_parts <- c(html_parts, '<p class="generation-date">Generated on ', 
+                  format(Sys.Date(), "%B %d, %Y"), '</p>
+    </div>
+  </header>
+  <main class="container">')
+  
+  html_parts <- c(html_parts, generate_toc_html(dictionary_data, dataset_info))
+  html_parts <- c(html_parts, generate_overview_html(dictionary_data, dataset_info))
+  
+  if (!is.null(dictionary_data$missing_values) && length(dictionary_data$missing_values) > 0) {
+    html_parts <- c(html_parts, generate_missing_values_html(dictionary_data$missing_values))
+  }
+  
+  html_parts <- c(html_parts, generate_variables_html(dictionary_data$variables, include_stats))
+  
+  html_parts <- c(html_parts, '
+  </main>
+  <footer class="document-footer">
+    <div class="footer-content">
+      <p>Generated following the <a href="https://psych-ds.github.io/" target="_blank">Psych-DS Standard</a></p>
+      <p class="generator-info">Created with the psychds R package</p>
+    </div>
+  </footer>
+</body>
+</html>')
+  
+  return(paste(html_parts, collapse = "\n"))
+}
+
+#' Get CSS Styles
+#' @noRd
+get_dictionary_css <- function() {
+'
+:root {
+  --primary: #2c3e50;
+  --secondary: #3498db;
+  --accent: #1abc9c;
+  --text: #333;
+  --muted: #6c757d;
+  --surface: #f8f9fa;
+  --border: #e9ecef;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--text);
+  background: #fff;
+  margin: 0;
+  padding: 0;
+}
+
+h1, h2, h3, h4 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin-top: 0;
+  color: var(--primary);
+}
+
+h2 {
+  font-size: 1.4rem;
+  border-bottom: 2px solid var(--secondary);
+  padding-bottom: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+code {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--surface);
+  padding: 0.2em 0.4em;
+  border-radius: 4px;
+  color: #c7254e;
+}
+
+a { color: var(--secondary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.document-header {
+  background: linear-gradient(135deg, var(--primary) 0%, #34495e 100%);
+  color: white;
+  padding: 2.5rem 2rem;
+  text-align: center;
+}
+
+.document-header h1, .document-header h2 {
+  color: white;
+  border: none;
+}
+
+.document-title {
+  font-size: 2.2rem;
+  font-weight: 300;
+  margin-bottom: 0.5rem;
+}
+
+.dataset-name {
+  font-size: 1.3rem;
+  font-weight: 400;
+  opacity: 0.95;
+  margin-bottom: 0.75rem;
+}
+
+.generation-date {
+  font-size: 0.85rem;
+  opacity: 0.8;
+  margin: 0;
+}
+
+.container {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem;
+}
+
+.section {
+  margin-bottom: 2.5rem;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.section-icon {
+  width: 32px;
+  height: 32px;
+  background: var(--secondary);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 1rem;
+}
+
+.toc {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.toc h2 {
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+  border: none;
+  padding: 0;
+}
+
+.toc-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  columns: 2;
+  column-gap: 2rem;
+}
+
+.toc-list li {
+  margin-bottom: 0.4rem;
+  break-inside: avoid;
+}
+
+.toc-number {
+  color: var(--secondary);
+  font-weight: 600;
+  margin-right: 0.5rem;
+}
+
+.overview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.stat-card {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 1.25rem;
+  text-align: center;
+  border-left: 4px solid var(--secondary);
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--secondary);
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-top: 0.4rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.description-box {
+  background: var(--surface);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.info-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.info-list li {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 1rem;
+}
+
+.info-list li:last-child { border-bottom: none; }
+
+.info-label {
+  font-weight: 600;
+  min-width: 110px;
+  color: var(--muted);
+}
+
+.missing-values-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.missing-value-badge {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  color: #856404;
+  padding: 0.3rem 0.7rem;
+  border-radius: 20px;
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.variable-card {
+  background: white;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 1.25rem;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+  page-break-inside: avoid;
+}
+
+.variable-header {
+  background: linear-gradient(to right, var(--surface), white);
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.variable-name {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.variable-type-badge {
+  background: var(--secondary);
+  color: white;
+  padding: 0.2rem 0.65rem;
+  border-radius: 20px;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.variable-body {
+  padding: 1.25rem;
+}
+
+.variable-description {
+  font-size: 0.95rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px dashed var(--border);
+}
+
+.badge-container {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.9rem;
+}
+
+.badge {
+  font-size: 0.65rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.badge-required { background: #dc3545; color: white; }
+.badge-unique { background: #6f42c1; color: white; }
+
+.property-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.property-item {
+  background: var(--surface);
+  padding: 0.6rem 0.9rem;
+  border-radius: 6px;
+}
+
+.property-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 0.2rem;
+}
+
+.property-value {
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.property-value.monospace {
+  font-family: "SF Mono", Consolas, monospace;
+  font-size: 0.85em;
+}
+
+.categorical-section { margin-top: 0.9rem; }
+
+.categorical-section h4 {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin-bottom: 0.6rem;
+}
+
+.categorical-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.categorical-table th,
+.categorical-table td {
+  padding: 0.6rem 0.9rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.categorical-table th {
+  background: var(--surface);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.5px;
+}
+
+.categorical-table td:first-child {
+  font-family: monospace;
+  font-weight: 600;
+  color: var(--secondary);
+}
+
+.categorical-table tr:last-child td { border-bottom: none; }
+
+.stats-section {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 0.6rem;
+}
+
+.stats-item {
+  text-align: center;
+  padding: 0.5rem;
+  background: var(--surface);
+  border-radius: 6px;
+}
+
+.stats-item .stats-value {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.stats-item .stats-label {
+  font-size: 0.65rem;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.document-footer {
+  background: var(--surface);
+  padding: 1.5rem;
+  text-align: center;
+  margin-top: 2rem;
+  border-top: 1px solid var(--border);
+}
+
+.document-footer p {
+  margin: 0.4rem 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.generator-info { font-size: 0.75rem !important; opacity: 0.7; }
+
+@media print {
+  body { font-size: 11pt; }
+  .document-header {
+    background: var(--primary) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    padding: 1.25rem;
+  }
+  .container { max-width: none; padding: 0; }
+  .toc { page-break-after: always; }
+  .variable-card { box-shadow: none; border: 1px solid #ddd; }
+  .stat-card {
+    border-left-color: var(--secondary) !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  a[href]::after { content: none; }
+}
+
+@media (max-width: 768px) {
+  .document-header { padding: 1.5rem 1rem; }
+  .document-title { font-size: 1.6rem; }
+  .container { padding: 1rem; }
+  .toc-list { columns: 1; }
+  .overview-grid { grid-template-columns: 1fr 1fr; }
+  .property-grid { grid-template-columns: 1fr; }
+}
+'
+}
+
+#' Generate Table of Contents
+#' @noRd
+generate_toc_html <- function(dictionary_data, dataset_info) {
+  html <- '<nav class="toc">
+    <h2>📑 Contents</h2>
+    <ol class="toc-list">
+      <li><a href="#overview"><span class="toc-number">1.</span> Overview</a></li>'
+  
+  if (!is.null(dictionary_data$missing_values) && length(dictionary_data$missing_values) > 0) {
+    html <- paste0(html, '<li><a href="#missing-values"><span class="toc-number">2.</span> Missing Values</a></li>')
+  }
+  
+  html <- paste0(html, '<li><a href="#variables"><span class="toc-number">3.</span> Variables</a></li>')
+  
+  if (!is.null(dictionary_data$variables)) {
+    var_names <- names(dictionary_data$variables)
+    for (i in seq_along(var_names)) {
+      var_id <- make_id(var_names[i])
+      html <- paste0(html, '<li><a href="#var-', var_id, '"><span class="toc-number">3.', i, '</span> ', 
+                     escape_html(var_names[i]), '</a></li>')
+    }
+  }
+  
+  html <- paste0(html, '</ol></nav>')
+  return(html)
+}
+
+#' Generate Overview Section
+#' @noRd
+generate_overview_html <- function(dictionary_data, dataset_info) {
+  n_vars <- length(dictionary_data$variables)
+  var_types <- sapply(dictionary_data$variables, function(v) v$type %||% "unspecified")
+  type_counts <- table(var_types)
+  required_count <- sum(sapply(dictionary_data$variables, function(v) isTRUE(v$required)))
+  categorical_count <- sum(sapply(dictionary_data$variables, function(v) 
+    !is.null(v$categorical_values) && length(v$categorical_values) > 0))
+  
+  html <- '<section class="section" id="overview">
+    <div class="section-header">
+      <div class="section-icon">📊</div>
+      <h2>Dataset Overview</h2>
+    </div>'
+  
+  if (!is.null(dataset_info$description) && dataset_info$description != "") {
+    html <- paste0(html, '<div class="description-box"><p>', 
+                   escape_html(dataset_info$description), '</p></div>')
+  }
+  
+  html <- paste0(html, '<div class="overview-grid">
+      <div class="stat-card">
+        <div class="stat-value">', n_vars, '</div>
+        <div class="stat-label">Variables</div>
+      </div>')
+  
+  if (required_count > 0) {
+    html <- paste0(html, '<div class="stat-card">
+        <div class="stat-value">', required_count, '</div>
+        <div class="stat-label">Required</div>
+      </div>')
+  }
+  
+  if (categorical_count > 0) {
+    html <- paste0(html, '<div class="stat-card">
+        <div class="stat-value">', categorical_count, '</div>
+        <div class="stat-label">Categorical</div>
+      </div>')
+  }
+  
+  html <- paste0(html, '<div class="stat-card">
+        <div class="stat-value">', length(type_counts), '</div>
+        <div class="stat-label">Data Types</div>
+      </div>
+    </div>')
+  
+  if (!is.null(dataset_info)) {
+    html <- paste0(html, '<ul class="info-list">')
+    if (!is.null(dataset_info$name)) {
+      html <- paste0(html, '<li><span class="info-label">Dataset</span><span>', 
+                     escape_html(dataset_info$name), '</span></li>')
+    }
+    if (!is.null(dataset_info$version)) {
+      html <- paste0(html, '<li><span class="info-label">Version</span><span>', 
+                     escape_html(dataset_info$version), '</span></li>')
+    }
+    if (!is.null(dataset_info$author) && length(dataset_info$author) > 0) {
+      author_names <- sapply(dataset_info$author, function(a) {
+        if (!is.null(a$givenName) && !is.null(a$familyName)) {
+          paste(a$givenName, a$familyName)
+        } else if (!is.null(a$name)) { a$name } else { "Unknown" }
+      })
+      html <- paste0(html, '<li><span class="info-label">Authors</span><span>', 
+                     escape_html(paste(author_names, collapse = ", ")), '</span></li>')
+    }
+    html <- paste0(html, '</ul>')
+  }
+  
+  html <- paste0(html, '</section>')
+  return(html)
+}
+
+#' Generate Missing Values Section
+#' @noRd
+generate_missing_values_html <- function(missing_values) {
+  html <- '<section class="section" id="missing-values">
+    <div class="section-header">
+      <div class="section-icon">⚠️</div>
+      <h2>Global Missing Value Codes</h2>
+    </div>
+    <p>These codes represent missing values across all variables:</p>
+    <div class="missing-values-list">'
+  
+  for (mv in missing_values) {
+    html <- paste0(html, '<span class="missing-value-badge">', 
+                   escape_html(as.character(mv)), '</span>')
+  }
+  
+  html <- paste0(html, '</div></section>')
+  return(html)
+}
+
+#' Generate Variables Section
+#' @noRd
+generate_variables_html <- function(variables, include_stats) {
+  if (is.null(variables) || length(variables) == 0) {
+    return('<section class="section" id="variables">
+      <h2>Variable Definitions</h2>
+      <p>No variables defined.</p>
+    </section>')
+  }
+  
+  html <- '<section class="section" id="variables">
+    <div class="section-header">
+      <div class="section-icon">📋</div>
+      <h2>Variable Definitions</h2>
+    </div>'
+  
+  var_names <- names(variables)
+  for (i in seq_along(var_names)) {
+    html <- paste0(html, generate_variable_card_html(var_names[i], variables[[var_names[i]]], 
+                                                     i, make_id(var_names[i]), include_stats))
+  }
+  
+  html <- paste0(html, '</section>')
+  return(html)
+}
+
+#' Generate Single Variable Card
+#' @noRd
+generate_variable_card_html <- function(var_name, var_info, index, var_id, include_stats) {
+  var_type <- var_info$type %||% "string"
+  
+  html <- paste0('<article class="variable-card" id="var-', var_id, '">
+      <div class="variable-header">
+        <span class="variable-name">', escape_html(var_name), '</span>
+        <span class="variable-type-badge">', escape_html(var_type), '</span>
+      </div>
+      <div class="variable-body">')
+  
+  # Badges
+  badges <- character()
+  if (isTRUE(var_info$required)) badges <- c(badges, '<span class="badge badge-required">Required</span>')
+  if (isTRUE(var_info$unique)) badges <- c(badges, '<span class="badge badge-unique">Unique</span>')
+  if (length(badges) > 0) {
+    html <- paste0(html, '<div class="badge-container">', paste(badges, collapse = ""), '</div>')
+  }
+  
+  # Description
+  if (!is.null(var_info$description) && var_info$description != "") {
+    html <- paste0(html, '<p class="variable-description">', escape_html(var_info$description), '</p>')
+  }
+  
+  # Properties
+  props <- list()
+  if (!is.null(var_info$display_name) && var_info$display_name != "") props[["Display Name"]] <- var_info$display_name
+  if (!is.null(var_info$unit) && var_info$unit != "") props[["Unit"]] <- var_info$unit
+  if (!is.null(var_info$min_value) && var_info$min_value != "") props[["Minimum"]] <- list(v = var_info$min_value, mono = TRUE)
+  if (!is.null(var_info$max_value) && var_info$max_value != "") props[["Maximum"]] <- list(v = var_info$max_value, mono = TRUE)
+  if (!is.null(var_info$pattern) && var_info$pattern != "") props[["Pattern"]] <- list(v = var_info$pattern, mono = TRUE)
+  if (!is.null(var_info$default_value) && var_info$default_value != "") props[["Default"]] <- list(v = var_info$default_value, mono = TRUE)
+  if (!is.null(var_info$source) && var_info$source != "") props[["Source"]] <- var_info$source
+  
+  if (length(props) > 0) {
+    html <- paste0(html, '<div class="property-grid">')
+    for (pn in names(props)) {
+      pv <- props[[pn]]
+      if (is.list(pv)) {
+        val <- escape_html(as.character(pv$v))
+        cls <- if (isTRUE(pv$mono)) ' monospace' else ''
+      } else {
+        val <- escape_html(as.character(pv))
+        cls <- ''
+      }
+      html <- paste0(html, '<div class="property-item">
+            <div class="property-label">', escape_html(pn), '</div>
+            <div class="property-value', cls, '">', val, '</div>
+          </div>')
+    }
+    html <- paste0(html, '</div>')
+  }
+  
+  # Categorical values
+  if (!is.null(var_info$categorical_values) && length(var_info$categorical_values) > 0) {
+    html <- paste0(html, '<div class="categorical-section">
+          <h4>Allowed Values</h4>
+          <table class="categorical-table">
+            <thead><tr><th>Value</th><th>Label</th><th>Description</th></tr></thead>
+            <tbody>')
+    for (cv in var_info$categorical_values) {
+      v <- cv$value %||% ""
+      l <- cv$label %||% v
+      d <- cv$description %||% ""
+      html <- paste0(html, '<tr><td>', escape_html(as.character(v)), '</td><td>', 
+                     escape_html(as.character(l)), '</td><td>', escape_html(as.character(d)), '</td></tr>')
+    }
+    html <- paste0(html, '</tbody></table></div>')
+  }
+  
+  # Statistics
+  if (include_stats && !is.null(var_info$statistics)) {
+    s <- var_info$statistics
+    html <- paste0(html, '<div class="stats-section"><h4>Statistics</h4><div class="stats-grid">')
+    if (!is.null(s$n)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', s$n, '</div><div class="stats-label">N</div></div>')
+    if (!is.null(s$missing)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', s$missing, '</div><div class="stats-label">Missing</div></div>')
+    if (!is.null(s$mean)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', round(s$mean, 2), '</div><div class="stats-label">Mean</div></div>')
+    if (!is.null(s$sd)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', round(s$sd, 2), '</div><div class="stats-label">SD</div></div>')
+    if (!is.null(s$min)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', s$min, '</div><div class="stats-label">Min</div></div>')
+    if (!is.null(s$max)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', s$max, '</div><div class="stats-label">Max</div></div>')
+    html <- paste0(html, '</div></div>')
+  }
+  
+  # Notes
+  if (!is.null(var_info$notes) && var_info$notes != "") {
+    html <- paste0(html, '<div class="notes-section"><h4>Notes</h4><p>', escape_html(var_info$notes), '</p></div>')
+  }
+  
+  html <- paste0(html, '</div></article>')
+  return(html)
+}
+
+#' Escape HTML
+#' @noRd
+escape_html <- function(text) {
+  if (is.null(text) || length(text) == 0) return("")
+  text <- as.character(text)
+  text <- gsub("&", "&amp;", text, fixed = TRUE)
+  text <- gsub("<", "&lt;", text, fixed = TRUE)
+  text <- gsub(">", "&gt;", text, fixed = TRUE)
+  text <- gsub('"', "&quot;", text, fixed = TRUE)
+  text <- gsub("'", "&#39;", text, fixed = TRUE)
+  return(text)
+}
+
+#' Make valid HTML ID
+#' @noRd
+make_id <- function(text) {
+  id <- tolower(text)
+  id <- gsub("[^a-z0-9]+", "-", id)
+  id <- gsub("^-|-$", "", id)
+  if (grepl("^[0-9]", id)) id <- paste0("v-", id)
+  return(id)
+}
+
+#' Main entry point for dictionary generation
+#' @param dictionary_data The dictionary data
+#' @param dataset_info Dataset metadata  
+#' @param output_file Output file path
+#' @param include_stats Include statistics
+#' @param format Ignored (always HTML)
+#' @return List with status and file path
+generate_dictionary_html <- function(dictionary_data, 
+                                     dataset_info = NULL,
+                                     output_file = NULL,
+                                     include_stats = TRUE,
+                                     format = "html") {
+  
+  if (is.null(output_file)) {
+    output_file <- paste0("data_dictionary_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".html")
+  }
+  
+  if (!grepl("\\.html$", output_file, ignore.case = TRUE)) {
+    output_file <- gsub("\\.[^.]+$", ".html", output_file)
+    if (!grepl("\\.html$", output_file)) output_file <- paste0(output_file, ".html")
+  }
+  
+  result <- tryCatch({
+    generated_file <- generate_html_dictionary(
+      dictionary_data = dictionary_data,
+      dataset_info = dataset_info,
+      output_file = output_file,
+      include_stats = include_stats
+    )
+    list(success = TRUE, file = generated_file, format = "html", method = "HTML Document")
+  }, error = function(e) {
+    list(success = FALSE, error = e$message, format = "html", method = NULL)
+  })
+  
+  return(result)
+}
 
 #' Directory Input Server Module - Fixed Version
 #'
@@ -3294,6 +4125,378 @@ dataDictionaryServer <- function(id, state, session) {
       }
     })
     
+    # Handler for Generate Human-Readable Dictionary button
+    observeEvent(input$generate_dictionary, {
+      req(dictionary_state$dataset_path)
+      
+      ns <- session$ns
+      
+      showModal(modalDialog(
+        title = "Generate Data Dictionary",
+        size = "m",
+        
+        tags$div(
+          tags$p("Generate a professional, printable data dictionary with all variable 
+                  definitions, descriptions, and metadata."),
+          tags$br(),
+          tags$div(
+            class = "alert alert-info",
+            style = "margin-bottom: 15px;",
+            icon("file-alt", style = "margin-right: 8px;"),
+            tags$strong("Format: "), "HTML Document",
+            tags$br(),
+            tags$small("Open in any browser • Print to PDF with Ctrl+P / Cmd+P")
+          )
+        ),
+        
+        checkboxInput(
+          inputId = ns("include_stats"),
+          label = "Include summary statistics (if available)",
+          value = TRUE
+        ),
+        
+        checkboxInput(
+          inputId = ns("include_missing"),
+          label = "Include global missing value codes",
+          value = TRUE
+        ),
+        
+        footer = tagList(
+          modalButton("Cancel"),
+          actionButton(
+            inputId = ns("confirm_generate"), 
+            label = "Generate Dictionary", 
+            class = "btn-primary",
+            icon = icon("file-alt")
+          )
+        )
+      ))
+    })
+
+    observeEvent(input$setup_pdf, {
+      removeModal()
+      
+      showModal(modalDialog(
+        title = "Setup PDF Generation",
+        size = "m",
+        
+        tags$div(
+          tags$h4("To enable PDF generation, run this in your R console:"),
+          tags$pre(
+            style = "background-color: #f5f5f5; padding: 10px; border-radius: 4px;",
+            "# Recommended: Install TinyTeX (lightweight LaTeX)\n",
+            "psychds::setup_pdf_generation()\n\n",
+            "# Or manually:\n",
+            "install.packages('tinytex')\n",
+            "tinytex::install_tinytex()"
+          ),
+          tags$hr(),
+          tags$p("After installation, restart your R session and try again."),
+          tags$p("Alternative: You can always generate HTML and print to PDF from your browser.")
+        ),
+        
+        footer = modalButton("Close"),
+        easyClose = TRUE
+      ))
+    })
+
+# Handler for confirming generation
+observeEvent(input$confirm_generate, {
+  ns <- session$ns
+  removeModal()
+
+  saveCurrentVariable()
+  
+  prog_id <- showNotification(
+    "Generating data dictionary...", 
+    duration = NULL, 
+    type = "message",
+    closeButton = FALSE
+  )
+  
+  dict_data <- list(
+    variables = dictionary_state$variables,
+    missing_values = if(isTRUE(input$include_missing)) dictionary_state$missing_values else NULL
+  )
+  
+  dataset_info <- NULL
+  desc_file <- file.path(dictionary_state$dataset_path, "dataset_description.json")
+  if (file.exists(desc_file)) {
+    tryCatch({
+      dataset_info <- jsonlite::fromJSON(desc_file, simplifyVector = FALSE)
+    }, error = function(e) {})
+  }
+  
+  output_file <- file.path(
+    dictionary_state$dataset_path,
+    paste0("data_dictionary_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".html")
+  )
+  
+  result <- generate_dictionary_html(
+    dictionary_data = dict_data,
+    dataset_info = dataset_info,
+    output_file = output_file,
+    include_stats = input$include_stats
+  )
+  
+  removeNotification(prog_id)
+  
+  if (result$success) {
+    showModal(modalDialog(
+      title = "Success!",
+      size = "m",
+      
+      tags$div(
+        tags$div(
+          style = "text-align: center; margin-bottom: 20px;",
+          icon("check-circle", style = "font-size: 48px; color: #28a745;")
+        ),
+        tags$h4("Dictionary Generated!", style = "text-align: center; color: #28a745;"),
+        tags$hr(),
+        tags$p("Saved to:"),
+        tags$div(
+          style = "background-color: #f8f9fa; padding: 12px; border-radius: 6px; 
+                   margin: 15px 0; word-break: break-all;",
+          tags$code(style = "font-size: 12px;", result$file)
+        ),
+        tags$div(
+          class = "alert alert-info",
+          style = "margin-top: 15px;",
+          icon("lightbulb", style = "margin-right: 8px;"),
+          "Open in browser, then press ", tags$kbd("Ctrl+P"), " / ", 
+          tags$kbd("Cmd+P"), " to save as PDF."
+        )
+      ),
+      
+      footer = modalButton("Close"),
+      easyClose = TRUE
+    ))
+  } else {
+    showNotification(
+      paste("Failed to generate dictionary:", result$error),
+      type = "error",
+      duration = 10
+    )
+  }
+})
+
+
+
+
+
+
+
+
+
+  #' Smart PDF Dictionary Generator
+  #' 
+  #' Automatically selects the best available method for PDF generation:
+  #' 1. Try TinyTeX/LaTeX if available (best quality)
+  #' 2. Fall back to pagedown if available (good quality, no LaTeX)
+  #' 3. Fall back to HTML if neither available
+  #' 
+  #' @param dictionary_data The dictionary data
+  #' @param dataset_info Dataset metadata
+  #' @param output_file Output file path
+  #' @param include_stats Include statistics
+  #' @param format Requested format ("pdf", "html", "auto")
+  #' @return List with status and file path
+  generate_dictionary <- function(dictionary_data, 
+                                      dataset_info = NULL,
+                                      output_file = NULL,
+                                      include_stats = TRUE,
+                                      format = "auto") {
+    
+    # Check capabilities
+    caps <- check_pdf_capabilities()
+    
+    # Determine actual format based on capabilities
+    actual_format <- format
+    method_used <- NULL
+    
+    if (format == "pdf" || format == "auto") {
+      if (caps$has_rmarkdown && caps$has_system_latex) {
+        # Best option: Use LaTeX (either TinyTeX or system)
+        actual_format <- "pdf"
+        method_used <- if (caps$has_tinytex) "TinyTeX" else "System LaTeX"
+        
+      } else if (caps$has_pagedown) {
+        # Good option: Use pagedown
+        actual_format <- "pdf"
+        method_used <- "pagedown (Chrome-based)"
+        
+      } else {
+        # Fallback: HTML only
+        actual_format <- "html"
+        method_used <- "HTML (PDF not available)"
+        
+        if (format == "pdf") {
+          # User specifically requested PDF but we can't do it
+          message("PDF generation not available, creating HTML instead")
+        }
+      }
+    } else {
+      actual_format <- "html"
+      method_used <- "HTML (requested)"
+    }
+    
+    # Set output file with correct extension
+    if (is.null(output_file)) {
+      timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+      extension <- if (actual_format == "pdf") ".pdf" else ".html"
+      output_file <- paste0("data_dictionary_", timestamp, extension)
+    } else {
+      # Ensure correct extension
+      if (actual_format == "pdf" && !grepl("\\.pdf$", output_file)) {
+        output_file <- gsub("\\.[^.]+$", ".pdf", output_file)
+      } else if (actual_format == "html" && !grepl("\\.html$", output_file)) {
+        output_file <- gsub("\\.[^.]+$", ".html", output_file)
+      }
+    }
+    
+    # Generate based on selected method
+    result <- tryCatch({
+      
+      if (actual_format == "pdf" && method_used == "pagedown (Chrome-based)") {
+        # Use pagedown method
+        message("Generating PDF using pagedown...")
+        
+        generated_file <- generate_pdf_dictionary_pagedown(
+          dictionary_data = dictionary_data,
+          dataset_info = dataset_info,
+          output_file = output_file,
+          include_stats = include_stats
+        )
+        
+      } else if (actual_format == "pdf" && caps$has_rmarkdown) {
+        # Use standard rmarkdown/LaTeX method
+        message(paste0("Generating PDF using ", method_used, "..."))
+        
+        generated_file <- generate_pdf_dictionary(
+          dictionary_data = dictionary_data,
+          dataset_info = dataset_info,
+          output_file = output_file,
+          include_stats = include_stats
+        )
+        
+      } else if (caps$has_rmarkdown) {
+        # Generate nice HTML using rmarkdown
+        message("Generating HTML document using rmarkdown...")
+        
+        # Force HTML output in the standard generator
+        html_file <- gsub("\\.pdf$", ".html", output_file)
+        generated_file <- generate_pdf_dictionary(
+          dictionary_data = dictionary_data,
+          dataset_info = dataset_info,
+          output_file = html_file,
+          include_stats = include_stats
+        )
+        
+      } else {
+        # Use simple HTML generator
+        message("Generating HTML document...")
+        
+        generated_file <- generate_html_dictionary_simple(
+          dictionary_data = dictionary_data,
+          output_file = output_file
+        )
+      }
+      
+      list(
+        success = TRUE,
+        file = generated_file,
+        format = actual_format,
+        method = method_used
+      )
+      
+    }, error = function(e) {
+      # If primary method fails, try fallback
+      if (actual_format == "pdf") {
+        message("PDF generation failed, falling back to HTML...")
+        
+        # Try simple HTML as last resort
+        tryCatch({
+          generated_file <- generate_html_dictionary_simple(
+            dictionary_data = dictionary_data,
+            output_file = gsub("\\.pdf$", ".html", output_file)
+          )
+          
+          list(
+            success = TRUE,
+            file = generated_file,
+            format = "html",
+            method = "HTML (fallback)",
+            warning = paste("PDF generation failed:", e$message)
+          )
+          
+        }, error = function(e2) {
+          list(
+            success = FALSE,
+            error = e2$message,
+            format = NULL,
+            method = NULL
+          )
+        })
+        
+      } else {
+        list(
+          success = FALSE,
+          error = e$message,
+          format = actual_format,
+          method = method_used
+        )
+      }
+    })
+    
+    return(result)
+  }
+
+    # Handler for download button (appears in success modal)
+    output$download_dict <- downloadHandler(
+      filename = function() {
+        if (input$output_format == "pdf") {
+          paste0("data_dictionary_", format(Sys.Date(), "%Y%m%d"), ".pdf")
+        } else {
+          paste0("data_dictionary_", format(Sys.Date(), "%Y%m%d"), ".html")
+        }
+      },
+      content = function(file) {
+        # The file has already been generated, just copy it
+        generated_file <- if (input$output_format == "pdf") {
+          list.files(dictionary_state$dataset_path, 
+                    pattern = "data_dictionary.*\\.pdf$", 
+                    full.names = TRUE)[1]
+        } else {
+          list.files(dictionary_state$dataset_path, 
+                    pattern = "data_dictionary.*\\.html$", 
+                    full.names = TRUE)[1]
+        }
+        
+        if (file.exists(generated_file)) {
+          file.copy(generated_file, file, overwrite = TRUE)
+        }
+      }
+    )
+
+    # Handler for "Generate Another Format" button
+    observeEvent(input$generate_another, {
+      removeModal()
+      # Trigger the generate dialog again
+      shinyjs::click("generate_dictionary")
+    })
+
+    # Handler for "Try HTML Instead" button (shown on PDF failure)
+    observeEvent(input$try_html_instead, {
+      removeModal()
+      
+      # Update format to simple HTML and regenerate
+      updateRadioButtons(session, "output_format", selected = "simple_html")
+      
+      # Trigger generation with HTML format
+      shinyjs::delay(100, {
+        shinyjs::click("confirm_generate")
+      })
+    })
     
     # Display dataset info
     output$dataset_info <- renderUI({

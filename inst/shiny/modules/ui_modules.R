@@ -781,7 +781,7 @@ dataDictionaryUI <- function(id) {
           class = "continue-btn"
         ),
         actionButton(
-          ns("generate_readable"),
+          ns("generate_dictionary"),
           "Generate Human-Readable Dictionary",
           class = "btn btn-outline-primary",
           style = "margin-left: 10px;"
