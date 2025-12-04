@@ -16,15 +16,80 @@
   if (is.null(x) || (is.character(x) && length(x) == 1 && x == "")) y else x
 }
 
-#' Generate Beautiful HTML Data Dictionary
-#' 
-#' Creates a professional, print-ready HTML document from data dictionary metadata.
-#' 
-#' @param dictionary_data List containing variables and missing_values
-#' @param dataset_info List containing dataset metadata
-#' @param output_file Character path for the output HTML file
-#' @param include_stats Logical whether to include variable statistics
-#' @return Path to the generated HTML file
+#' Generate HTML Data Dictionary
+#'
+#' Creates a professional, print-ready HTML data dictionary document from
+#' variable metadata.
+#'
+#' @param dictionary_data A list containing:
+#'   \describe{
+#'     \item{variables}{Named list of variable definitions. Each variable can have:
+#'       `type`, `description`, `unit`, `min_value`, `max_value`, `required`,
+#'       `unique`, `pattern`, `categorical_values`, `statistics`}
+#'     \item{missing_values}{Character vector of global missing value codes}
+#'   }
+#' @param dataset_info A list containing dataset metadata:
+#'   \describe{
+#'     \item{name}{Dataset name}
+#'     \item{description}{Dataset description}
+#'     \item{version}{Version string}
+#'     \item{author}{List of author information}
+#'   }
+#' @param output_file Character. Path for the output HTML file. If `NULL`,
+#'   a temporary file is created.
+#' @param include_stats Logical. Whether to include summary statistics in
+#'   the output. Default is `TRUE`.
+#'
+#' @return Character string containing the path to the generated HTML file.
+#'
+#' @details
+#' The generated HTML document includes:
+#' \itemize{
+#'   \item Professional styling optimized for both screen and print
+#'   \item Table of contents with navigation links
+#'   \item Dataset overview with summary statistics
+#'   \item Detailed variable definitions with constraints
+#'   \item Categorical value tables
+#'   \item Summary statistics (if available and requested)
+#' }
+#'
+#' The HTML file can be converted to PDF by opening in a web browser and
+#' using the browser's print function (Ctrl+P / Cmd+P).
+#'
+#' @examples
+#' \dontrun{
+#' # Define variables
+#' dict_data <- list(
+#'   variables = list(
+#'     participant_id = list(
+#'       type = "string",
+#'       description = "Unique participant identifier",
+#'       required = TRUE,
+#'       unique = TRUE
+#'     ),
+#'     age = list(
+#'       type = "integer",
+#'       description = "Participant age in years",
+#'       unit = "years",
+#'       min_value = 18,
+#'       max_value = 100
+#'     )
+#'   ),
+#'   missing_values = c("NA", "-999")
+#' )
+#'
+#' # Dataset info
+#' info <- list(
+#'   name = "My Study",
+#'   description = "A psychological study"
+#' )
+#'
+#' # Generate dictionary
+#' generate_html_dictionary(dict_data, info, "my_dictionary.html")
+#' }
+#'
+#' @export
+
 generate_html_dictionary <- function(dictionary_data, 
                                      dataset_info = NULL, 
                                      output_file = NULL,
@@ -6348,22 +6413,6 @@ datasetExplorerServer <- function(id, state, session) {
 #' @param session The current session object
 osfUploadServer <- function(id, state, session) {
   moduleServer(id, function(input, output, session) {
-    
-    # Load required packages - ensure osfr is available
-    if (!requireNamespace("osfr", quietly = TRUE)) {
-      showNotification("Installing osfr package...", duration = NULL, id = "osf_install")
-      tryCatch({
-        install.packages("osfr")
-        removeNotification(id = "osf_install")
-      }, error = function(e) {
-        removeNotification(id = "osf_install")
-        showNotification("Failed to install osfr package. Please install manually.", type = "error", duration = NULL)
-        return()
-      })
-    }
-    
-    # Explicitly load osfr functions
-    require(osfr, quietly = TRUE)
     
     # Reactive values
     osf_state <- reactiveValues(

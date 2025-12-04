@@ -1,0 +1,90 @@
+url: https://psych-ds.github.io/psychds-r/
+
+template:
+  bootstrap: 5
+  bootswatch: flatly
+  bslib:
+    primary: "#3498db"
+    border-radius: 0.5rem
+    btn-border-radius: 0.25rem
+
+home:
+  title: psychds - Build and Validate Psych-DS Datasets
+  description: >
+    An R package and Shiny application for creating, editing, and validating 
+    psychological research datasets following the Psych-DS standard.
+
+authors:
+  footer:
+    roles: [aut, cre]
+
+navbar:
+  structure:
+    left:  [intro, reference, articles, news]
+    right: [search, github]
+  components:
+    home:
+      icon: fa-home
+      href: index.html
+    reference:
+      text: Reference
+      href: reference/index.html
+    articles:
+      text: Articles
+      menu:
+        - text: Getting Started
+          href: articles/getting-started.html
+        - text: "---"
+        - text: Using the Shiny App
+          href: articles/shiny-app-guide.html
+        - text: Creating Data Dictionaries
+          href: articles/data-dictionaries.html
+    news:
+      text: Changelog
+      href: news/index.html
+    github:
+      icon: fa-github
+      href: https://github.com/psych-ds/psychds-r
+      aria-label: GitHub
+
+# NOTE: The reference section is auto-generated from your roxygen2 documentation.
+# If you want custom groupings, uncomment and edit the section below AFTER 
+# you have documented your exported functions with roxygen2.
+#
+# To document a function, add roxygen2 comments above it:
+#   #' @export
+#   my_function <- function() { }
+#
+# Then run: devtools::document()
+
+# reference:
+#   - title: "Launch Application"
+#     desc: "Functions to start the Shiny application"
+#     contents:
+#       - run_psych_ds_app
+#   - title: "Setup & Configuration"
+#     contents:
+#       - check_psychds_deps
+#       - setup_pdf_generation
+
+# Article organization - only include vignettes that exist
+articles:
+  - title: Getting Started
+    navbar: ~
+    contents:
+      - getting-started
+      
+  - title: User Guides
+    desc: Detailed guides for using psychds
+    contents:
+      - shiny-app-guide
+      - data-dictionaries
+
+footer:
+  structure:
+    left: developed_by
+    right: built_with
+
+news:
+  one_page: true
+  cran_dates: false

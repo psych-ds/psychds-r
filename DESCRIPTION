@@ -2,12 +2,22 @@ Package: psychds
 Title: Psych-DS Dataset Creator, Data Dictionary Wizard, and Validator
 Version: 0.1.0
 Authors@R: person("Brian", "Leonard", email = "bleonard@mit.edu", role = c("aut", "cre"))
-Description: A Shiny application and toolkit for creating, improving, and validating Psych-DS datasets.
+Description: A comprehensive toolkit for creating, editing, and validating
+    psychological research datasets following the Psych-DS (Psychological
+    Dataset Standard) specification. Provides an interactive 'shiny'
+    application for guided dataset creation, tools for generating
+    professional data dictionaries, validation against the Psych-DS schema,
+    and integration with the Open Science Framework (OSF) for data
+    publishing. The Psych-DS standard promotes reproducibility and data
+    sharing in psychological science by establishing consistent
+    conventions for organizing behavioral and psychological research data.
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
 Roxygen: list(markdown = TRUE)
-RoxygenNote: 7.3.2
+RoxygenNote: 7.3.3
+Depends:
+    R (>= 4.0.0)
 Imports:
     shiny (>= 1.7.0),
     shinydashboard (>= 0.7.2),
@@ -25,8 +35,14 @@ Suggests:
     testthat (>= 3.1.4),
     knitr (>= 1.39),
     rmarkdown (>= 2.14),
+    pointblank (>= 0.11.0),
+    sortable (>= 0.4.0),
+    httr,
+    zip (>= 2.2.0)
     covr
 Config/testthat/edition: 3
 VignetteBuilder: knitr
-URL: https://github.com/psych-ds/psychds-r
+Language: en-US
+URL: https://psych-ds.github.io/psychds-r/,
+    https://github.com/psych-ds/psychds-r
 BugReports: https://github.com/psych-ds/psychds-r/issues
