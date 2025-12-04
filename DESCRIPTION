@@ -38,7 +38,7 @@ Suggests:
     pointblank (>= 0.11.0),
     sortable (>= 0.4.0),
     httr,
-    zip (>= 2.2.0)
+    zip (>= 2.2.0),
     covr
 Config/testthat/edition: 3
 VignetteBuilder: knitr
