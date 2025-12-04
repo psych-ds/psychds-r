@@ -214,18 +214,40 @@ startup_check <- function() {
   invisible()
 }
 
-# ================================================================================
-# NEW: Additional helper function for manual PDF setup
-# This makes it easy for users to set up PDF generation
-# ================================================================================
-
 #' Setup PDF Generation Capabilities
-#' 
-#' Interactive setup wizard for PDF generation.
-#' This function is called if PDF generation is not available.
-#' 
-#' @param method Character: "tinytex", "pagedown", or "auto"
+#'
+#' Interactive setup wizard for enabling PDF generation in psychds.
+#' Guides users through installing TinyTeX or pagedown.
+#'
+#' @param force Logical. If `TRUE`, runs setup even if PDF generation is
+#'   already available. Default is `FALSE`.
+#'
+#' @return Invisibly returns `TRUE` if PDF generation is successfully
+#'   configured, `FALSE` otherwise.
+#'
+#' @details
+#' PDF generation requires either:
+#' \itemize{
+#'   \item TinyTeX (recommended): A lightweight LaTeX distribution
+#'   \item pagedown: An alternative that uses Chrome/Chromium
+#' }
+#'
+#' If neither is available, data dictionaries will be generated as HTML files
+#' which can be printed to PDF from any web browser.
+#'
+#' @seealso [check_psychds_deps()] for checking current capabilities.
+#'
+#' @examples
+#' \dontrun{
+#' # Run interactive setup
+#' setup_pdf_generation()
+#'
+#' # Force re-setup even if already configured
+#' setup_pdf_generation(force = TRUE)
+#' }
+#'
 #' @export
+
 setup_pdf_generation <- function(method = "auto") {
   
   # Check current status

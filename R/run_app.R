@@ -1,52 +1,60 @@
 #' Run the Psych-DS Shiny Application
-#' 
-#' Launches the psychds Shiny application with comprehensive dependency checking
-#' and conflict resolution.
-#' 
-#' @param launch.browser Logical or function. Should the app be opened in a browser?
-#' @param port Integer. Port number for the application.
-#' @param host Character. Host IP address.
-#' @param startup_mode Character. One of "strict", "recommended", or "minimal".
-#'   Controls dependency checking strictness.
-#' @param force_browser Logical. Force opening in external browser (recommended 
-#'   for RStudio users experiencing issues).
-#' @param ... Additional arguments passed to \code{\link[shiny]{runApp}}.
-#' 
+#'
+#' Launches the interactive Shiny application for creating, editing, and
+#' validating Psych-DS compliant datasets.
+#'
+#' @param launch.browser Logical or function. Should the app be opened in a
+#'   browser? Defaults to `TRUE` in interactive sessions.
+#' @param port Integer. Port number for the application. If `NULL`, a random
+#'   available port is used.
+#' @param host Character. Host IP address. Defaults to `"127.0.0.1"` (localhost).
+#' @param startup_mode Character. One of `"strict"`, `"recommended"`, or
+#'   `"minimal"`. Controls dependency checking strictness:
+#'   \itemize{
+#'     \item `"strict"`: Requires all packages at minimum versions
+#'     \item `"recommended"`: Warns about outdated packages but continues
+#'     \item `"minimal"`: Only checks for critical dependencies
+#'   }
+#' @param force_browser Logical. Force opening in external browser. Recommended
+#'   for RStudio users experiencing viewer issues.
+#' @param ... Additional arguments passed to [shiny::runApp()].
+#'
+#' @return This function does not return a value. It launches the Shiny
+#'   application and blocks until the app is closed.
+#'
 #' @details
-#' This function performs comprehensive pre-flight checks before launching:
+#' The application provides a guided interface for:
 #' \itemize{
-#'   \item Verifies R version compatibility (>= 4.0.0 recommended)
-#'   \item Checks all required package dependencies and versions
-#'   \item Detects and warns about known package conflicts
-#'   \item Handles RStudio viewer compatibility issues
-#'   \item Provides clear error messages and installation instructions
+#'   \item Selecting project directories and data files
+#'   \item Adding dataset metadata
+#'   \item Standardizing filenames with Psych-DS keywords
+#'   \item Generating data dictionaries
+#'   \item Validating datasets against the Psych-DS specification
+#'   \item Uploading to the Open Science Framework (OSF)
 #' }
-#' 
-#' @section Startup Modes:
-#' \describe{
-#'   \item{strict}{Requires all packages at minimum versions}
-#'   \item{recommended}{Warns about outdated packages but continues}
-#'   \item{minimal}{Only checks for critical dependencies}
-#' }
-#' 
+#'
+#' @seealso [check_psychds_deps()] for verifying dependencies before running.
+#'
 #' @examples
 #' \dontrun{
 #' # Standard launch
 #' run_psych_ds_app()
-#' 
+#'
 #' # Force external browser (if RStudio viewer has issues)
 #' run_psych_ds_app(force_browser = TRUE)
-#' 
+#'
 #' # Minimal checking for faster startup
 #' run_psych_ds_app(startup_mode = "minimal")
-#' 
+#'
 #' # Specific port
 #' run_psych_ds_app(port = 3838)
 #' }
-#' 
+#'
 #' @export
 #' @import shiny
 #' @importFrom utils packageVersion
+#' 
+
 run_psych_ds_app <- function(
   launch.browser = getOption("shiny.launch.browser", interactive()),
   port = getOption("shiny.port"),
@@ -104,11 +112,43 @@ run_psych_ds_app <- function(
   )
 }
 
-#' Check psychds Dependencies (Enhanced with PDF check)
-#' 
-#' @param detailed Logical. Show detailed information?
-#' @param check_pdf Logical. Also check PDF capabilities?
+#' Check psychds Dependencies
+#'
+#' Verifies that all required and optional package dependencies are installed
+#' and meet minimum version requirements.
+#'
+#' @param detailed Logical. If `TRUE`, displays detailed information about
+#'   installed package versions, R environment, and PDF generation capabilities.
+#'   Default is `FALSE`.
+#' @param check_pdf Logical. If `TRUE` (and `detailed = TRUE`), also checks
+
+#'   PDF generation capabilities. Default is `TRUE`.
+#'
+#' @return Invisibly returns `TRUE` if all required dependencies are satisfied,
+#'   `FALSE` otherwise.
+#'
+#' @details
+#' This function checks for:
+#' \itemize{
+#'   \item Required packages: shiny, shinydashboard, shinyjs, shinyFiles, DT, jsonlite
+#'   \item Optional packages: sortable, zip, pointblank, osfr
+#'   \item Minimum version requirements for each package
+#'   \item PDF generation capabilities (rmarkdown, TinyTeX, pagedown)
+#' }
+#'
+#' If dependencies are missing, the function provides installation instructions.
+#'
+#' @seealso [setup_pdf_generation()] for setting up PDF capabilities.
+#'
+#' @examples
+#' # Quick check
+#' check_psychds_deps()
+#'
+#' # Detailed check with all version info
+#' check_psychds_deps(detailed = TRUE)
+#'
 #' @export
+
 check_psychds_deps <- function(install_missing = interactive()) {
   
   # Core required packages
