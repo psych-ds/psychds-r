@@ -5205,6 +5205,8 @@ var memoize = (fn) => {
 };
 
 // src/schema/applyRules.ts
+var superClassSlotsCache = /* @__PURE__ */ new Map();
+var subClassSlotsCache = /* @__PURE__ */ new Map();
 function applyRules(schema, context, rootSchema, schemaPath) {
   if (!rootSchema) {
     rootSchema = schema;
@@ -5369,9 +5371,9 @@ function logSchemaIssues(context, issues) {
       context.issues.addSchemaIssue("InvalidSchemaorgProperty", [
         {
           ...issueFile2,
-          evidence: `This file contains one or more keys that use the schema.org namespace, but are not  official schema.org properties.
-                      According to the psych-DS specification, this is not an error, but be advised that these terms will not be
-                      machine-interpretable and do not function as linked data elements. These are the keys in question: [${issues.termIssues}]`
+          evidence: `This file contains one or more keys that use the schema.org namespace, but are not official schema.org properties.
+            According to the psych-DS specification, this is not an error, but be advised that these terms will not be
+            machine-interpretable and do not function as linked data elements. These are the keys in question: [${issues.termIssues}]`
         }
       ]);
     });
@@ -5389,10 +5391,10 @@ function logSchemaIssues(context, issues) {
         {
           ...issueFile2,
           evidence: `This file contains one or more objects with types that do not match the selectional constraints of their keys.
-                        Each schema.org property (which take the form of keys in your metadata json) has a specific range of types
-                        that can be used as its value. Type constraints for a given property can be found by visiting their corresponding schema.org
-                        URL. All properties can take strings or URLS as objects, under the assumption that the string/URL represents a unique ID.
-                        Type selection errors occurred at the following locations in your json structure: [${issues.typeIssues}]`
+            Each schema.org property (which take the form of keys in your metadata json) has a specific range of types
+            that can be used as its value. Type constraints for a given property can be found by visiting their corresponding schema.org
+            URL. All properties can take strings or URLS as objects, under the assumption that the string/URL represents a unique ID.
+            Type selection errors occurred at the following locations in your json structure: [${issues.typeIssues}]`
         }
       ]);
     });
@@ -5410,9 +5412,9 @@ function logSchemaIssues(context, issues) {
         {
           ...issueFile2,
           evidence: `This file contains one or more objects without a @type property. Make sure that any object that you include
-                      as the value of a schema.org property contains a valid schema.org @type, unless it is functioning as some kind of 
-                      base type, such as Text or URL, containing a @value key. @type is optional, but not required on such objects.
-                      The following objects without @type were found: [${issues.typeMissingIssues}]`
+            as the value of a schema.org property contains a valid schema.org @type, unless it is functioning as some kind of 
+            base type, such as Text or URL, containing a @value key. @type is optional, but not required on such objects.
+            The following objects without @type were found: [${issues.typeMissingIssues}]`
         }
       ]);
     });
@@ -5430,7 +5432,7 @@ function logSchemaIssues(context, issues) {
         {
           ...issueFile2,
           evidence: `This file contains one or more references to namespaces other than https://schema.org:
-                      [${issues.unknownNamespaceIssues}].`
+            [${issues.unknownNamespaceIssues}].`
         }
       ]);
     });
@@ -5447,6 +5449,7 @@ function _schemaCheck(node, context, schema, objectPath, nameSpace, issues) {
       nameSpace
     );
   }
+  const slotsObj = schema[`schemaOrg.slots`];
   for (const [key, value] of Object.entries(node)) {
     if (key.startsWith("@")) {
       continue;
@@ -5457,7 +5460,7 @@ function _schemaCheck(node, context, schema, objectPath, nameSpace, issues) {
       } else {
         const property = key.replace(nameSpace, "");
         let range = [];
-        if (property in schema[`schemaOrg.slots`]) {
+        if (slotsObj && property in slotsObj) {
           if ("range" in schema[`schemaOrg.slots.${property}`]) {
             range.push(schema[`schemaOrg.slots.${property}.range`]);
             range = range.concat(
@@ -5517,29 +5520,43 @@ function _schemaCheck(node, context, schema, objectPath, nameSpace, issues) {
 }
 function getSuperClassSlots(type, schema, nameSpace) {
   type = type.replace(nameSpace, "");
-  if (!(type in schema["schemaOrg.classes"])) {
+  const cacheKey = `super:${type}`;
+  if (superClassSlotsCache.has(cacheKey)) {
+    return superClassSlotsCache.get(cacheKey);
+  }
+  const classesObj = schema["schemaOrg.classes"];
+  if (!classesObj || !(type in classesObj)) {
+    superClassSlotsCache.set(cacheKey, []);
     return [];
   }
   const slots = schema[`schemaOrg.classes.${type}.slots`] || [];
   const is_a = "is_a" in schema[`schemaOrg.classes.${type}`] ? getSuperClassSlots(schema[`schemaOrg.classes.${type}.is_a`], schema, nameSpace) : [];
-  return [...slots, ...is_a];
+  const result = [...slots, ...is_a];
+  superClassSlotsCache.set(cacheKey, result);
+  return result;
 }
 function getSubClassSlots(type, schema, nameSpace) {
-  const subClasses = [];
   if (type.includes(nameSpace)) {
     type = type.replace(nameSpace, "");
   }
-  if (type in schema[`schemaOrg.classes`]) {
-    for (const [key, value] of Object.entries(schema["schemaOrg.classes"])) {
-      if ("is_a" in value && value["is_a"] === type) {
-        subClasses.push(key);
-        subClasses.concat(getSubClassSlots(key, schema, nameSpace));
-      }
-    }
-    return subClasses;
-  } else {
+  const cacheKey = `sub:${type}`;
+  if (subClassSlotsCache.has(cacheKey)) {
+    return subClassSlotsCache.get(cacheKey);
+  }
+  const classesObj = schema[`schemaOrg.classes`];
+  if (!classesObj || !(type in classesObj)) {
+    subClassSlotsCache.set(cacheKey, []);
     return [];
   }
+  const subClasses = [];
+  for (const [key, value] of Object.entries(classesObj)) {
+    if ("is_a" in value && value["is_a"] === type) {
+      subClasses.push(key);
+      subClasses.push(...getSubClassSlots(key, schema, nameSpace));
+    }
+  }
+  subClassSlotsCache.set(cacheKey, subClasses);
+  return subClasses;
 }
 function getFieldSeverity(requirement, context) {
   const levelToSeverity = {
@@ -5636,6 +5653,7 @@ var objectPathHandler = {
 // src/setup/loadSchema.ts
 var SCHEMA_BASE_URL = "https://raw.githubusercontent.com/psych-ds/psych-DS/master/schema_model/versions/jsons";
 var SCHEMA_ORG_URL = "https://raw.githubusercontent.com/psych-ds/psych-DS/master/schema_model/external_schemas/schemaorg/schemaorg.json";
+var cachedSchema = null;
 var defaultSchema = {};
 var defaultSchemaOrg = {};
 async function loadDefaultSchemas() {
@@ -5682,6 +5700,9 @@ async function fetchJSON(url) {
   }
 }
 async function loadSchema(version = "latest") {
+  if (cachedSchema && cachedSchema.version === version) {
+    return new Proxy(cachedSchema.schema, objectPathHandler);
+  }
   if (Object.keys(defaultSchema).length === 0 || Object.keys(defaultSchemaOrg).length === 0) {
     await loadDefaultSchemas();
   }
@@ -5711,6 +5732,7 @@ async function loadSchema(version = "latest") {
       ...schemaModule,
       schemaOrg: schemaOrgModule
     };
+    cachedSchema = { schema: combinedSchema, version };
     return new Proxy(combinedSchema, objectPathHandler);
   } catch (error2) {
     console.error(`Error loading schema: ${error2}`);
@@ -5755,58 +5777,69 @@ var readElements = memoize(_readElements);
 
 // src/files/csv.ts
 var normalizeEOL = (str) => str.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+var cachedParse = null;
+async function getParser() {
+  if (!cachedParse) {
+    cachedParse = isBrowser ? (await Promise.resolve().then(() => (init_sync(), sync_exports))).parse : (await Promise.resolve().then(() => (init_sync2(), sync_exports2))).parse;
+  }
+  return cachedParse;
+}
 async function parseCSV(contents) {
   const columns = new ColumnsMap();
   const issues = [];
   const normalizedStr = normalizeEOL(contents);
   try {
-    const parse3 = isBrowser ? (await Promise.resolve().then(() => (init_sync(), sync_exports))).parse : (await Promise.resolve().then(() => (init_sync2(), sync_exports2))).parse;
+    const parse3 = await getParser();
     const rows = parse3(normalizedStr, {
       skip_empty_lines: false,
       relax_column_count: true
-      // Allow inconsistent columns for better error handling
     });
     const headers = rows.length ? rows[0] : [];
     if (new Set(headers).size !== headers.length) {
-      issues.push({ "issue": "CSVHeaderRepeated", "message": null });
+      issues.push({ issue: "CSVHeaderRepeated", message: null });
     }
     if (headers.length === 0) {
-      issues.push({ "issue": "CSVHeaderMissing", "message": null });
+      issues.push({ issue: "CSVHeaderMissing", message: null });
     } else {
-      headers.forEach((x) => {
-        columns[x] = [];
+      const numDataRows = rows.length - 1;
+      headers.forEach((header) => {
+        columns[header] = new Array(numDataRows);
       });
+      let validRowIndex = 0;
       for (let i = 1; i < rows.length; i++) {
-        if (rows[i].length !== headers.length) {
+        const row = rows[i];
+        if (row.length !== headers.length) {
           issues.push({
-            "issue": "CSVHeaderLengthMismatch",
-            "message": `Row ${i + 1} has ${rows[i].length} columns, expected ${headers.length}`
+            issue: "CSVHeaderLengthMismatch",
+            message: `Row ${i + 1} has ${row.length} columns, expected ${headers.length}`
           });
         } else {
           for (let j = 0; j < headers.length; j++) {
-            const col = columns[headers[j]];
-            col.push(rows[i][j]);
+            columns[headers[j]][validRowIndex] = row[j];
           }
+          validRowIndex++;
         }
       }
+      if (validRowIndex < numDataRows) {
+        headers.forEach((header) => {
+          columns[header].length = validRowIndex;
+        });
+      }
       if (columns["row_id"] && Array.isArray(columns["row_id"])) {
-        const rowIdSet = new Set(columns["row_id"]);
-        if (rowIdSet.size !== columns["row_id"].length) {
-          issues.push({ "issue": "RowidValuesNotUnique", "message": null });
+        const rowIds = columns["row_id"];
+        const rowIdSet = new Set(rowIds);
+        if (rowIdSet.size !== rowIds.length) {
+          issues.push({ issue: "RowidValuesNotUnique", message: null });
         }
       }
     }
   } catch (error2) {
     issues.push({
-      "issue": "CSVFormattingError",
-      // deno-lint-ignore no-explicit-any
-      "message": error2.message
+      issue: "CSVFormattingError",
+      message: error2.message
     });
   }
-  return {
-    "columns": columns,
-    "issues": issues
-  };
+  return { columns, issues };
 }
 
 // src/schema/context.ts
@@ -6168,7 +6201,6 @@ async function validate(fileTree, options) {
     options.emitter?.emit("csv-count-total", { total: totalCsvFiles });
   }
   for await (const context of walkFileTree(fileTree, issues, dsContext)) {
-    console.log(context.file.path);
     if (dsContext.baseDirs.includes("/data")) {
       options.emitter?.emit("find-data-dir", { success: true });
     }
@@ -7475,4 +7507,4 @@ export {
 };
 //# sourceMappingURL=psychds-validator.js.map
 
-if (typeof window !== "undefined") { window.psychDSValidator = { validateWeb }; }
+if (typeof window !== "undefined") { window.psychDSValidator = { validateWeb, ValidationProgressTracker }; }
