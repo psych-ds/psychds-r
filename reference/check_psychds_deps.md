@@ -54,7 +54,7 @@ for setting up PDF capabilities.
 # Quick check
 check_psychds_deps()
 #> Checking psychds dependencies...
-#> ✓ shiny (1.11.1)
+#> ✓ shiny (1.12.1)
 #> ✓ shinydashboard (0.7.3)
 #> ✓ shinyjs (2.1.0)
 #> ✓ shinyFiles (0.9.3)
