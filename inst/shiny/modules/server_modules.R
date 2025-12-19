@@ -924,6 +924,16 @@ directoryInputServer <- function(id, state, session) {
       session = session,
       restrictions = system.file(package = "base")
     )
+    
+    # Restore path from state when module initializes or when returning to step
+    observe({
+      # Restore from state if available and current value is empty
+      if (!is.null(state$project_dir) && state$project_dir != "" && path_value() == "") {
+        updateTextInput(session, "path", value = state$project_dir)
+        path_value(state$project_dir)
+        message("Restored directory path from state: ", state$project_dir)
+      }
+    })
 
     # Update the project directory input when a directory is selected
     observeEvent(input$select, {
@@ -1056,11 +1066,15 @@ fileBrowserServer <- function(id, state, dir_path, session) {
         length(strsplit(d, "/")[[1]])
       }), dir_paths)]
 
+      # Get current selection count
+      current_selection <- selected()
+      num_selected <- length(current_selection)
+      
       # Build the UI
       ui_elements <- tagList(
-        # File count
+        # File count with selection count
         div(style = "color: #999; font-size: 12px; margin-bottom: 10px;",
-            paste("Found", length(files), "CSV files"))
+            paste0("Found ", length(files), " CSV files, selected ", num_selected))
       )
 
       # Track previously rendered directories to avoid duplicates
@@ -1331,6 +1345,9 @@ optionalDirsServer <- function(id, state, session) {
 #' @param state Global state reactive values
 #' @param session The current session object
 step1Server <- function(id, state, session) {
+  # Store root session for accessing global inputs
+  root_session <- session
+  
   moduleServer(id, function(input, output, session) {
     # Initialize directory input handler
     dir_path <- directoryInputServer("project_dir", state, session)
@@ -1340,6 +1357,34 @@ step1Server <- function(id, state, session) {
       path <- dir_path()
       cat("Step1: Directory path updated to:", path, "\n")
     })
+    
+    # Restore inputs from state when returning to step 1
+    observe({
+      # Only run when we're on step 1
+      req(state$current_step == 1)
+      
+      # Restore project name from state if available
+      if (!is.null(state$project_name) && state$project_name != "") {
+        updateTextInput(session, "project_name", value = state$project_name)
+      }
+    })
+    
+    # Save project_name to state as user types
+    observeEvent(input$project_name, {
+      if (!is.null(input$project_name)) {
+        state$project_name <- input$project_name
+      }
+    })
+    
+    # Handle sidebar step navigation (using root session input)
+    observeEvent(root_session$input$sidebar_goto_step, {
+      target_step <- root_session$input$sidebar_goto_step
+      if (!is.null(target_step) && target_step >= 1 && target_step <= 3) {
+        state$current_step <- target_step
+        # Update sidebar indicators
+        root_session$sendCustomMessage("updateSidebarStep", list(step = target_step))
+      }
+    }, ignoreInit = TRUE)
 
     # Initialize file browser with the reactive directory path
     selected_files <- fileBrowserServer("files", state, dir_path, session)
@@ -1349,11 +1394,19 @@ step1Server <- function(id, state, session) {
 
     # Handle Continue button
     observeEvent(input$continue, {
+      # Check if project name is provided
+      if (is.null(input$project_name) || trimws(input$project_name) == "") {
+        showModal(modalDialog(
+          title = "Missing Information",
+          "Please enter a name for your project directory.",
+          easyClose = TRUE,
+          footer = modalButton("OK")
+        ))
       # Check if a valid directory is selected
-      if (is.null(dir_path()) || dir_path() == "") {
+      } else if (is.null(dir_path()) || dir_path() == "") {
         showModal(modalDialog(
           title = "Error",
-          "Please select a project directory first.",
+          "Please select a data directory.",
           easyClose = TRUE,
           footer = modalButton("OK")
         ))
@@ -1375,6 +1428,16 @@ step1Server <- function(id, state, session) {
 
     # Handle continuing with no files
     observeEvent(input$continue_no_files, {
+      # Double-check project name is still valid
+      if (is.null(input$project_name) || trimws(input$project_name) == "") {
+        showModal(modalDialog(
+          title = "Missing Information",
+          "Please enter a name for your project directory.",
+          easyClose = TRUE,
+          footer = modalButton("OK")
+        ))
+        return()
+      }
       removeModal()
       proceedToNextStep()
     })
@@ -1384,12 +1447,20 @@ step1Server <- function(id, state, session) {
       # Update global state with current selections
       state$project_dir <- dir_path()
       state$data_files <- selected_files()
+      state$project_name <- input$project_name  # Save project name to state
 
       # Save optional directories to state
       state$optional_dirs$directories <- selected_dirs()
 
       # Show summary before proceeding
       dirs <- selected_dirs()
+      
+      # Get project name for display (use placeholder if empty)
+      project_name_display <- if (!is.null(input$project_name) && input$project_name != "") {
+        input$project_name
+      } else {
+        "(not yet named)"
+      }
 
       # Create a nicer display for files
       files_html <- if(length(state$data_files) > 0) {
@@ -1430,12 +1501,24 @@ step1Server <- function(id, state, session) {
       showModal(modalDialog(
         title = "Dataset Creation - Step 1 Complete",
         div(
-          p(strong("Project Directory:"), state$project_dir),
-
+          # Project Folder section
+          strong("Project Folder:"),
+          div(
+            style = "margin: 5px 0 15px 0; padding: 8px; background-color: #f8f9fa; border: 1px solid #ddd; border-radius: 4px;",
+            icon("folder", style = "color: #f0ad4e; margin-right: 8px;"),
+            span(style = "font-weight: 500;", project_name_display)
+          ),
+          
+          # Selected Files section
           strong("Selected Files:"),
+          div(
+            style = "color: #666; font-size: 12px; margin-top: 3px;",
+            "Chosen from: ", tags$code(state$project_dir)
+          ),
           files_html,
-
-          strong("Optional Directories:"),
+          
+          # Optional Directories section
+          div(style = "margin-top: 15px;", strong("Optional Directories:")),
           dirs_html
         ),
         # Valid sizes are "m" (default), "s", "l", or "xl"
@@ -1453,6 +1536,9 @@ step1Server <- function(id, state, session) {
       # Move to step 2
       removeModal()
       state$current_step <- 2
+      
+      # Update sidebar step indicators
+      session$sendCustomMessage("updateSidebarStep", list(step = 2))
 
       # Create data dictionary templates for selected files
       if (length(state$data_files) > 0) {
@@ -1784,25 +1870,6 @@ step2Server <- function(id, state, session) {
       }
     })
 
-    # Pre-fill dataset information if it exists
-    observe({
-
-      # Initialize authors from state if available
-      if (length(authors()) == 0 && !is.null(state$dataset_info$authors) && length(state$dataset_info$authors) > 0) {
-        authors(state$dataset_info$authors)
-      }
-
-      # Initialize dataset name from state if available
-      if (!is.null(state$dataset_info$name)) {
-        updateTextInput(session, "dataset_name", value = state$dataset_info$name)
-      }
-
-      # Initialize dataset description from state if available
-      if (!is.null(state$dataset_info$description)) {
-        updateTextAreaInput(session, "dataset_description", value = state$dataset_info$description)
-      }
-    })
-
     # Handle Back button
     observeEvent(input$back, {
 
@@ -1822,6 +1889,9 @@ step2Server <- function(id, state, session) {
     observeEvent(input$confirm_back, {
       removeModal()
       state$current_step <- 1
+      
+      # Update sidebar step indicators
+      session$sendCustomMessage("updateSidebarStep", list(step = 1))
     })
 
     # Handle Continue button
@@ -1852,17 +1922,17 @@ step2Server <- function(id, state, session) {
 
       # Show JSON preview modal
       showModal(modalDialog(
-        title = "Dataset JSON Preview",
+        title = "Dataset Metadata Preview",
         div(
-          p("Here's a preview of the dataset_description.json file that will be generated:"),
-
+          # All explanatory text above the preview
+          p("Here's a preview of the metadata that will be generated. After Step 3, this information will be saved as a text file in your project directory called ", tags$code("dataset_description.json"), "."),
+          
           # Use a pre tag for better code display
           tags$pre(
             class = "json-preview",
+            style = "max-height: 400px; overflow-y: auto;",
             HTML(json_preview)
-          ),
-
-          p("This JSON will be saved in your project directory when you proceed to Step 3.")
+          )
         ),
         size = "l",
         easyClose = TRUE,
@@ -1878,6 +1948,9 @@ step2Server <- function(id, state, session) {
       removeModal()
       # Move to step 3
       state$current_step <- 3
+      
+      # Update sidebar step indicators
+      session$sendCustomMessage("updateSidebarStep", list(step = 3))
     })
 
     # Create JSON Preview function
@@ -1973,6 +2046,15 @@ step3Server <- function(id, state, session) {
     if (.Platform$OS.type == "windows") {
       volumes <- c(volumes, getVolumes()())
     }
+    
+    # Handle Back button - go back to step 2
+    observeEvent(input$back, {
+      # Save current state before going back
+      state$current_step <- 2
+      
+      # Update sidebar step indicators
+      session$sendCustomMessage("updateSidebarStep", list(step = 2))
+    })
 
     # Reactive values for managing file mapping state
     files <- reactiveVal(list())
@@ -2035,50 +2117,69 @@ step3Server <- function(id, state, session) {
       req(state$project_dir)
       req(length(state$data_files) > 0)
       
-      # Prevent re-initialization
+      # Prevent re-initialization if already done
       if (initialized()) {
         return()
       }
       
       message("STEP3 INIT: Project dir: ", state$project_dir)
       message("STEP3 INIT: Number of data files: ", length(state$data_files))
-
-      # Create initial mappings for each data file
-      mappings <- lapply(state$data_files, function(file) {
-        list(
-          original = file,
-          new = "",
-          keywords = list(),
-          values = list(),
-          partial_keywords = list()
-        )
-      })
-
-      file_mappings(mappings)
-      message("GEN: Saved mappings back to reactive")
-
-      # Verify save immediately
-      immediate_check <- file_mappings()
-      message("GEN: Immediate check - File 1 new name: '", immediate_check[[1]]$new, "'")
       
-      # Analyze files for columns with constant values (for auto-naming)
-      analyzeConstantColumns()
+      # Check if we have existing mappings from state (returning to step 3)
+      if (!is.null(state$file_mappings) && length(state$file_mappings) > 0) {
+        message("STEP3 INIT: Restoring existing mappings from state")
+        file_mappings(state$file_mappings)
+        
+        # Restore constant columns analysis
+        analyzeConstantColumns()
+        
+        # Set current file to first one
+        if (length(state$file_mappings) > 0) {
+          current_file(1)
+          # Restore keywords for current file
+          if (length(state$file_mappings[[1]]$keywords) > 0) {
+            selected_keywords(state$file_mappings[[1]]$keywords)
+          }
+        }
+      } else {
+        # Create initial mappings for each data file
+        mappings <- lapply(state$data_files, function(file) {
+          list(
+            original = file,
+            new = "",
+            keywords = list(),
+            values = list(),
+            partial_keywords = list()
+          )
+        })
 
-      # Set initial file selection
-      if (length(mappings) > 0) {
-        current_file(1)
-        message("STEP3 INIT: Set current file to index 1")
+        file_mappings(mappings)
+        message("STEP3 INIT: Created new mappings")
+
+        # Analyze files for columns with constant values (for auto-naming)
+        analyzeConstantColumns()
+
+        # Set initial file selection
+        if (length(mappings) > 0) {
+          current_file(1)
+          message("STEP3 INIT: Set current file to index 1")
+        }
       }
       
       initialized(TRUE)
     })
 
-    # Handle returning to step 3 from other steps
+    # Handle returning to step 3 - reset initialized flag to allow state restoration
     observeEvent(state$current_step, {
-      if (state$current_step == 3 && !initialized()) {
-        initialized(FALSE)
+      if (state$current_step == 3) {
+        # If we're coming back to step 3 and have state$file_mappings but file_mappings() is empty,
+        # reset initialized to allow restoration
+        if (!is.null(state$file_mappings) && length(state$file_mappings) > 0 && 
+            length(file_mappings()) == 0) {
+          initialized(FALSE)
+        }
       }
-    })
+    }, ignoreInit = TRUE)
 
     #
     # Analyzes CSV files to find columns with constant values
@@ -2291,6 +2392,18 @@ step3Server <- function(id, state, session) {
             next
           }
           
+          # Validate the keyword value
+          validation_result <- validateKeywordValue(keyword_value)
+          if (!validation_result$valid) {
+            showNotification(
+              paste0("File ", mappings[[file_idx]]$original, ": ", validation_result$message),
+              type = "error",
+              duration = 5
+            )
+            error_count <- error_count + 1
+            next
+          }
+          
           message("AUTO-NAME: File ", file_idx, " - value: ", keyword_value)
           
           # Update or add keyword
@@ -2465,12 +2578,11 @@ step3Server <- function(id, state, session) {
                   style = "color: #ff9800; font-style: italic;"
                 )
               } else {
-                if (is_current) {
-                  actionButton(session$ns(paste0("generate_for_", i)), "Generate", 
-                              class = "btn btn-xs btn-primary")
-                } else {
-                  span("Click to configure", class = "text-muted")
-                }
+                span(
+                  if (is_current) "← Configure keywords" else "Click to configure", 
+                  class = "text-muted",
+                  style = if (is_current) "font-style: italic;" else ""
+                )
               }
             )
           )
@@ -2582,6 +2694,76 @@ step3Server <- function(id, state, session) {
     observeEvent(input$keyword_stimulus, { addKeyword("stimulus", "stimulus") })
     observeEvent(input$keyword_trial, { addKeyword("trial", "trial") })
     observeEvent(input$keyword_description, { addKeyword("description", "description") })
+    
+    # Handle adding custom keyword
+    observeEvent(input$add_custom_keyword, {
+      keyword_name <- trimws(input$custom_keyword_name)
+      
+      if (is.null(keyword_name) || keyword_name == "") {
+        showNotification("Please enter a keyword name", type = "warning")
+        return()
+      }
+      
+      # Validate keyword format
+      validation <- validateCustomKeyword(keyword_name)
+      if (!validation$valid) {
+        showNotification(validation$message, type = "error")
+        return()
+      }
+      
+      # Add the keyword
+      addKeyword(keyword_name, keyword_name)
+      
+      # Clear the input
+      updateTextInput(session, "custom_keyword_name", value = "")
+      
+      showNotification(paste0("Added keyword: ", keyword_name), type = "message")
+    })
+    
+    # Handle removing a keyword
+    observeEvent(input$remove_keyword, {
+      keyword_index <- input$remove_keyword
+      message("REMOVE KEYWORD: Removing keyword at index ", keyword_index)
+      
+      keywords <- selected_keywords()
+      
+      if (keyword_index > 0 && keyword_index <= length(keywords)) {
+        removed_name <- keywords[[keyword_index]]$name
+        keywords <- keywords[-keyword_index]
+        selected_keywords(keywords)
+        updateKeywordMapping()
+        message("REMOVE KEYWORD: Removed '", removed_name, "'. Remaining keywords: ", length(keywords))
+      }
+    }, ignoreInit = TRUE)
+    
+    # Handle keyword reordering via drag and drop
+    observeEvent(input$keyword_order, {
+      new_order <- input$keyword_order
+      message("REORDER KEYWORDS: New order received: ", paste(new_order, collapse = ", "))
+      
+      keywords <- selected_keywords()
+      if (length(keywords) == 0 || length(new_order) == 0) return()
+      
+      # Create a map of id to keyword
+      keyword_map <- list()
+      for (kw in keywords) {
+        keyword_map[[kw$id]] <- kw
+      }
+      
+      # Reorder based on new_order (which contains keyword IDs)
+      reordered <- list()
+      for (id in new_order) {
+        if (!is.null(keyword_map[[id]])) {
+          reordered[[length(reordered) + 1]] <- keyword_map[[id]]
+        }
+      }
+      
+      if (length(reordered) == length(keywords)) {
+        selected_keywords(reordered)
+        updateKeywordMapping()
+        message("REORDER KEYWORDS: Successfully reordered ", length(reordered), " keywords")
+      }
+    }, ignoreInit = TRUE)
 
     # Add a keyword to the current configuration
     addKeyword <- function(name, display) {
@@ -2769,16 +2951,25 @@ step3Server <- function(id, state, session) {
     output$current_file_text <- renderUI({
       file_index <- current_file()
       mappings <- file_mappings()
+      selected <- selected_files()
+      num_selected <- length(selected)
+      total_files <- length(mappings)
 
       if (is.null(file_index) || file_index > length(mappings)) {
-        return(p("No file selected"))
+        return(div(
+          p(style = "margin: 0 0 5px 0;", strong("Files: "), paste0(num_selected, " of ", total_files, " selected")),
+          p(style = "margin: 0; color: #666;", "Click a file to configure it")
+        ))
       }
 
       file_info <- mappings[[file_index]]
-      p(
-        style = "margin: 0;",
-        strong("Currently configuring:"),
-        span(file_info$original, style = "font-style: italic;")
+      div(
+        p(style = "margin: 0 0 5px 0;", strong("Files: "), paste0(num_selected, " of ", total_files, " selected")),
+        p(
+          style = "margin: 0;",
+          strong("Configuring: "),
+          span(basename(file_info$original), style = "font-style: italic;")
+        )
       )
     })
 
@@ -2811,9 +3002,10 @@ step3Server <- function(id, state, session) {
           tags$button(
             id = paste0("remove_keyword_", i),
             class = "remove-keyword",
-            style = "background: none; border: none; color: white; opacity: 0.7; padding: 0 0 0 5px; font-size: 10px;",
-            onclick = paste0("Shiny.setInputValue('", session$ns("remove_keyword"), "', ", i, ", {priority: 'event'});"),
-            icon("times")
+            type = "button",
+            style = "background: none; border: none; color: white; opacity: 0.8; padding: 2px 5px; font-size: 12px; cursor: pointer; margin-left: 5px;",
+            onclick = paste0("event.stopPropagation(); Shiny.setInputValue('", session$ns("remove_keyword"), "', ", i, ", {priority: 'event'}); return false;"),
+            HTML("&times;")
           )
         )
       })
@@ -2901,6 +3093,65 @@ step3Server <- function(id, state, session) {
 
       do.call(tagList, inputs)
     })
+    
+    # Live filename preview based on current keyword values
+    output$filename_preview <- renderUI({
+      file_index <- current_file()
+      mappings <- file_mappings()
+      keywords <- selected_keywords()
+      
+      # If no file selected
+      if (is.null(file_index) || file_index > length(mappings)) {
+        return(div(
+          style = "color: #666; font-style: italic;",
+          "Select a file to preview filename"
+        ))
+      }
+      
+      # If no keywords selected
+      if (length(keywords) == 0) {
+        return(div(
+          style = "color: #666; font-style: italic;",
+          "Add keywords above to build filename"
+        ))
+      }
+      
+      # Get file extension from original filename
+      file_info <- mappings[[file_index]]
+      ext <- tools::file_ext(file_info$original)
+      
+      # Build filename as a single string with HTML for placeholders
+      filename_html_parts <- character(0)
+      
+      for (i in seq_along(keywords)) {
+        keyword <- keywords[[i]]
+        input_id <- paste0("keyword_value_", keyword$id)
+        value <- input[[input_id]]
+        
+        # Add underscore separator (except for first keyword)
+        if (i > 1) {
+          filename_html_parts <- c(filename_html_parts, "_")
+        }
+        
+        if (is.null(value) || value == "") {
+          # Show placeholder for empty values
+          filename_html_parts <- c(filename_html_parts, 
+            paste0(keyword$name, "-<span style='color: #999; font-style: italic;'>[", keyword$name, "]</span>"))
+        } else {
+          # Show actual value
+          filename_html_parts <- c(filename_html_parts, paste0(keyword$name, "-", value))
+        }
+      }
+      
+      # Add _data.ext suffix
+      suffix <- if (ext != "") paste0("_data.", ext) else "_data.csv"
+      filename_html_parts <- c(filename_html_parts, suffix)
+      
+      div(
+        style = "font-family: monospace; font-size: 14px;",
+        HTML(paste0(filename_html_parts, collapse = ""))
+      )
+    })
 
     # Continue to next step
     observeEvent(input$continue, {
@@ -2909,30 +3160,23 @@ step3Server <- function(id, state, session) {
 
       if (any(unmapped_files)) {
         showModal(modalDialog(
-          title = "Missing Filename Mappings",
+          title = "All Files Must Be Renamed",
           div(
-            p("Some files have not been assigned standardized filenames:"),
+            p("All files must be assigned standardized filenames before you can continue. Please rename the following files:"),
             tags$ul(
               lapply(which(unmapped_files), function(i) {
-                tags$li(strong(mappings[[i]]$original))
+                tags$li(mappings[[i]]$original)
               })
             ),
-            p("Would you like to continue anyway?")
+            p(style = "margin-top: 15px; color: #666;", 
+              "Select each file, choose keywords, fill in values, and click \"Apply Filename\".")
           ),
           easyClose = TRUE,
-          footer = tagList(
-            modalButton("Cancel"),
-            actionButton(session$ns("confirm_continue_unmapped"), "Continue Anyway", class = "btn-warning")
-          )
+          footer = modalButton("OK")
         ))
       } else {
         proceedToFinalStep()
       }
-    })
-
-    observeEvent(input$confirm_continue_unmapped, {
-      removeModal()
-      proceedToFinalStep()
     })
 
     # Create HTML preview of file structure
@@ -3024,8 +3268,16 @@ step3Server <- function(id, state, session) {
     proceedToFinalStep <- function() {
       state$file_mappings <- file_mappings()
       
-      dataset_name <- gsub("[^a-zA-Z0-9_-]", "_", tolower(state$dataset_info$name))
-      suggested_name <- paste0(dataset_name, "_psychds")
+      # Use project_name from step 1 if available, otherwise fall back to dataset_info$name
+      base_name <- if (!is.null(state$project_name) && state$project_name != "") {
+        state$project_name
+      } else if (!is.null(state$dataset_info$name)) {
+        state$dataset_info$name
+      } else {
+        "my_dataset"
+      }
+      dataset_name <- gsub("[^a-zA-Z0-9_-]", "_", base_name)
+      suggested_name <- dataset_name
       
       # Create preview HTML with proper subdirectory structure
       preview_html <- tagList(
@@ -3047,8 +3299,7 @@ step3Server <- function(id, state, session) {
           class = "alert alert-info",
           style = "margin-bottom: 20px;",
           icon("info-circle", style = "margin-right: 8px;"),
-          "Your new Psych-DS dataset will be created as a self-contained folder. ",
-          "Choose where to save it and what to name it."
+          "Your new Psych-DS project folder will be created here."
         ),
         
         div(
@@ -3075,7 +3326,7 @@ step3Server <- function(id, state, session) {
             textInput(
               session$ns("save_dataset_dir"),
               label = NULL,
-              value = path.expand("~/Downloads"),
+              value = path.expand("~/Documents"),
               placeholder = "Choose destination folder",
               width = "100%"
             ),
@@ -3095,9 +3346,9 @@ step3Server <- function(id, state, session) {
         preview_html,
         
         div(
-          class = "alert",
-          style = "background-color: #fff3cd; border: 1px solid #ffc107; margin-top: 20px;",
-          icon("exclamation-triangle", style = "margin-right: 8px;"),
+          class = "alert alert-info",
+          style = "margin-top: 20px;",
+          icon("info-circle", style = "margin-right: 8px;"),
           tags$strong("Full path: "),
           textOutput(session$ns("save_full_path"), inline = TRUE)
         ),

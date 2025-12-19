@@ -149,8 +149,14 @@ fileBrowserUI <- function(id, title, description, with_convert = FALSE) {
     description = if (with_convert) {
       tagList(
         description,
-        " If your data are not yet in CSV format, start by ",
-        actionLink(ns("convert"), "converting them", class = "blue-link")
+        " If your data are not yet in CSV format, you'll need to start by ",
+        tags$a(
+          href = "https://support.microsoft.com/en-us/office/import-or-export-text-txt-or-csv-files-5250ac4c-663c-47ce-937b-339e391393ba",
+          target = "_blank",
+          class = "blue-link",
+          "converting them"
+        ),
+        "."
       )
     } else {
       description
@@ -171,8 +177,8 @@ optionalDirsUI <- function(id) {
   ns <- NS(id)
   
   sectionBox(
-    title = "Optional Directories",
-    description = "Select additional new directories to create in your project folder.",
+    title = "Optional Subfolders",
+    description = "This tool can create additional empty directories inside your project folder for you to move your other materials into.",
     div(
       class = "file-browser",
       div(
@@ -184,7 +190,7 @@ optionalDirsUI <- function(id) {
         checkboxInput(ns("dir_documentation"), "documentation/", value = FALSE)
       )
     ),
-    div(class = "custom-dir-section", "Add custom directory:"),
+    div(class = "custom-dir-section", "Add a custom subdirectory:"),
     div(
       class = "directory-input",
       textInput(
@@ -214,7 +220,7 @@ step1UI <- function(id) {
   tagList(
     commonHeader(
       main_title = "Create Dataset",
-      sub_title = "Step 1: Project Directory and Canonical Data Files",
+      sub_title = "Step 1: Select Your Data",
       current_step = 1
     ),
 
@@ -235,11 +241,30 @@ step1UI <- function(id) {
       )
     ),
     
-    
-    sectionBox(
-      title = "Project Directory",
-      description = "The goal of Psych-DS is to standardize your data in the context of the rest of the research materials that relate to it. Select a project directory where you want your new `data/` folder to appear. This directory should also contain both your existing data files and optionally other project materials (e.g. analyses, papers.)",
-      directoryInputUI(ns("project_dir"))
+    # Project Directory Name and Data Directory Selection (side by side)
+    fluidRow(
+      column(
+        width = 6,
+        sectionBox(
+          title = "Name Your Project Directory",
+          description = "The goal of Psych-DS is to standardize how you store data within a scientific project. This tool will build a new project directory to store your data, with additional folders (analysis, materials, etc.) if you like.",
+          textInput(
+            ns("project_name"),
+            label = NULL,
+            value = "",
+            placeholder = "Project directory name, e.g. MyFavoriteStudy, Experiment1, Dissertation",
+            width = "100%"
+          )
+        )
+      ),
+      column(
+        width = 6,
+        sectionBox(
+          title = "Select Data Directory",
+          description = "Choose the folder on your computer that contains all the data files you want to include in your new project directory. It's okay if that folder also contains other things; you'll select the specific data files below.",
+          directoryInputUI(ns("project_dir"))
+        )
+      )
     ),
     
     fluidRow(
@@ -248,7 +273,7 @@ step1UI <- function(id) {
         fileBrowserUI(
           ns("files"),
           "Select Data Files",
-          "Select CSV files that contain the data you want to include in the Psych-DS data/ folder.",
+          "Select the CSV files that you want to include in your Psych-DS data folder.",
           with_convert = TRUE
         )
       ),
@@ -258,7 +283,7 @@ step1UI <- function(id) {
       )
     ),
     
-    commonNavigation(ns, show_back = FALSE, continue_text = "Continue →")
+    commonNavigation(ns, show_back = FALSE, continue_text = "Continue to step 2 of Create Dataset - no files will be saved yet")
   )
 }
 
@@ -279,15 +304,16 @@ step2UI <- function(id) {
     div(
       class = "section-description",
       style = "margin-bottom: 20px;",
-      "We'll generate a text file called dataset_description.json containing information about your dataset. This file is part of Psych-DS - it is placed in your project directory and is used to confirm whether your specific dataset is organized to the Psych-DS standard."
+      p("Every Psych-DS project has a text file called ", tags$code("dataset_description.json"), " with information (metadata) about the dataset. This file is part of what makes Psych-DS work - it sits in your project directory and is used to confirm whether your specific dataset matches the standard."),
+      p("Right now, we'll make you a basic version of this file that you can update later with more information. You can do this by either editing the text file by hand or using the \"Update Dictionary\" tool.")
     ),
     
     fluidRow(
       column(
         width = 6,
         sectionBox(
-          title = "Detected Variables",
-          description = "The following column headers were detected in your selected files. Variables with the same name across multiple files are assumed to have identical definitions.",
+          title = "Review Detected Variables",
+          description = "Psych-DS uses your column headers to create the list of variables in your dataset. Variable names used in more than one file are assumed to have identical definitions. Make sure the variable names you see make sense for your data files!",
           div(
             style = "margin-top: 15px;",
             DT::dataTableOutput(ns("variables_table"))
@@ -296,8 +322,12 @@ step2UI <- function(id) {
             style = "margin-top: 15px; padding: 10px; background-color: #fff3cd; border-radius: 3px;",
             p(
               style = "color: #856404; margin-bottom: 0;",
-              "Note: If you need different definitions for variables that currently have the same name across files, you will need to rename them to be distinct. Make these changes in your CSV files and restart the process."
+              strong("Note:"), " Psych-DS only allows each variable name to have one variable definition. If you use the same name for more than one concept across data files (e.g. \"t\" means \"time\" in some files but \"temperature\" in others), you will need to rename these columns before continuing."
             )
+          ),
+          div(
+            style = "margin-top: 10px; color: #666; font-size: 13px;",
+            "If you need to change any variable names, exit this tool and open your CSV files to make those changes directly. Then, start again with Step 1 of the \"Create Dataset\" process."
           )
         )
       ),
@@ -310,7 +340,7 @@ step2UI <- function(id) {
             textInput(
               ns("dataset_name"),
               "Name *",
-              placeholder = "e.g., Visual Attention Experiment 2023"
+              placeholder = "e.g., Dataset for Visual Attention Experiment 2023"
             )
           ),
           div(
@@ -325,28 +355,30 @@ step2UI <- function(id) {
         ),
         sectionBox(
           title = "Author Information",
-          p("Author Names (separate with commas)"),
+          # Add New Author button first
+          actionButton(
+            ns("add_author"),
+            "Add New Author",
+            icon = icon("plus"),
+            class = "btn-primary",
+            style = "margin-bottom: 15px;"
+          ),
+          # Authors table/list
           div(
             id = ns("authors_container"),
-            style = "max-height: 200px; overflow-y: auto; border: 1px solid #ced4da; border-radius: 3px; margin-bottom: 15px;",
+            style = "max-height: 200px; overflow-y: auto; border: 1px solid #ced4da; border-radius: 3px;",
             div(
               style = "display: flex; background-color: #f8f9fa; padding: 5px; border-bottom: 1px solid #ced4da;",
               div(style = "flex: 2;", strong("Name")),
               div(style = "flex: 2;", strong("ORCID ID"))
             ),
             uiOutput(ns("author_list"))
-          ),
-          actionButton(
-            ns("add_author"),
-            "Add New Author",
-            class = "btn-primary",
-            style = "margin-bottom: 15px;"
           )
         )
       )
     ),
     
-    commonNavigation(ns, show_back = TRUE)
+    commonNavigation(ns, show_back = TRUE, continue_text = "Continue to step 3 of Create Dataset - no files will be saved yet")
   )
 }
 
@@ -367,158 +399,123 @@ step3UI <- function(id) {
     div(
       class = "section-description",
       style = "margin-bottom: 20px;",
-      "Rename your data files to follow Psych-DS naming conventions. Each filename will be composed of a set of keywords and custom values to create a clear, consistent description.",
-      tags$br(), tags$br(),
-      strong("New features:"), 
-      " Check boxes to select multiple files and apply keywords in batch. Use Auto-Name to automatically fill keyword values from constant columns in your data."
+      p("Psych-DS has specific naming conventions that your data files need to follow. This naming system is going to make you explain what each piece of a filename means: you can't just say \"347B\". Instead you have to use keywords to describe what that refers to. Is that participant 347B? Session 347B? Or even participant 347, session B?"),
+      p("We encourage you to use keywords from the suggested list below, but you can add your own if needed.")
     ),
     
+    # FULL WIDTH - File Selection at top
     fluidRow(
-      # LEFT COLUMN - File Selection and Auto-Naming
       column(
-        width = 6,
+        width = 12,
         sectionBox(
-          title = "1. File Mapping",
-          description = "Check boxes to select multiple files. Click a file to configure its keywords individually.",
-          # Select All / Deselect All buttons
-          div(
-            style = "margin-bottom: 10px; display: flex; gap: 10px;",
-            actionButton(
-              ns("select_all_files"),
-              "Select All",
-              class = "btn btn-sm btn-info",
-              style = "flex: 1;"
-            ),
-            actionButton(
-              ns("deselect_all_files"),
-              "Deselect All",
-              class = "btn btn-sm btn-default",
-              style = "flex: 1;"
-            )
-          ),
-          div(
-            class = "file-browser",
-            style = "height: 250px; overflow-y: auto; margin-bottom: 15px;",
-            div(
-              class = "file-list-header",
-              fluidRow(
-                column(1, HTML("&nbsp;")),  # Space for checkbox
-                column(5, strong("Original Filename")),
-                column(6, strong("New Filename"))
-              )
-            ),
-            div(
-              id = ns("file_mapping_list"),
-              class = "file-mapping-list",
-              uiOutput(ns("file_mapping_rows"))
-            )
-          ),
-          # Batch operations section
-          div(
-            style = "margin-top: 10px; padding: 10px; background-color: #f0f8ff; border-radius: 4px;",
-            strong("Batch Operations:"),
-            div(
-              style = "margin-top: 8px;",
-              uiOutput(ns("selected_count_text")),
-              conditionalPanel(
-                condition = paste0("output['", ns("has_selection"), "']")
-              )
-            )
-          )
-        ),
-        
-        div(
-          id = ns("current_file_indicator"),
-          class = "alert alert-info",
-          style = "margin-top: 15px;",
-          uiOutput(ns("current_file_text"))
-        ),
-        
-        sectionBox(
-          title = "2. Auto-Name from Data",
-          description = "Automatically fill keyword values from constant columns across all selected files. This will apply the keyword and generate filenames for all selected files.",
-          div(
-            id = ns("auto_name_section"),
-            conditionalPanel(
-              condition = paste0("output['", ns("has_constant_columns"), "']"),
-              fluidRow(
-                column(
-                  width = 5,
-                  selectInput(
-                    ns("auto_keyword"),
-                    "Keyword to fill:",
-                    choices = NULL,
-                    width = "100%"
-                  )
+          title = "1. Select Files",
+          description = "Click on one file to create the name it will have in your Psych-DS folder, or use the check boxes to choose a batch of files to rename at the same time.",
+          fluidRow(
+            column(
+              width = 8,
+              # Select All / Deselect All buttons
+              div(
+                style = "margin-bottom: 10px; display: flex; gap: 10px;",
+                actionButton(
+                  ns("select_all_files"),
+                  "Select All",
+                  class = "btn btn-sm btn-info"
                 ),
-                column(
-                  width = 5,
-                  selectInput(
-                    ns("auto_column"),
-                    "From column:",
-                    choices = NULL,
-                    width = "100%"
-                  )
-                ),
-                column(
-                  width = 2,
-                  tags$label(HTML("&nbsp;"), style = "display: block;"),
-                  actionButton(
-                    ns("apply_auto_name"),
-                    icon("magic"),
-                    class = "btn btn-success",
-                    style = "width: 100%;",
-                    title = "Apply auto-naming to selected files"
-                  )
+                actionButton(
+                  ns("deselect_all_files"),
+                  "Deselect All",
+                  class = "btn btn-sm btn-default"
                 )
               ),
               div(
-                style = "margin-top: 10px; padding: 8px; background-color: #fff3cd; border-radius: 4px;",
-                icon("info-circle", style = "color: #856404; margin-right: 5px;"),
-                tags$small(
-                  style = "color: #856404;",
-                  "This will apply to ALL selected files and generate provisional filenames."
+                class = "file-browser",
+                style = "height: 200px; overflow-y: auto;",
+                div(
+                  class = "file-list-header",
+                  fluidRow(
+                    column(1, HTML("&nbsp;")),
+                    column(5, strong("Original Filename")),
+                    column(6, strong("New Filename"))
+                  )
+                ),
+                div(
+                  id = ns("file_mapping_list"),
+                  class = "file-mapping-list",
+                  uiOutput(ns("file_mapping_rows"))
                 )
               )
             ),
-            conditionalPanel(
-              condition = paste0("!output['", ns("has_constant_columns"), "']"),
+            column(
+              width = 4,
               div(
-                style = "padding: 15px; text-align: center; color: #999;",
-                "No constant-value columns detected. Select files to see available columns.",
-                tags$br(),
-                tags$small("(Constant columns are those where all non-empty cells have the same value)")
+                id = ns("current_file_indicator"),
+                class = "alert alert-info",
+                style = "margin-bottom: 10px;",
+                uiOutput(ns("current_file_text"))
+              ),
+              # Auto-name section (compact)
+              div(
+                style = "padding: 10px; background-color: #f8f9fa; border: 1px solid #ddd; border-radius: 4px;",
+                strong("Auto-Name from Data"),
+                div(
+                  style = "font-size: 12px; color: #666; margin-bottom: 10px;",
+                  "Fill keyword values from columns in your data"
+                ),
+                div(
+                  id = ns("auto_name_section"),
+                  conditionalPanel(
+                    condition = paste0("output['", ns("has_constant_columns"), "']"),
+                    selectInput(
+                      ns("auto_keyword"),
+                      "Keyword:",
+                      choices = NULL,
+                      width = "100%"
+                    ),
+                    selectInput(
+                      ns("auto_column"),
+                      "From column:",
+                      choices = NULL,
+                      width = "100%"
+                    ),
+                    actionButton(
+                      ns("apply_auto_name"),
+                      "Apply Auto-Name",
+                      icon = icon("magic"),
+                      class = "btn btn-success btn-sm",
+                      style = "width: 100%;"
+                    )
+                  ),
+                  conditionalPanel(
+                    condition = paste0("!output['", ns("has_constant_columns"), "']"),
+                    div(
+                      style = "padding: 10px; text-align: center; color: #999; font-size: 12px;",
+                      "No constant-value columns detected in selected files."
+                    )
+                  )
+                )
               )
             )
           )
         )
-      ),
-      
-      # RIGHT COLUMN - Manual Keyword Configuration
+      )
+    ),
+    
+    # BOTTOM SECTION - Two columns for keyword configuration
+    fluidRow(
+      # LEFT COLUMN - Keywords
       column(
         width = 6,
         sectionBox(
-          title = "3. Choose Keywords",
-          div(id = ns("choose_keywords_section"), style = "position: relative; top: -20px;"),
+          title = "2. Choose Keywords",
           div(
             class = "section-description",
-            style = "margin-bottom: 15px; padding: 10px; background-color: #e8f4f8; border-radius: 4px; border-left: 4px solid #3498db;",
-            strong("Naming Rules:"),
-            tags$ul(
-              style = "margin: 8px 0; padding-left: 20px;",
-              tags$li("Keyword values must contain only letters and numbers (a-z, A-Z, 0-9)"),
-              tags$li("Custom keywords must contain only lowercase letters (a-z)"),
-              tags$li("No spaces, punctuation, or special characters allowed")
-            )
-          ),
-          div(
-            class = "section-description",
-            "Select keywords to use in your filename. Choose keywords that are meaningful for your dataset and use them consistently."
+            style = "margin-bottom: 10px; font-size: 13px;",
+            "Select keywords to include in your filename. Drag to reorder."
           ),
           div(
             class = "keyword-option-chips",
             style = "margin-bottom: 15px;",
-            lapply(c("session", "subject", "study", "task", "condition", "stimulus", "trial", "description"), function(keyword) {
+            lapply(c("subject", "session", "study", "task", "condition", "stimulus", "trial", "description"), function(keyword) {
               actionButton(
                 ns(paste0("keyword_", keyword)), 
                 keyword, 
@@ -526,55 +523,50 @@ step3UI <- function(id) {
               )
             })
           ),
-          div(class = "section-title", "Selected Keywords"),
+          # Custom keyword inline
+          div(
+            style = "margin-bottom: 15px; display: flex; gap: 10px; align-items: center;",
+            textInput(ns("custom_keyword_name"), NULL, 
+                      placeholder = "custom keyword", width = "60%"),
+            actionButton(ns("add_custom_keyword"), "Add Custom", class = "btn btn-sm btn-default")
+          ),
+          div(class = "section-title", style = "font-size: 13px; margin-bottom: 5px;", "Selected Keywords (drag to reorder):"),
           div(
             id = ns("selected_keywords_container"),
             class = "selected-keywords-container",
-            style = "min-height: 80px; padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; margin-bottom: 15px;",
+            style = "min-height: 50px; padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px;",
             uiOutput(ns("selected_keywords"))
-          )
-        ),
-        
-        sectionBox(
-          title = "4. Add Custom Keyword",
-          description = "Custom keywords must contain only lowercase letters (a-z). No numbers, spaces, or punctuation.",
-          div(
-            class = "input-group",
-            style = "margin-bottom: 15px;",
-            textInput(ns("custom_keyword_name"), NULL, 
-                      placeholder = "e.g., session, condition, group", width = "70%"),
-            div(
-              class = "input-group-btn",
-              style = "width: 30%;",
-              actionButton(ns("add_custom_keyword"), "Add", class = "btn btn-primary", style = "width: 100%;")
-            )
           ),
           div(
-            id = ns("custom_keyword_validation"),
-            style = "margin-top: 5px; min-height: 20px;"
+            style = "margin-top: 10px; padding: 8px; background-color: #e8f4f8; border-radius: 4px; font-size: 12px;",
+            icon("info-circle", style = "color: #3498db; margin-right: 5px;"),
+            "Values must contain only letters and numbers (a-z, A-Z, 0-9)"
           )
-        ),
-        
+        )
+      ),
+      
+      # RIGHT COLUMN - Values and Preview
+      column(
+        width = 6,
         sectionBox(
-          title = "5. Keyword Values",
+          title = "3. Keyword Values",
           div(
             class = "keyword-values-section",
-            style = "min-height: 250px;",
+            style = "min-height: 150px;",
             uiOutput(ns("keyword_value_inputs"))
           )
         ),
         
         sectionBox(
-          title = "6. Filename Preview",
+          title = "4. Filename Preview",
           div(
             class = "well well-sm filename-preview",
-            style = "background-color: #f8f9fa; border: 1px solid #ced4da; padding: 15px; text-align: center; margin: 10px 0; min-height: 60px;",
+            style = "background-color: #f8f9fa; border: 1px solid #ced4da; padding: 15px; text-align: center; margin: 10px 0; min-height: 50px;",
             uiOutput(ns("filename_preview"))
           ),
           div(
-            style = "text-align: center; display: flex; gap: 10px;",
-            actionButton(ns("preview_filename"), "Preview Filename", class = "btn btn-secondary", style = "flex: 1;"),
-            actionButton(ns("generate_filename"), "Generate Filename", class = "btn btn-primary", style = "flex: 1;")
+            style = "text-align: center;",
+            actionButton(ns("generate_filename"), "Apply Filename to Selected File(s)", class = "btn btn-primary", style = "width: 100%;")
           )
         ),
         
@@ -586,7 +578,13 @@ step3UI <- function(id) {
       )
     ),
     
-    commonNavigation(ns, show_back = TRUE)
+    div(
+      style = "margin-top: 15px; padding: 10px; background-color: #e8f4f8; border-radius: 4px; font-size: 13px;",
+      icon("info-circle", style = "color: #3498db; margin-right: 5px;"),
+      "Tip: You can continue without renaming all files. Any files without new names will keep their original names in the output folder."
+    ),
+    
+    commonNavigation(ns, show_back = TRUE, continue_text = "Continue to save your dataset - no files will be saved yet")
   )
 }
 
