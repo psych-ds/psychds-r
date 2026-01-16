@@ -56,19 +56,19 @@ check_psychds_deps()
 #> Checking psychds dependencies...
 #> ✓ shiny (1.12.1)
 #> ✓ shinydashboard (0.7.3)
-#> ✓ shinyjs (2.1.0)
+#> ✓ shinyjs (2.1.1)
 #> ✓ shinyFiles (0.9.3)
 #> ✓ DT (0.34.0)
 #> ✓ jsonlite (2.0.0)
 #> ✓ jsonvalidate (1.5.0)
 #> ✓ dplyr (1.1.4)
-#> ✓ tidyr (1.3.1)
+#> ✓ tidyr (1.3.2)
 #> ✓ readr (2.1.6)
 #> 
 #> Recommended packages:
 #> ✓ httr (1.4.7)
 #> ✓ rmarkdown (2.30)
-#> ✓ knitr (1.50)
+#> ✓ knitr (1.51)
 #> 
 #> PDF Generation:
 #> ○ No PDF generation available
