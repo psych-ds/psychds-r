@@ -21,12 +21,12 @@ ui <- dashboardPage(
     width = 200,
     sidebarMenu(
       id = "sidebar",
-      menuItem("Create Dataset", tabName = "create", icon = icon("plus-circle"), selected = TRUE),
+      menuItem("Welcome", tabName = "welcome", icon = icon("home"), selected = TRUE),
+      menuItem("Create Dataset", tabName = "create", icon = icon("plus-circle")),
       menuItem("Validate Dataset", tabName = "validate", icon = icon("check-circle")),
       menuItem("Update Dictionary", tabName = "dictionary", icon = icon("book")),
       menuItem("Dataset Explorer", tabName = "explorer", icon = icon("table")),
-      menuItem("Upload to OSF", tabName = "upload", icon = icon("cloud-upload")),
-      menuItem("Help", tabName = "help", icon = icon("question-circle"))
+      menuItem("Upload to OSF", tabName = "upload", icon = icon("cloud-upload"))
     )
   ),
 
@@ -261,6 +261,12 @@ ui <- dashboardPage(
 
     # Application tab items
     tabItems(
+      # Welcome Tab (Landing Page)
+      tabItem(
+        tabName = "welcome",
+        welcomeUI("welcome_page")
+      ),
+
       # Create Dataset Tab
       tabItem(
         tabName = "create",
@@ -289,37 +295,6 @@ ui <- dashboardPage(
       tabItem(
         tabName = "upload",
         osfUploadUI("osf_upload")
-      ),
-
-
-      # Help Tab
-      tabItem(
-        tabName = "help",
-        h2("Help"),
-        div(
-          class = "section-box",
-          div(class = "section-title", "About Psych-DS"),
-          p("The Psych-DS standard is a data organization standard for psychological datasets.
-            It defines a consistent structure for organizing research data, making it easier to
-            share, understand, and reuse psychological datasets."),
-
-          div(class = "section-title", style = "margin-top: 20px;", "Using This App"),
-          p("This app provides tools for creating, validating, and exploring Psych-DS datasets:"),
-          tags$ul(
-            tags$li(strong("Create Dataset:"), "Convert existing data to the Psych-DS format with a step-by-step interface"),
-            tags$li(strong("Validate Dataset:"), "Check if datasets comply with the Psych-DS standard"),
-            tags$li(strong("Update Dictionary:"), "Create and edit data dictionaries for your datasets"),
-            tags$li(strong("Dataset Explorer:"), "Explore the structure and content of Psych-DS datasets"),
-            tags$li(strong("Upload to OSF:"), "Upload Psych-DS datasets to the Open Science Framework (OSF)")
-          ),
-
-          div(class = "section-title", style = "margin-top: 20px;", "Resources"),
-          p("For more information about the Psych-DS standard, visit the following resources:"),
-          tags$ul(
-            tags$li(tags$a(href = "https://psych-ds.github.io/", "Psych-DS Website", target = "_blank")),
-            tags$li(tags$a(href = "https://github.com/psych-ds/psych-DS", "Psych-DS GitHub Repository", target = "_blank"))
-          )
-        )
       )
     )
   )

@@ -4,6 +4,13 @@
 #'
 #' This file contains server-side logic for the modular UI components.
 #' Each module handles its own state and communicates with the global state.
+#' 
+# =============================================================================
+# Required Libraries for Variable Analysis
+# =============================================================================
+library(dplyr)
+library(readr)
+library(stringr)
 
 # =============================================================================
 # HTML Data Dictionary Generator
@@ -4073,7 +4080,7 @@ validateServer <- function(id, state, session) {
                 ),
                 
                 # Display issue if there is one
-                if (!is.null(status$issue)) {
+                if (!is.null(status$issue) && !is.null(status$issue$reason) && status$issue$reason != "") {
                   div(
                     class = "step-issue",
                     style = "margin-top: 10px; color: #f44336; padding-left: 20px;",
@@ -4115,7 +4122,7 @@ validateServer <- function(id, state, session) {
                           p(style = "margin: 0;", subMessage),
                           
                           # Display issue if there is one
-                          if (!is.null(subStatus$issue)) {
+                          if (!is.null(subStatus$issue) && !is.null(subStatus$issue$reason) && subStatus$issue$reason != "") {
                             div(
                               class = "substep-issue",
                               style = "margin-top: 5px; color: #f44336; font-size: 0.9em;",
@@ -4186,9 +4193,19 @@ validateServer <- function(id, state, session) {
                   h4("Errors:"),
                   tags$ul(
                     lapply(result$issues$errors, function(error) {
+                      # Handle NULL values gracefully
+                      error_key <- if (!is.null(error$key) && error$key != "") error$key else "Validation Error"
+                      error_reason <- if (!is.null(error$reason) && error$reason != "") {
+                        error$reason
+                      } else if (!is.null(error$message) && error$message != "") {
+                        error$message
+                      } else {
+                        "Unknown error"
+                      }
+                      
                       tags$li(
-                        p(style = "font-weight: bold;", error$key),
-                        p(error$reason)
+                        p(style = "font-weight: bold;", error_key),
+                        p(error_reason)
                       )
                     })
                   )
@@ -4306,6 +4323,391 @@ validateServer <- function(id, state, session) {
   })
 }
 
+# -------------------------------------------------------------------------
+    # Helper: Detect identifier fields
+    # -------------------------------------------------------------------------
+    detect_identifier <- function(var_name, uniqueness_ratio, n_unique, n_clean) {
+      var_lower <- tolower(var_name)
+      
+      id_patterns <- c(
+        "\\bid\\b", "\\bids\\b", "_id$", "^id_",
+        "\\buuid\\b", "\\bguid\\b", "\\bkey\\b", "\\bcode$",
+        "^subject", "^participant", "^child_?id",
+        "^session_?id", "^trial_?id", "^user_?id", "^record_?id"
+      )
+      
+      name_matches_id <- any(sapply(id_patterns, function(p) grepl(p, var_lower)))
+      name_matches_id && (uniqueness_ratio > 0.5 || n_unique >= n_clean * 0.5)
+    }
+    
+    # -------------------------------------------------------------------------
+    # Helper: Detect JSON strings
+    # -------------------------------------------------------------------------
+    detect_json_strings <- function(col_clean) {
+      if (length(col_clean) == 0) return(list(is_json = FALSE, pattern = ""))
+      
+      sample_vals <- head(col_clean, 100)
+      
+      is_array <- all(grepl("^\\[.*\\]$", sample_vals))
+      is_object <- all(grepl("^\\{.*\\}$", sample_vals))
+      
+      if (is_array) return(list(is_json = TRUE, pattern = "JSON array"))
+      if (is_object) return(list(is_json = TRUE, pattern = "JSON object"))
+      list(is_json = FALSE, pattern = "")
+    }
+    
+    # -------------------------------------------------------------------------
+    # Helper: Detect boolean variables  
+    # -------------------------------------------------------------------------
+    detect_boolean <- function(col_clean, n_unique, var_name = "") {
+      if (n_unique > 2) return(list(is_boolean = FALSE, values = list()))
+      
+      var_lower <- tolower(var_name)
+      unique_vals <- unique(col_clean)
+      vals_lower <- tolower(as.character(unique_vals))
+      vals_sorted <- sort(vals_lower)
+      
+      boolean_pairs <- list(
+        c("false", "true"), c("f", "t"), c("n", "y"), c("no", "yes")
+      )
+      
+      is_text_boolean <- any(sapply(boolean_pairs, function(pair) identical(vals_sorted, sort(pair))))
+      
+      boolean_name_patterns <- c(
+        "\\bcorrect\\b", "\\bsuccess\\b", "\\bvalid\\b", "\\bcomplete\\b",
+        "\\bfinished\\b", "\\bdone\\b", "\\bfailed\\b", "\\berror\\b",
+        "\\btimeout\\b", "\\bflag\\b", "\\bis_", "\\bhas_", "\\bwas_"
+      )
+      response_name_patterns <- c(
+        "\\bresponse\\b", "\\bresp\\b", "\\bchoice\\b", "\\bbutton\\b",
+        "\\bkey\\b", "\\banswer\\b", "\\bselect"
+      )
+      
+      name_suggests_boolean <- any(sapply(boolean_name_patterns, function(p) grepl(p, var_lower)))
+      name_suggests_response <- any(sapply(response_name_patterns, function(p) grepl(p, var_lower)))
+      
+      is_01_boolean <- identical(vals_sorted, c("0", "1")) && 
+                       name_suggests_boolean && !name_suggests_response
+      
+      single_boolean_vals <- c("true", "false", "yes", "no", "t", "f", "y", "n")
+      is_single_boolean <- n_unique == 1 && vals_lower[1] %in% single_boolean_vals
+      
+      if (is_text_boolean || is_01_boolean || is_single_boolean) {
+        values <- lapply(sort(unique_vals), function(v) {
+          list(value = as.character(v), label = as.character(v), description = "")
+        })
+        return(list(is_boolean = TRUE, values = values))
+      }
+      
+      list(is_boolean = FALSE, values = list())
+    }
+    
+    # -------------------------------------------------------------------------
+    # Helper: Try parsing character vector as numeric
+    # -------------------------------------------------------------------------
+    try_parse_numeric <- function(col_clean) {
+      if (length(col_clean) == 0) return(list(success = FALSE, values = NULL))
+      
+      col_clean <- trimws(col_clean)
+      col_clean <- col_clean[col_clean != "" & !is.na(col_clean)]
+      
+      if (length(col_clean) == 0) return(list(success = FALSE, values = NULL))
+      
+      numeric_attempt <- suppressWarnings(as.numeric(col_clean))
+      
+      n_parsed <- sum(!is.na(numeric_attempt))
+      n_total <- length(col_clean)
+      parse_ratio <- n_parsed / n_total
+      
+      if (parse_ratio >= 0.90 && n_parsed >= 1) {
+        return(list(
+          success = TRUE,
+          values = numeric_attempt[!is.na(numeric_attempt)]
+        ))
+      }
+      
+      list(success = FALSE, values = NULL)
+    }
+    
+    # -------------------------------------------------------------------------
+    # Helper: Analyze numeric variables
+    # -------------------------------------------------------------------------
+    analyze_numeric <- function(col_clean, var_name, n_unique, uniqueness_ratio) {
+      var_lower <- tolower(var_name)
+      result <- list(categorical_values = list())
+      
+      unique_vals <- unique(col_clean)
+      is_integer <- all(col_clean == floor(col_clean), na.rm = TRUE)
+      
+      is_categorical <- FALSE
+      
+      if (n_unique <= 3 && is_integer) {
+        sorted_vals <- sort(unique_vals)
+        is_code_sequence <- length(sorted_vals) > 1 && 
+                           all(diff(sorted_vals) == 1) && 
+                           min(sorted_vals) >= 0 && max(sorted_vals) <= 10
+        
+        cat_patterns <- c("\\bgroup\\b", "\\bcondition\\b", "\\btreatment\\b",
+                         "\\bcategory\\b", "\\btype\\b", "\\bclass\\b",
+                         "\\blevel\\b", "\\bfactor\\b", "\\barm\\b")
+        name_suggests_cat <- any(sapply(cat_patterns, function(p) grepl(p, var_lower)))
+        
+        if (is_code_sequence && (name_suggests_cat || n_unique == 2)) {
+          is_categorical <- TRUE
+        }
+      }
+      
+      if (is_categorical) {
+        result$type <- "categorical"
+        sorted_vals <- sort(unique_vals)
+        result$categorical_values <- lapply(sorted_vals, function(v) {
+          list(value = as.character(v), label = as.character(v), description = "")
+        })
+      } else {
+        result$type <- if (is_integer) "integer" else "number"
+        result$min_value <- as.character(min(col_clean, na.rm = TRUE))
+        result$max_value <- as.character(max(col_clean, na.rm = TRUE))
+        result$unit <- inferUnit(var_name, mean(col_clean, na.rm = TRUE))
+      }
+      
+      result
+    }
+    
+    # -------------------------------------------------------------------------
+    # Helper: Analyze string variables
+    # -------------------------------------------------------------------------
+    analyze_string <- function(col_clean, var_name, n_unique, uniqueness_ratio, n_clean) {
+      var_lower <- tolower(var_name)
+      result <- list(type = "string", categorical_values = list())
+      
+      avg_length <- mean(nchar(col_clean))
+      max_length <- max(nchar(col_clean))
+      
+      if (avg_length > 50 || max_length > 200) return(result)
+      
+      strong_cat_patterns <- c(
+        "\\bcondition\\b", "\\bgroup\\b", "\\btreatment\\b", "\\barm\\b",
+        "\\bcategory\\b", "\\btype\\b", "\\bclass\\b", "\\blevel\\b",
+        "\\bfactor\\b", "\\bstatus\\b", "\\bstate\\b", "\\bphase\\b",
+        "\\bwave\\b", "\\bcohort\\b"
+      )
+      
+      name_strongly_suggests_cat <- any(sapply(strong_cat_patterns, function(p) grepl(p, var_lower)))
+      
+      is_categorical <- FALSE
+      
+      if (name_strongly_suggests_cat && n_unique <= 20) {
+        is_categorical <- TRUE
+      }
+      
+      if (n_unique >= 2 && n_unique <= 20 && uniqueness_ratio < 0.05 && n_clean >= 20) {
+        is_categorical <- TRUE
+      }
+      
+      if (n_unique >= 2 && n_unique <= 10) {
+        unique_vals <- unique(col_clean)
+        if (mean(nchar(unique_vals)) < 30) {
+          is_categorical <- TRUE
+        }
+      }
+      
+      if (is_categorical) {
+        result$type <- "categorical"
+        unique_vals <- sort(unique(col_clean))
+        result$categorical_values <- lapply(unique_vals, function(v) {
+          list(value = as.character(v), label = as.character(v), description = "")
+        })
+      }
+      
+      result
+    }
+    
+    # -------------------------------------------------------------------------
+    # Helper: Infer unit from variable name
+    # -------------------------------------------------------------------------
+    inferUnit <- function(var_name, mean_val) {
+      var_lower <- tolower(var_name)
+      
+      if (grepl("\\b(rt|reaction_?time|response_?time|latency|duration)\\b", var_lower)) {
+        return(if (mean_val > 100) "milliseconds" else "seconds")
+      }
+      if (grepl("time_?elapsed|elapsed_?time", var_lower)) {
+        return(if (mean_val > 1000) "milliseconds" else "seconds")
+      }
+      if (grepl("\\bage\\b", var_lower)) return("years")
+      if (grepl("\\b(score|rating|points)\\b", var_lower)) return("points")
+      if (grepl("\\b(percent|pct|proportion)\\b", var_lower)) {
+        return(if (mean_val <= 1) "proportion" else "percent")
+      }
+      ""
+    }
+
+    # =========================================================================
+    # MAIN FUNCTION: analyzeVariable - PURE BASE R VERSION
+    # =========================================================================
+    analyzeVariable <- function(csv_file, var_name) {
+      result <- list(
+        type = "string",
+        unit = "",
+        min_value = "",
+        max_value = "",
+        categorical_values = list(),
+        required = FALSE,
+        unique = FALSE,
+        pattern = ""
+      )
+      
+      tryCatch({
+        # Use base R read.csv - read all as character
+        data <- read.csv(
+          csv_file, 
+          stringsAsFactors = FALSE,
+          colClasses = "character",  # Force all columns as character
+          nrows = 10000,
+          na.strings = character(0)  # Don't convert anything to NA automatically
+        )
+        
+        if (!var_name %in% names(data)) return(result)
+        
+        col_data <- data[[var_name]]
+        
+        # Comprehensive NA values
+        na_values <- c("", "NA", "N/A", "na", "n/a", "null", "NULL", "Null", 
+                       "None", "none", "NONE", "undefined", "NaN", "-999", 
+                       "missing", ".", "-")
+        
+        # Trim whitespace
+        col_data <- trimws(col_data)
+        
+        # Filter NA-like values
+        is_na <- is.na(col_data) | (col_data %in% na_values)
+        col_clean <- col_data[!is_na]
+        n_total <- length(col_data)
+        n_clean <- length(col_clean)
+        
+        if (n_clean == 0) return(result)
+        
+        n_unique <- length(unique(col_clean))
+        uniqueness_ratio <- n_unique / n_clean
+        completeness <- n_clean / n_total
+        
+        result$required <- completeness > 0.95
+        result$unique <- n_unique == n_clean
+        
+        # STEP 1: Identifier check
+        if (detect_identifier(var_name, uniqueness_ratio, n_unique, n_clean)) {
+          result$type <- "string"
+          result$unique <- TRUE
+          return(result)
+        }
+        
+        # STEP 2: JSON check
+        json_check <- detect_json_strings(col_clean)
+        if (json_check$is_json) {
+          result$type <- "string"
+          result$pattern <- json_check$pattern
+          return(result)
+        }
+        
+        # STEP 3: Boolean check
+        boolean_result <- detect_boolean(col_clean, n_unique, var_name)
+        if (boolean_result$is_boolean) {
+          result$type <- "boolean"
+          result$categorical_values <- boolean_result$values
+          return(result)
+        }
+        
+        # STEP 4: Numeric check
+        numeric_parsed <- try_parse_numeric(col_clean)
+        if (numeric_parsed$success) {
+          col_numeric <- numeric_parsed$values
+          n_unique_num <- length(unique(col_numeric))
+          uniqueness_ratio_num <- n_unique_num / length(col_numeric)
+          
+          numeric_result <- analyze_numeric(col_numeric, var_name, n_unique_num, uniqueness_ratio_num)
+          return(modifyList(result, numeric_result))
+        }
+        
+        # STEP 5: String/categorical check (skip date detection for simplicity)
+        string_result <- analyze_string(col_clean, var_name, n_unique, uniqueness_ratio, n_clean)
+        return(modifyList(result, string_result))
+        
+      }, error = function(e) {
+        warning(paste("Error analyzing", var_name, ":", e$message))
+        result
+      })
+    }
+
+    # =========================================================================
+    # generateDescription
+    # =========================================================================
+    generateDescription <- function(var_name, var_analysis) {
+      var_lower <- tolower(var_name)
+      
+      if (grepl("^(participant|subject|sub)_?(id|ID|Id)$|\\bparticipant_?id\\b", var_name)) {
+        return("Unique identifier for each participant in the study")
+      }
+      if (grepl("\\bchild_?id\\b", var_lower)) return("Unique identifier for each child participant")
+      if (grepl("\\bsession_?id\\b", var_lower)) return("Unique identifier for each session")
+      if (grepl("\\btrial_?id\\b", var_lower)) return("Unique identifier for each trial")
+      if (grepl("\\btrial_?type\\b", var_lower)) return("Type of trial or experimental event")
+      if (grepl("\\btrial_?index\\b|\\btrial_?num(ber)?\\b", var_lower)) {
+        return("Sequential trial number within the experiment")
+      }
+      if (grepl("\\btrial\\b", var_lower) && !grepl("type|index|id", var_lower)) {
+        return("Trial number or trial identifier")
+      }
+      if (grepl("\\brt\\b|\\breaction_?time\\b|\\bresponse_?time\\b", var_lower)) {
+        return("Response time or reaction time measurement")
+      }
+      if (grepl("\\btime_?elapsed\\b|\\belapsed_?time\\b", var_lower)) {
+        return("Total time elapsed since experiment start")
+      }
+      if (grepl("\\btimestamp\\b", var_lower)) return("Timestamp of the event")
+      if (grepl("\\btimeout\\b", var_lower)) return("Whether the trial timed out")
+      if (grepl("\\bduration\\b", var_lower)) return("Duration of the event")
+      if (grepl("\\bresponse\\b", var_lower) && !grepl("time", var_lower)) {
+        return("Participant response or response value")
+      }
+      if (grepl("\\baccuracy\\b|\\bcorrect\\b|\\bacc\\b", var_lower)) {
+        return("Accuracy or correctness of response")
+      }
+      if (grepl("\\bsuccess\\b", var_lower)) return("Whether the action was successful")
+      if (grepl("\\bcondition\\b", var_lower)) return("Experimental condition or group assignment")
+      if (grepl("\\bgroup\\b", var_lower)) return("Group assignment")
+      if (grepl("\\bblock\\b", var_lower)) return("Block number in the experimental design")
+      if (grepl("\\bsession\\b", var_lower) && !grepl("id", var_lower)) {
+        return("Session number or session identifier")
+      }
+      if (grepl("\\bstimulus\\b|\\bstim\\b", var_lower)) {
+        return("Stimulus identifier or stimulus information")
+      }
+      if (grepl("\\bage\\b", var_lower)) return("Age of the participant")
+      if (grepl("\\bgender\\b|\\bsex\\b", var_lower)) {
+        return("Gender or biological sex of the participant")
+      }
+      if (grepl("\\bscore\\b|\\brating\\b", var_lower)) return("Score or rating value")
+      if (grepl("internal_node_id", var_lower)) {
+        return("Internal node identifier from the experiment framework")
+      }
+      if (grepl("^failed_", var_lower)) {
+        resource_type <- sub("^failed_", "", var_lower)
+        return(paste0("List of ", resource_type, " resources that failed to load"))
+      }
+      
+      type_desc <- switch(
+        var_analysis$type,
+        "integer" = "Numeric variable (whole numbers)",
+        "number" = "Numeric variable (decimal numbers)",
+        "boolean" = "Boolean variable (true/false)",
+        "categorical" = "Categorical variable",
+        "string" = "Text variable",
+        "Unknown variable type"
+      )
+      
+      paste0("Variable: ", var_name, " - ", type_desc)
+    }
+
 #' Data Dictionary Server Module
 #'
 #' Server logic for the data dictionary editor
@@ -4324,7 +4726,7 @@ dataDictionaryServer <- function(id, state, session) {
       variable_data = list(),
       is_modified = FALSE,
       editing_cat_index = NULL,  # Add this for tracking which categorical value is being edited
-      missing_values = c("NA", "N/A", "null", "NULL", "-999", "missing")
+      missing_values = c("NA", "N/A", "null", "NULL", "-999", "missing", "")
     )
 
     # Initialize categorical values storage for current variable
@@ -4876,189 +5278,344 @@ observeEvent(input$confirm_generate, {
       tryCatch({
         variables <- extractVariablesFromDataset(dataset_path)
         
+        # Load existing metadata from JSON and merge with auto-detected info
+        variables <- loadExistingMetadata(dataset_path, variables)
+        
         dictionary_state$dataset_path <- dataset_path
         dictionary_state$variables <- variables
         dictionary_state$current_variable <- NULL
         
         removeModal()
-        showNotification("Dataset loaded successfully!", type = "message")
+        showNotification("Dataset loaded successfully! Running validation...", type = "message")
+        
+        # Run validation using JavaScript validator
+        dict_validation$is_validating <- TRUE
+        dict_validation$is_complete <- FALSE
+        
+        tryCatch({
+          # Build file tree for validation
+          file_tree <- buildFileTreeForValidation(dataset_path)
+          
+          # Send to JavaScript validator with custom event name
+          session$sendCustomMessage("run_dict_validation", file_tree)
+        }, error = function(e) {
+          cat("Error building file tree for validation:", e$message, "\n")
+          dict_validation$is_validating <- FALSE
+          showNotification(
+            "Dataset loaded but validation failed. Please check dataset structure.", 
+            type = "warning"
+          )
+        })
         
       }, error = function(e) {
         showNotification(paste("Error loading dataset:", e$message), type = "error")
       })
     })
 
-    #' Analyze a variable from a CSV file
-    #' 
-    #' @param csv_file Path to the CSV file
-    #' @param var_name Name of the variable to analyze
-    #' @return List with variable analysis results
-    analyzeVariable <- function(csv_file, var_name) {
-      result <- list(
-        type = "string",
-        unit = "",
-        min_value = "",
-        max_value = "",
-        categorical_values = list(),
-        required = FALSE,
-        unique = FALSE,
-        pattern = ""
-      )
+    # Function to build file tree for validation
+    buildFileTreeForValidation <- function(dataset_path) {
+      # Helper function to read file as text
+      readFileText <- function(file_path) {
+        tryCatch({
+          # Try to read as UTF-8
+          text <- paste(readLines(file_path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+          return(text)
+        }, error = function(e) {
+          # If that fails, try with different encoding detection
+          tryCatch({
+            text <- paste(readLines(file_path, warn = FALSE), collapse = "\n")
+            # Check if it's valid UTF-8
+            if (validUTF8(text)) {
+              return(text)
+            } else {
+              return("ERROR_ENCODING")
+            }
+          }, error = function(e2) {
+            return("ERROR_READ_FAILED")
+          })
+        })
+      }
       
-      tryCatch({
-        # Read data
-        data <- read.csv(csv_file, stringsAsFactors = FALSE, na.strings = c("", "NA", "N/A", "null", "NULL"))
+      # Recursive function to build tree
+      buildTree <- function(path, base_path) {
+        items <- list.files(path, all.files = FALSE, full.names = FALSE)
+        tree <- list()
         
-        if (!var_name %in% names(data)) return(result)
-        
-        col_data <- data[[var_name]]
-        col_clean <- col_data[!is.na(col_data)]
-        
-        if (length(col_clean) == 0) return(result)
-        
-        # Completeness & uniqueness
-        result$required <- (length(col_clean) / length(col_data)) > 0.95
-        result$unique <- length(unique(col_clean)) == length(col_clean)
-        
-        var_lower <- tolower(var_name)
-        
-        # Type detection
-        if (is.numeric(col_data)) {
-          unique_vals <- unique(col_clean)
-          n_unique <- length(unique_vals)
-          ratio <- n_unique / length(col_clean)
+        for (item in items) {
+          full_path <- file.path(path, item)
+          rel_path <- sub(paste0("^", base_path, "/?"), "", full_path)
           
-          # Detect if this is actually a categorical variable coded as numbers
-          is_likely_categorical <- FALSE
-          
-          # Check 1: Binary (0/1, 1/2, etc.) - very likely categorical
-          if (n_unique == 2) {
-            is_likely_categorical <- TRUE
-          }
-          
-          # Check 2: Small set of consecutive integers (0-6, 1-5, etc.) with suggestive name
-          if (n_unique <= 10 && all(unique_vals == floor(unique_vals))) {
-            # Check if values are consecutive or near-consecutive
-            sorted_vals <- sort(unique_vals)
-            range_size <- max(sorted_vals) - min(sorted_vals) + 1
-            
-            if (range_size <= n_unique * 1.5) {  # Allow some gaps
-              # Check for suggestive variable names
-              categorical_indicators <- c(
-                "gender", "sex", "group", "condition", "category", "type", "class",
-                "level", "grade", "rating", "scale", "response", "choice", "option",
-                "status", "state", "code", "id"
-              )
-              
-              if (any(sapply(categorical_indicators, function(x) grepl(x, var_lower)))) {
-                is_likely_categorical <- TRUE
-              }
-              
-              # Also check if ratio suggests categorical
-              if (ratio < 0.05 || n_unique <= 7) {
-                is_likely_categorical <- TRUE
-              }
-            }
-          }
-          
-          # Check 3: Low uniqueness ratio regardless of values
-          if (ratio < 0.02 && n_unique <= 15) {
-            is_likely_categorical <- TRUE
-          }
-          
-          if (is_likely_categorical) {
-            result$type <- "categorical"
-            result$categorical_values <- lapply(sort(unique_vals), function(v) {
-              list(value = as.character(v), label = as.character(v), description = "")
-            })
-          } else {
-            # True numeric variable
-            result$type <- if (all(col_clean == floor(col_clean))) "integer" else "number"
-            result$min_value <- as.character(min(col_clean))
-            result$max_value <- as.character(max(col_clean))
-            result$unit <- inferUnit(var_name, mean(col_clean, na.rm = TRUE))
-          }
-          
-        } else {
-          # String type - check if categorical
-          unique_vals <- unique(col_clean)
-          n_unique <- length(unique_vals)
-          ratio <- n_unique / length(col_clean)
-          
-          # Boolean detection for string data
-          if (n_unique == 2) {
-            vals_lower <- tolower(unique_vals)
-            boolean_pairs <- list(
-              c("true", "false"), c("yes", "no"), c("y", "n"), 
-              c("t", "f"), c("1", "0"), c("male", "female"),
-              c("m", "f")
+          if (dir.exists(full_path)) {
+            # Directory entry
+            tree[[item]] <- list(
+              type = "directory",
+              contents = buildTree(full_path, base_path)
             )
-            
-            if (any(sapply(boolean_pairs, function(pair) all(sort(vals_lower) == sort(pair))))) {
-              result$type <- "boolean"
-              result$categorical_values <- lapply(sort(unique_vals), function(v) {
-                list(value = as.character(v), label = as.character(v), description = "")
-              })
-              return(result)
-            }
-          }
-          
-          # Categorical if: few unique values OR low uniqueness ratio
-          if (n_unique <= 20 && (ratio < 0.05 || n_unique <= 10)) {
-            result$type <- "categorical"
-            result$categorical_values <- lapply(sort(unique_vals), function(v) {
-              list(value = as.character(v), label = as.character(v), description = "")
-            })
           } else {
-            result$type <- "string"
+            # File entry
+            file_text <- readFileText(full_path)
+            
+            tree[[item]] <- list(
+              type = "file",
+              file = list(
+                path = paste0("/", rel_path),
+                name = item,
+                text = file_text,
+                size = file.info(full_path)$size
+              )
+            )
           }
         }
         
+        return(tree)
+      }
+      
+      # Build tree starting from dataset root
+      file_tree <- buildTree(dataset_path, dataset_path)
+      return(file_tree)
+    }
+    
+    # Track validation results for data dictionary
+    dict_validation <- reactiveValues(
+      is_validating = FALSE,
+      is_complete = FALSE,
+      is_valid = FALSE,
+      errors = list(),
+      warnings = list()
+    )
+    
+    # Listen for validation completion from JavaScript
+    observeEvent(input$dict_validation_complete, {
+      cat("Dictionary validation complete:", input$dict_validation_complete$isValid, "\n")
+      
+      dict_validation$is_validating <- FALSE
+      dict_validation$is_complete <- TRUE
+      dict_validation$is_valid <- input$dict_validation_complete$isValid
+      
+      if (!is.null(input$dict_validation_complete$issues)) {
+        issues <- input$dict_validation_complete$issues
+        dict_validation$errors <- issues$errors %||% list()
+        dict_validation$warnings <- issues$warnings %||% list()
+      }
+    }, ignoreNULL = TRUE)
+    
+    # Listen for validation step updates
+    observeEvent(input$dict_validation_step, {
+      # Track validation progress if needed
+      cat("Validation step:", input$dict_validation_step$key, "\n")
+    }, ignoreNULL = TRUE)
+    
+    # Render validation status
+    output$validation_status <- renderUI({
+      req(dictionary_state$dataset_path)
+      
+      if (dict_validation$is_validating) {
+        div(
+          class = "alert alert-info",
+          style = "margin-bottom: 20px;",
+          icon("spinner fa-spin", style = "margin-right: 8px;"),
+          tags$strong("Validating dataset..."),
+          " Please wait while we check your dataset structure."
+        )
+      } else if (dict_validation$is_complete) {
+        if (dict_validation$is_valid) {
+          div(
+            class = "alert alert-success",
+            style = "margin-bottom: 20px;",
+            icon("check-circle", style = "margin-right: 8px;"),
+            tags$strong("Dataset Valid"),
+            " - This dataset passes Psych-DS validation."
+          )
+        } else if (length(dict_validation$errors) > 0) {
+          div(
+            class = "alert alert-danger",
+            style = "margin-bottom: 20px;",
+            icon("times-circle", style = "margin-right: 8px;"),
+            tags$strong("Validation Failed"),
+            tags$ul(
+              style = "margin-top: 10px; margin-bottom: 0;",
+              lapply(dict_validation$errors, function(err) {
+                tags$li(
+                  tags$strong(err$key %||% "Error: "),
+                  err$reason %||% err$message %||% "Unknown error"
+                )
+              })
+            )
+          )
+        } else {
+          div(
+            class = "alert alert-warning",
+            style = "margin-bottom: 20px; background-color: #fff3cd; border-color: #ffc107;",
+            icon("exclamation-triangle", style = "margin-right: 8px;"),
+            tags$strong("Validation Errors"),
+            tags$ul(
+              style = "margin-top: 10px; margin-bottom: 0;",
+              lapply(dict_validation$warnings, function(warn) {
+                tags$li(warn$message %||% warn$reason %||% "Unknown warning")
+              })
+            )
+          )
+        }
+      } else {
+        # No validation run yet
+        NULL
+      }
+    })
+    
+    # Function to load existing metadata from dataset_description.json
+    loadExistingMetadata <- function(dataset_path, variables) {
+      json_path <- file.path(dataset_path, "dataset_description.json")
+      
+      if (!file.exists(json_path)) {
+        return(variables)
+      }
+      
+      tryCatch({
+        json_data <- jsonlite::read_json(json_path, simplifyVector = FALSE)
+        
+        if (!is.null(json_data$variableMeasured)) {
+          for (var_meta in json_data$variableMeasured) {
+            var_name <- var_meta$name
+            
+            if (!is.null(var_name) && var_name %in% names(variables)) {
+              # Convert Schema.org valueType to internal type
+              schema_type <- var_meta$valueType %||% var_meta$`@type`
+              internal_type <- switch(
+                tolower(schema_type),
+                "text" = "string",
+                "string" = "string",
+                "number" = "number",
+                "float" = "number",
+                "integer" = "integer",
+                "boolean" = "boolean",
+                "date" = "date",
+                "datetime" = "datetime",
+                "categorical" = "categorical",
+                variables[[var_name]]$type  # default to auto-detected
+              )
+              
+              # Override auto-detected values with JSON metadata
+              variables[[var_name]]$description <- var_meta$description %||% variables[[var_name]]$description
+              variables[[var_name]]$type <- internal_type
+              variables[[var_name]]$unit <- var_meta$unitText %||% variables[[var_name]]$unit
+              variables[[var_name]]$min_value <- as.character(var_meta$minValue %||% "")
+              variables[[var_name]]$max_value <- as.character(var_meta$maxValue %||% "")
+              variables[[var_name]]$required <- var_meta$required %||% FALSE
+              variables[[var_name]]$unique <- var_meta$unique %||% FALSE
+              variables[[var_name]]$pattern <- var_meta$pattern %||% ""
+              
+              # Load categorical values from valueReference
+              if (!is.null(var_meta$valueReference) && length(var_meta$valueReference) > 0) {
+                cat_vals <- lapply(var_meta$valueReference, function(vr) {
+                  list(
+                    value = as.character(vr$value %||% ""),
+                    label = as.character(vr$label %||% vr$value %||% ""),
+                    description = as.character(vr$description %||% "")
+                  )
+                })
+                variables[[var_name]]$categorical_values <- cat_vals
+              }
+            }
+          }
+        }
+        
+        # Load global missing value codes if present
+        if (!is.null(json_data$missingValueCodes)) {
+          dictionary_state$missing_values <- unlist(json_data$missingValueCodes)
+        }
+        
       }, error = function(e) {
-        warning(paste("Error analyzing", var_name, ":", e$message))
+        warning(paste("Error loading existing metadata:", e$message))
+      })
+      
+      return(variables)
+    }
+    
+    # Function to validate dataset
+    validateDataset <- function(dataset_path) {
+      result <- list(
+        valid = FALSE,
+        errors = character(),
+        warnings = character(),
+        timed_out = FALSE
+      )
+      
+      tryCatch({
+        # Check basic structure
+        if (!file.exists(file.path(dataset_path, "dataset_description.json"))) {
+          result$errors <- c(result$errors, "Missing dataset_description.json")
+          return(result)
+        }
+        
+        if (!dir.exists(file.path(dataset_path, "data"))) {
+          result$errors <- c(result$errors, "Missing data directory")
+          return(result)
+        }
+        
+        # Try to parse JSON
+        json_data <- jsonlite::read_json(
+          file.path(dataset_path, "dataset_description.json"),
+          simplifyVector = FALSE
+        )
+        
+        # Check required fields
+        if (is.null(json_data$name)) {
+          result$warnings <- c(result$warnings, "Dataset name not specified")
+        }
+        
+        if (is.null(json_data$description)) {
+          result$warnings <- c(result$warnings, "Dataset description not specified")
+        }
+        
+        # If we got here, basic validation passed
+        result$valid <- TRUE
+        
+      }, error = function(e) {
+        result$errors <- c(result$errors, paste("Validation error:", e$message))
       })
       
       return(result)
     }
-
-    # Simple helper for unit inference
-    inferUnit <- function(var_name, mean_val) {
-      var_lower <- tolower(var_name)
-      if (grepl("time|rt|latency", var_lower)) {
-        return(if (mean_val > 100) "milliseconds" else "seconds")
-      } else if (grepl("age", var_lower)) {
-        return("years")
-      } else if (grepl("score|rating", var_lower)) {
-        return("points")
+    
+    # Render validation status
+    output$validation_status <- renderUI({
+      req(dictionary_state$dataset_path)
+      
+      validation <- validateDataset(dictionary_state$dataset_path)
+      
+      if (!validation$valid || length(validation$errors) > 0) {
+        div(
+          class = "alert alert-danger",
+          style = "margin-bottom: 20px;",
+          icon("times-circle", style = "margin-right: 8px;"),
+          tags$strong("Validation Failed"),
+          tags$ul(
+            style = "margin-top: 10px; margin-bottom: 0;",
+            lapply(validation$errors, function(err) tags$li(err))
+          )
+        )
+      } else if (length(validation$warnings) > 0) {
+        div(
+          class = "alert alert-warning",
+          style = "margin-bottom: 20px; background-color: #fff3cd; border-color: #ffc107;",
+          icon("exclamation-triangle", style = "margin-right: 8px;"),
+          tags$strong("Validation Warnings"),
+          tags$ul(
+            style = "margin-top: 10px; margin-bottom: 0;",
+            lapply(validation$warnings, function(warn) tags$li(warn))
+          )
+        )
+      } else {
+        div(
+          class = "alert alert-success",
+          style = "margin-bottom: 20px;",
+          icon("check-circle", style = "margin-right: 8px;"),
+          tags$strong("Dataset Valid"),
+          " - Basic Psych-DS structure is correct"
+        )
       }
-      return("")
-    }
-
-    # Simple helper for unit inference
-    inferUnit <- function(var_name, mean_val) {
-      var_lower <- tolower(var_name)
-      if (grepl("time|rt|latency", var_lower)) {
-        return(if (mean_val > 100) "milliseconds" else "seconds")
-      } else if (grepl("age", var_lower)) {
-        return("years")
-      } else if (grepl("score|rating", var_lower)) {
-        return("points")
-      }
-      return("")
-    }
-
-    # Simple helper for unit inference
-    inferUnit <- function(var_name, mean_val) {
-      var_lower <- tolower(var_name)
-      if (grepl("time|rt|latency", var_lower)) {
-        return(if (mean_val > 100) "milliseconds" else "seconds")
-      } else if (grepl("age", var_lower)) {
-        return("years")
-      } else if (grepl("score|rating", var_lower)) {
-        return("points")
-      }
-      return("")
-    }
+    })
+    
     # Function to auto-populate categorical values
     autoPopulateCategoricalValues <- function(var_name) {
       if (is.null(dictionary_state$dataset_path) || is.null(var_name)) return()
@@ -5125,7 +5682,7 @@ observeEvent(input$confirm_generate, {
             
             for (var_name in header) {
               if (var_name %in% names(all_variables)) {
-                # Add this file to existing variable
+                # Variable exists - just add this file
                 all_variables[[var_name]]$files <- c(all_variables[[var_name]]$files, rel_path)
               } else {
                 # Create new variable entry with enhanced analysis
@@ -5143,7 +5700,7 @@ observeEvent(input$confirm_generate, {
                   default_value = "",
                   source = "",
                   notes = "",
-                  categorical_values = var_analysis$categorical_values,  # Include the detected values
+                  categorical_values = var_analysis$categorical_values,  # Store initial values
                   required = FALSE,
                   unique = FALSE,
                   pattern = ""
@@ -5156,78 +5713,55 @@ observeEvent(input$confirm_generate, {
         }
       })
       
+      # Second pass: For all categorical variables, collect actual values from all files
+      categorical_vars <- names(all_variables)[sapply(all_variables, function(v) v$type == "categorical")]
+      
+      if (length(categorical_vars) > 0) {
+        withProgress(message = "Collecting categorical values...", value = 0, {
+          for (i in seq_along(categorical_vars)) {
+            var_name <- categorical_vars[i]
+            setProgress(i / length(categorical_vars), detail = paste("Processing", var_name))
+            
+            all_values <- character(0)
+            
+            # Read from all CSV files
+            for (csv_file in csv_files) {
+              tryCatch({
+                # Read up to 1000 rows to collect values
+                data <- read.csv(csv_file, stringsAsFactors = FALSE, nrows = 1000)
+                if (var_name %in% names(data)) {
+                  # Get non-NA values
+                  col_values <- data[[var_name]]
+                  col_values <- col_values[!is.na(col_values) & col_values != ""]
+                  all_values <- c(all_values, as.character(col_values))
+                }
+              }, error = function(e) {})
+            }
+            
+            # Get unique values
+            unique_values <- unique(all_values)
+            
+            # Only populate if we have a reasonable number of unique values
+            if (length(unique_values) > 0 && length(unique_values) <= 50) {
+              cat_values <- lapply(sort(unique_values), function(val) {
+                list(
+                  value = val,
+                  label = val,
+                  description = ""
+                )
+              })
+              all_variables[[var_name]]$categorical_values <- cat_values
+            }
+          }
+        })
+      }
+      
       return(all_variables)
     }
     
-    # Generate a basic description based on variable name and analysis
-    generateDescription <- function(var_name, var_analysis) {
-      var_lower <- tolower(var_name)
-      
-      # Common psychology/research variable descriptions
-      if (grepl("^(participant|subject|sub)_?(id|ID|Id)", var_name)) {
-        return("Unique identifier for each participant in the study")
-      }
-      
-      if (grepl("age", var_lower)) {
-        return("Age of the participant")
-      }
-      
-      if (grepl("gender|sex", var_lower)) {
-        return("Gender or biological sex of the participant")
-      }
-      
-      if (grepl("condition|group", var_lower)) {
-        return("Experimental condition or group assignment")
-      }
-      
-      if (grepl("response_?time|rt|latency", var_lower)) {
-        return("Response time or reaction time measurement")
-      }
-      
-      if (grepl("accuracy|correct|acc", var_lower)) {
-        return("Accuracy or correctness of response")
-      }
-      
-      if (grepl("trial", var_lower)) {
-        return("Trial number or trial identifier")
-      }
-      
-      if (grepl("block", var_lower)) {
-        return("Block number in the experimental design")
-      }
-      
-      if (grepl("session", var_lower)) {
-        return("Session number or session identifier")
-      }
-      
-      if (grepl("stimulus|stim", var_lower)) {
-        return("Stimulus identifier or stimulus information")
-      }
-      
-      if (grepl("response|resp", var_lower)) {
-        return("Participant response or response value")
-      }
-      
-      if (grepl("score|rating", var_lower)) {
-        return("Score or rating value")
-      }
-      
-      if (grepl("timestamp|time", var_lower)) {
-        return("Timestamp or time measurement")
-      }
-      
-      # Generate description based on type
-      type_descriptions <- switch(var_analysis$type,
-        "integer" = "Numeric variable (whole numbers)",
-        "number" = "Numeric variable (decimal numbers)",
-        "boolean" = "Boolean variable (true/false)",
-        "date" = "Date variable",
-        "categorical" = "Categorical variable",
-        "string" = "Text variable"
-      )
-      
-      return(paste("Variable:", var_name, "-", type_descriptions))
-    }
+
+
+
     
     # Render variables list
     output$variables_list <- renderUI({
@@ -5571,14 +6105,14 @@ observeEvent(input$confirm_generate, {
         if (nchar(var_info$max_value) > 0) prop_value$maxValue <- var_info$max_value
         
         if (var_info$type == "categorical" && length(var_info$categorical_values) > 0) {
-          prop_value$valueReference <- lapply(var_info$categorical_values, function(cat) {
+          prop_value$valueReference <- I(lapply(var_info$categorical_values, function(cat) {
             cat_obj <- list(
               value = cat$value,
               label = if(nchar(cat$label) > 0 && cat$label != cat$value) cat$label else NULL,
               description = if(nchar(cat$description) > 0) cat$description else NULL
             )
             cat_obj[!sapply(cat_obj, is.null)]
-          })
+          }))
         }
         
         prop_value$required <- var_info$required %||% FALSE
@@ -5769,14 +6303,14 @@ observeEvent(input$confirm_generate, {
           if (nchar(var_info$max_value) > 0) prop_value$maxValue <- var_info$max_value
           
           if (var_info$type == "categorical" && length(var_info$categorical_values) > 0) {
-            prop_value$valueReference <- lapply(var_info$categorical_values, function(cat) {
+            prop_value$valueReference <- I(lapply(var_info$categorical_values, function(cat) {
               cat_obj <- list(
                 value = cat$value,
                 label = if(nchar(cat$label) > 0 && cat$label != cat$value) cat$label else NULL,
                 description = if(nchar(cat$description) > 0) cat$description else NULL
               )
               cat_obj[!sapply(cat_obj, is.null)]
-            })
+            }))
           }
           
           # ALWAYS include these fields
