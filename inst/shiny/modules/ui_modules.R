@@ -578,13 +578,283 @@ step3UI <- function(id) {
       )
     ),
     
+    commonNavigation(ns, show_back = TRUE, continue_text = "Continue to save your dataset - no files will be saved yet")
+  )
+}
+
+#' Welcome Page UI Module
+#'
+#' @param id The module ID
+#' @return UI elements for the welcome/landing page
+welcomeUI <- function(id) {
+  ns <- NS(id)
+  
+  tagList(
+    # Header with subtitle
     div(
-      style = "margin-top: 15px; padding: 10px; background-color: #e8f4f8; border-radius: 4px; font-size: 13px;",
-      icon("info-circle", style = "color: #3498db; margin-right: 5px;"),
-      "Tip: You can continue without renaming all files. Any files without new names will keep their original names in the output folder."
+      style = "text-align: center; margin-bottom: 40px;",
+      h1(
+        style = "font-size: 42px; font-weight: 300; color: #2c3e50; margin-bottom: 10px;",
+        "Welcome to Psych-DS"
+      ),
+      p(
+        style = "font-size: 18px; color: #7f8c8d; font-weight: 300;",
+        "A standard for organizing and sharing psychological research data"
+      )
     ),
     
-    commonNavigation(ns, show_back = TRUE, continue_text = "Continue to save your dataset - no files will be saved yet")
+    # About section - highlighted info box
+    div(
+      class = "section-box",
+      style = "background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 30px;",
+      div(
+        style = "display: flex; align-items: flex-start; gap: 20px;",
+        div(
+          style = "font-size: 48px; opacity: 0.9;",
+          icon("cube")
+        ),
+        div(
+          style = "flex: 1;",
+          h3(style = "margin-top: 0; color: white; font-weight: 400;", "What is Psych-DS?"),
+          p(
+            style = "margin-bottom: 8px; line-height: 1.6;",
+            "Psych-DS is a dataset organization standard: a system of very specific rules for how data (in this case, tables of rows and columns) and metadata (information about your dataset) should be organized as files and folders on a computer."
+          ),
+          p(
+            style = "margin-bottom: 0; line-height: 1.6;",
+            "Using this consistent structure for organizing research data makes it easier to share, understand, and reuse. You can adopt Psych-DS at any stage in the scientific process, from planning data collection to archiving a dataset."
+          )
+        )
+      )
+    ),
+    
+    # Key feature callout
+    div(
+      style = "background-color: #e8f4f8; border-left: 4px solid #3498db; padding: 20px; margin-bottom: 30px; border-radius: 4px;",
+      div(
+        style = "display: flex; align-items: center; gap: 15px;",
+        icon("lock", style = "font-size: 32px; color: #3498db;"),
+        div(
+          p(
+            style = "margin: 0; font-size: 16px; line-height: 1.6;",
+            "Everything this Shiny app provides stays ", 
+            strong("local to your computer"), 
+            ". The app might launch in your internet browser, but no data ever leaves your machine (and the app will still work if you turn off your wifi.)"
+          )
+        )
+      )
+    ),
+    
+    # Validator explanation
+    div(
+      class = "section-box",
+      style = "margin-bottom: 30px;",
+      h3(
+        style = "margin-top: 0; color: #2c3e50; display: flex; align-items: center; gap: 10px;",
+        icon("check-circle", style = "color: #27ae60;"),
+        "The Validator"
+      ),
+      p(
+        style = "line-height: 1.6; margin-bottom: 12px;",
+        "The central tool for Psych-DS is the ", 
+        strong("validator"),
+        ", which you can think of as spellcheck for datasets as well as the gold-standard implementation of Psych-DS. In other words, if the validator says that your directory passes, then it's a Psych-DS dataset! If there are errors or inconsistencies from the standard, the validator will try to give helpful advice about what needs to change."
+      ),
+      p(
+        style = "line-height: 1.6; margin-bottom: 0;",
+        "The validator is available in ",
+        tags$a(
+          href = "https://psych-ds.github.io/validator/", 
+          "a few different forms", 
+          target = "_blank",
+          style = "color: #3498db; font-weight: 500;"
+        ),
+        "; this Shiny app is designed to get you started using Psych-DS and validating your own datasets. You can use each of the tabs in this app independently, or one after the other:"
+      )
+    ),
+    
+    # Tools section header
+    h3(
+      style = "color: #2c3e50; margin-bottom: 20px; margin-top: 40px;",
+      "Tools in This App"
+    ),
+    
+    # Tool cards in grid
+    div(
+      style = "display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 40px;",
+      
+      # Create Dataset card
+      div(
+        class = "tool-card",
+        style = "background-color: white; border: 1px solid #e1e8ed; border-radius: 8px; padding: 20px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer;",
+        onclick = "$('.sidebar-menu a[data-value=\\'create\\']').click();",
+        div(
+          style = "display: flex; align-items: center; gap: 12px; margin-bottom: 12px;",
+          div(
+            style = "width: 40px; height: 40px; background: linear-gradient(135deg, #667eea, #764ba2); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white;",
+            icon("plus-circle")
+          ),
+          h4(style = "margin: 0; color: #2c3e50;", "Create Dataset")
+        ),
+        p(
+          style = "margin: 0; color: #5a6c7d; line-height: 1.6; font-size: 14px;",
+          "Choose some existing data on your device. A step-by-step interface will help you build a project folder with the same data in Psych-DS format, and then save the whole directory to your machine. This will not change your original data in any way unless you choose to overwrite the directory your data came from."
+        )
+      ),
+      
+      # Validate Dataset card
+      div(
+        class = "tool-card",
+        style = "background-color: white; border: 1px solid #e1e8ed; border-radius: 8px; padding: 20px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer;",
+        onclick = "$('.sidebar-menu a[data-value=\\'validate\\']').click();",
+        div(
+          style = "display: flex; align-items: center; gap: 12px; margin-bottom: 12px;",
+          div(
+            style = "width: 40px; height: 40px; background: linear-gradient(135deg, #11998e, #38ef7d); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white;",
+            icon("check-circle")
+          ),
+          h4(style = "margin: 0; color: #2c3e50;", "Validate Dataset")
+        ),
+        p(
+          style = "margin: 0; color: #5a6c7d; line-height: 1.6; font-size: 14px;",
+          "Check if a dataset complies with the Psych-DS standard. You can check the dataset you just made, or use this on a directory that you or someone else edited by hand."
+        )
+      ),
+      
+      # Update Dictionary card
+      div(
+        class = "tool-card",
+        style = "background-color: white; border: 1px solid #e1e8ed; border-radius: 8px; padding: 20px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer;",
+        onclick = "$('.sidebar-menu a[data-value=\\'dictionary\\']').click();",
+        div(
+          style = "display: flex; align-items: center; gap: 12px; margin-bottom: 12px;",
+          div(
+            style = "width: 40px; height: 40px; background: linear-gradient(135deg, #f093fb, #f5576c); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white;",
+            icon("book")
+          ),
+          h4(style = "margin: 0; color: #2c3e50;", "Update Dictionary")
+        ),
+        p(
+          style = "margin: 0; color: #5a6c7d; line-height: 1.6; font-size: 14px;",
+          "Psych-DS uses a small text file to store your metadata (information about your dataset). This text file includes an entry for every variable (column) in your data. Use this page to automatically edit your metadata with variable definitions and other information, or to export a nicely formatted PDF of your data dictionary."
+        )
+      ),
+      
+      # Dataset Explorer card
+      div(
+        class = "tool-card",
+        style = "background-color: white; border: 1px solid #e1e8ed; border-radius: 8px; padding: 20px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer;",
+        onclick = "$('.sidebar-menu a[data-value=\\'explorer\\']').click();",
+        div(
+          style = "display: flex; align-items: center; gap: 12px; margin-bottom: 12px;",
+          div(
+            style = "width: 40px; height: 40px; background: linear-gradient(135deg, #4facfe, #00f2fe); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white;",
+            icon("table")
+          ),
+          h4(style = "margin: 0; color: #2c3e50;", "Dataset Explorer")
+        ),
+        p(
+          style = "margin: 0; color: #5a6c7d; line-height: 1.6; font-size: 14px;",
+          "Because Psych-DS datasets are all structured in the same basic way, we can build tools that work on any Psych-DS dataset. Use this page to browse your data and see filters, summaries about missing data, and more."
+        )
+      ),
+      
+      # Upload to OSF card
+      div(
+        class = "tool-card",
+        style = "background-color: white; border: 1px solid #e1e8ed; border-radius: 8px; padding: 20px; transition: all 0.3s ease; box-shadow: 0 2px 4px rgba(0,0,0,0.05); cursor: pointer;",
+        onclick = "$('.sidebar-menu a[data-value=\\'upload\\']').click();",
+        div(
+          style = "display: flex; align-items: center; gap: 12px; margin-bottom: 12px;",
+          div(
+            style = "width: 40px; height: 40px; background: linear-gradient(135deg, #fa709a, #fee140); border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white;",
+            icon("cloud-upload")
+          ),
+          h4(style = "margin: 0; color: #2c3e50;", "Upload to OSF")
+        ),
+        p(
+          style = "margin: 0; color: #5a6c7d; line-height: 1.6; font-size: 14px;",
+          "Upload a Psych-DS dataset to the Open Science Framework (OSF), auto-filling all the information you've already provided about this dataset (descriptions, authors, etc.) ",
+          tags$span(
+            style = "display: inline-block; background-color: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 3px; font-size: 12px; font-weight: 500;",
+            "Beta"
+          )
+        )
+      )
+    ),
+    
+    # Learn More section
+    div(
+      class = "section-box",
+      style = "background-color: #f8f9fa; border: 1px solid #dee2e6;",
+      h3(
+        style = "margin-top: 0; color: #2c3e50; display: flex; align-items: center; gap: 10px;",
+        icon("graduation-cap", style = "color: #3498db;"),
+        "Learn More"
+      ),
+      p(
+        style = "line-height: 1.6; margin-bottom: 12px;",
+        "The ",
+        tags$code(
+          style = "background-color: #e9ecef; padding: 2px 6px; border-radius: 3px; color: #e83e8c;",
+          "psychds-r"
+        ),
+        " package has some standalone functions in addition to this app. You can use those functions in your own R scripts to do things like read from, write to, or validate a Psych-DS formatted directory."
+      ),
+      p(
+        style = "line-height: 1.6; margin-bottom: 12px;",
+        "Information and example vignettes are available in the ",
+        tags$a(
+          href = "https://psych-ds.github.io/psychds-r/", 
+          "psychds-r documentation", 
+          target = "_blank",
+          style = "color: #3498db; font-weight: 500;"
+        ),
+        "."
+      ),
+      p(style = "line-height: 1.6; margin-bottom: 8px;", "For more information about the Psych-DS project:"),
+      tags$ul(
+        style = "margin-top: 8px; margin-bottom: 0;",
+        tags$li(
+          style = "margin-bottom: 6px;",
+          icon("globe", style = "color: #3498db; margin-right: 8px;"),
+          tags$a(
+            href = "https://psych-ds.github.io/", 
+            "Psych-DS Website", 
+            target = "_blank",
+            style = "color: #3498db; font-weight: 500;"
+          )
+        ),
+        tags$li(
+          style = "margin-bottom: 6px;",
+          icon("book", style = "color: #3498db; margin-right: 8px;"),
+          tags$a(
+            href = "https://psychds-docs.readthedocs.io/en/latest/", 
+            "Psych-DS Documentation", 
+            target = "_blank",
+            style = "color: #3498db; font-weight: 500;"
+          )
+        ),
+        tags$li(
+          icon("github", style = "color: #3498db; margin-right: 8px;"),
+          tags$a(
+            href = "https://github.com/psych-ds/psych-DS", 
+            "Psych-DS GitHub Repository", 
+            target = "_blank",
+            style = "color: #3498db; font-weight: 500;"
+          )
+        )
+      )
+    ),
+    
+    # Add hover effects via CSS
+    tags$style(HTML("
+      .tool-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1) !important;
+        border-color: #3498db !important;
+      }
+    "))
   )
 }
 
@@ -632,7 +902,7 @@ validateUI <- function(id) {
     div(
       class = "section-description",
       style = "margin-bottom: 20px;",
-      "Select a directory containing a Psych-DS dataset to validate against the schema."
+      "Select a directory containing a Psych-DS dataset to validate."
     ),
     
     sectionBox(
@@ -666,9 +936,20 @@ validateUI <- function(id) {
     
     sectionBox(
       title = "Validation Results",
+      # Results Summary at top (hidden until validation completes)
+      div(
+        id = ns("validation_summary"),
+        style = "display: none; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #ddd;",
+        h4("Results Summary", style = "margin-top: 0;"),
+        div(
+          id = ns("summary_content"),
+          style = "padding: 15px; border-radius: 5px; background-color: #e8f5e9;"
+        )
+      ),
+      # Validation Progress checklist
       div(
         id = ns("validation_results_ui"),
-        h3("Validation Progress"),
+        h4("Validation Progress", style = "margin-top: 0;"),
         div(
           class = "validation-checklist",
           style = "max-height: 500px; overflow-y: auto;",
@@ -716,15 +997,6 @@ validateUI <- function(id) {
             )
           })
         )
-      ),
-      div(
-        id = ns("validation_summary"),
-        style = "display: none; margin-top: 20px;",
-        h3("Results Summary"),
-        div(
-          id = ns("summary_content"),
-          style = "padding: 15px; border-radius: 5px; background-color: #e8f5e9;"
-        )
       )
     ),
     
@@ -746,15 +1018,28 @@ dataDictionaryUI <- function(id) {
       show_progress = FALSE
     ),
     
+    # Warning box about modifying dataset_description.json
+    div(
+      class = "alert alert-warning",
+      style = "margin-bottom: 20px; background-color: #fff3cd; border-color: #ffc107; color: #856404;",
+      icon("exclamation-triangle", style = "margin-right: 8px;"),
+      tags$strong("This page can modify your dataset_description.json file."),
+      tags$br(),
+      "Each Psych-DS dataset has a text file that stores all the metadata for your dataset. To save the information you enter on this page back to that file, click the save button at the bottom of the page."
+    ),
+    
     div(
       class = "section-description",
       style = "margin-bottom: 20px;",
       "Define your dataset variables in detail. This information will be stored in your dataset_description.json file as machine-readable PropertyValue objects that help others understand your data."
     ),
     
+    # Validation status display (will be populated by server)
+    uiOutput(ns("validation_status")),
+    
     sectionBox(
       title = "Select Dataset",
-      description = "Select a Psych-DS dataset directory to edit its data dictionary.",
+      description = "Select a Psych-DS project directory to edit the data dictionary (metadata).",
       div(
         class = "directory-input",
         textInput(
@@ -822,6 +1107,14 @@ dataDictionaryUI <- function(id) {
         width = 8,
         sectionBox(
           title = "Variable Details",
+          div(
+            class = "alert alert-info",
+            style = "margin-bottom: 15px; background-color: #e7f3ff; border-color: #b3d9ff; color: #004085;",
+            icon("info-circle", style = "margin-right: 8px;"),
+            "Please note that the details you set here are descriptive: they tell whoever is using the data what the values in that column ", 
+            tags$em("should"), 
+            " be. That is, if you write that a variable called height should be greater than zero and should never be missing, the Psych-DS validator will still pass your dataset even if there is a negative or missing value in the actual CSV."
+          ),
           conditionalPanel(
             condition = paste0("output['", ns("variable_selected"), "']"),
             div(
@@ -874,7 +1167,7 @@ dataDictionaryUI <- function(id) {
                           "Number (decimal)" = "number", 
                           "Integer (whole number)" = "integer",
                           "Boolean (true/false)" = "boolean",
-                          "Categorical" = "categorical",
+                          "Factor (categorical)" = "categorical",
                           "Date (YYYY-MM-DD)" = "date",
                           "DateTime" = "datetime"
                         ),
@@ -888,20 +1181,24 @@ dataDictionaryUI <- function(id) {
                       class = "form-group",
                       style = "margin-bottom: 20px;",
                       tags$label("Unit of Measurement", style = "font-weight: bold; margin-bottom: 8px; display: block; color: #333;"),
+                      textInput(
+                        ns("var_unit"),
+                        label = NULL,
+                        placeholder = "e.g., milliseconds, years, points, etc.",
+                        width = "100%"
+                      ),
                       conditionalPanel(
-                        condition = paste0("input['", ns("var_type"), "'] == 'number' || input['", ns("var_type"), "'] == 'integer'"),
-                        textInput(
-                          ns("var_unit"),
-                          label = NULL,
-                          placeholder = "e.g., milliseconds, years, points, etc.",
-                          width = "100%"
+                        condition = paste0("input['", ns("var_type"), "'] == 'categorical'"),
+                        tags$small(
+                          style = "color: #6c757d; display: block; margin-top: 5px;",
+                          "Unit can apply to categorical variables too (e.g., 'years' for age ranges like 0-10, 11-20, etc.)"
                         )
                       ),
                       conditionalPanel(
-                        condition = paste0("input['", ns("var_type"), "'] != 'number' && input['", ns("var_type"), "'] != 'integer'"),
-                        div(
-                          style = "padding: 8px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; color: #6c757d;",
-                          "Not applicable for this data type"
+                        condition = paste0("input['", ns("var_type"), "'] != 'categorical' && input['", ns("var_type"), "'] != 'number' && input['", ns("var_type"), "'] != 'integer'"),
+                        tags$small(
+                          style = "color: #6c757d; display: block; margin-top: 5px;",
+                          "Optional - leave blank if not applicable"
                         )
                       )
                     )
@@ -917,8 +1214,10 @@ dataDictionaryUI <- function(id) {
                     class = "form-group",
                     style = "margin-bottom: 20px;",
                     tags$label("Possible Values", style = "font-weight: bold; margin-bottom: 8px; display: block; color: #333;"),
-                    tags$small("Define the possible categorical values and their descriptions", 
-                              style = "color: #666; display: block; margin-bottom: 8px;"),
+                    tags$small(
+                      "List and describe the possible values this variable can take on. Use the Label column and/or Description columns if the literal values that appear in that column are not self-explanatory (e.g., a value of 1 = 'rarely' and 'rarely' is defined as less than once a week).", 
+                      style = "color: #666; display: block; margin-bottom: 8px;"
+                    ),
                     
                     # Categorical values table
                     div(
@@ -946,7 +1245,7 @@ dataDictionaryUI <- function(id) {
                           width = 3,
                           textInput(
                             ns("new_cat_value"),
-                            label = "Value",
+                            label = NULL,
                             placeholder = "e.g., 1, A, true"
                           )
                         ),
@@ -954,7 +1253,7 @@ dataDictionaryUI <- function(id) {
                           width = 3,
                           textInput(
                             ns("new_cat_label"),
-                            label = "Label",
+                            label = NULL,
                             placeholder = "e.g., Group A"
                           )
                         ),
@@ -962,7 +1261,7 @@ dataDictionaryUI <- function(id) {
                           width = 4,
                           textInput(
                             ns("new_cat_description"),
-                            label = "Description",
+                            label = NULL,
                             placeholder = "What this value represents"
                           )
                         ),
@@ -983,9 +1282,9 @@ dataDictionaryUI <- function(id) {
                 
                 
                 # Validation Properties Section
-                # Conditional constraints section - only show for numeric types
+                # Conditional constraints section - show for numeric and date types
                 conditionalPanel(
-                  condition = paste0("input['", ns("var_type"), "'] == 'number' || input['", ns("var_type"), "'] == 'integer'"),
+                  condition = paste0("input['", ns("var_type"), "'] == 'number' || input['", ns("var_type"), "'] == 'integer' || input['", ns("var_type"), "'] == 'date' || input['", ns("var_type"), "'] == 'datetime'"),
                   div(
                     class = "constraints-section",
                     style = "margin-bottom: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 4px;",
@@ -1015,6 +1314,13 @@ dataDictionaryUI <- function(id) {
                             "Minimum Value",
                             placeholder = "Minimum allowed value",
                             width = "100%"
+                          ),
+                          conditionalPanel(
+                            condition = paste0("input['", ns("var_type"), "'] == 'date' || input['", ns("var_type"), "'] == 'datetime'"),
+                            tags$small(
+                              style = "color: #6c757d; display: block; margin-top: -10px;",
+                              "Format: YYYY-MM-DD"
+                            )
                           )
                         ),
                         column(
@@ -1024,6 +1330,13 @@ dataDictionaryUI <- function(id) {
                             "Maximum Value", 
                             placeholder = "Maximum allowed value",
                             width = "100%"
+                          ),
+                          conditionalPanel(
+                            condition = paste0("input['", ns("var_type"), "'] == 'date' || input['", ns("var_type"), "'] == 'datetime'"),
+                            tags$small(
+                              style = "color: #6c757d; display: block; margin-top: -10px;",
+                              "Format: YYYY-MM-DD"
+                            )
                           )
                         )
                       )
