@@ -148,8 +148,8 @@ ui <- dashboardPage(
       
       // Create step indicators and inject them after Create Dataset menu item
       $(document).on('shiny:connected', function() {
-        // Create the step indicators container
-        var indicatorsHtml = '<div id=\"create-step-indicators\">' +
+        // Create the step indicators container (initially hidden)
+        var indicatorsHtml = '<div id=\"create-step-indicators\" style=\"display: none;\">' +
           '<button id=\"step-ind-1\" class=\"step-indicator active clickable\" type=\"button\">1</button>' +
           '<span class=\"step-separator\">—</span>' +
           '<button id=\"step-ind-2\" class=\"step-indicator\" type=\"button\">2</button>' +
@@ -157,8 +157,8 @@ ui <- dashboardPage(
           '<button id=\"step-ind-3\" class=\"step-indicator\" type=\"button\">3</button>' +
           '</div>';
         
-        // Insert after the Create Dataset menu item
-        var createDatasetItem = $('.sidebar-menu li:first');
+        // Insert after the Create Dataset menu item (second item in menu, index 1)
+        var createDatasetItem = $('.sidebar-menu li').eq(1);
         if (createDatasetItem.length) {
           $(indicatorsHtml).insertAfter(createDatasetItem);
         }
@@ -182,9 +182,13 @@ ui <- dashboardPage(
           }
         });
         
-        // Show/hide based on active tab
-        var activeTab = $('a.active[data-toggle=\"tab\"]').data('value') || 'create';
-        $('#create-step-indicators').toggle(activeTab === 'create');
+        // Show/hide based on active tab - check on initialization
+        setTimeout(function() {
+          var activeTab = $('.sidebar-menu .active[data-value]').data('value');
+          if (activeTab === 'create') {
+            $('#create-step-indicators').show();
+          }
+        }, 100);
         
         // Listen for tab changes
         $(document).on('click', '.sidebar-menu a', function() {

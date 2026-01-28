@@ -161,6 +161,29 @@ fileBrowserUI <- function(id, title, description, with_convert = FALSE) {
     } else {
       description
     },
+    # Add helper text about interactions
+    div(
+      style = "font-size: 12px; color: #666; margin-top: 5px; margin-bottom: 8px;",
+      icon("info-circle", style = "margin-right: 5px;"),
+      "Click files to select them individually, or click directory names to select/deselect all files in that directory."
+    ),
+    # Add Select All button
+    div(
+      style = "margin-bottom: 8px;",
+      actionButton(
+        ns("select_all"),
+        "Select All",
+        icon = icon("check-square"),
+        class = "btn btn-sm btn-primary",
+        style = "margin-right: 5px;"
+      ),
+      actionButton(
+        ns("deselect_all"),
+        "Deselect All",
+        icon = icon("square"),
+        class = "btn btn-sm btn-secondary"
+      )
+    ),
     div(
       class = "file-browser",
       style = "background-color: white; border: 2px solid #ced4da; border-radius: 3px; padding: 10px; height: 200px; overflow-y: auto; margin-top: 10px;",
@@ -218,11 +241,8 @@ step1UI <- function(id) {
   ns <- NS(id)
   
   tagList(
-    commonHeader(
-      main_title = "Create Dataset",
-      sub_title = "Step 1: Select Your Data",
-      current_step = 1
-    ),
+    h2("Create Dataset"),
+    h3("Step 1: Select Your Data"),
 
     # Data Safety Banner
     div(
@@ -295,11 +315,8 @@ step2UI <- function(id) {
   ns <- NS(id)
   
   tagList(
-    commonHeader(
-      main_title = "Create Dataset",
-      sub_title = "Step 2: Dataset Metadata",
-      current_step = 2
-    ),
+    h2("Create Dataset"),
+    h3("Step 2: Dataset Metadata"),
     
     div(
       class = "section-description",
@@ -390,11 +407,8 @@ step3UI <- function(id) {
   ns <- NS(id)
   
   tagList(
-    commonHeader(
-      main_title = "Create Dataset",
-      sub_title = "Step 3: Standardize Filenames",
-      current_step = 3
-    ),
+    h2("Create Dataset"),
+    h3("Step 3: Standardize Filenames"),
     
     div(
       class = "section-description",
@@ -566,7 +580,7 @@ step3UI <- function(id) {
           ),
           div(
             style = "text-align: center;",
-            actionButton(ns("generate_filename"), "Apply Filename to Selected File(s)", class = "btn btn-primary", style = "width: 100%;")
+            actionButton(ns("generate_filename"), "Use Filename for Selected File(s)", class = "btn btn-primary", style = "width: 100%;")
           )
         ),
         
@@ -911,14 +925,14 @@ validateUI <- function(id) {
       div(
         class = "directory-input",
         textInput(
-          "validate_dir",
+          ns("validate_dir"),  # Added ns() wrapper
           label = NULL,
           value = "",
           placeholder = "Path to Psych-DS dataset",
           width = "100%"
         ),
         shinyDirButton(
-          "validate_dir_select",
+          ns("validate_dir_select"),  # Added ns() wrapper
           label = "...",
           title = "Select a dataset directory",
           class = "browse-btn"
@@ -927,7 +941,7 @@ validateUI <- function(id) {
       div(
         style = "text-align: right; margin-top: 20px;",
         actionButton(
-          "validate_btn",
+          ns("validate_btn"),  # Added ns() wrapper
           "Validate",
           class = "continue-btn"
         )
