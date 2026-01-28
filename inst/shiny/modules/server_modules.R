@@ -983,6 +983,89 @@ directoryInputServer <- function(id, state, session) {
   })
 }
 
+#' List CSV Files
+#'
+#' Lists all CSV files in a directory, returning relative paths
+#'
+#' @param dir_path Path to directory
+#' @return Character vector of relative file paths
+list_csv_files <- function(dir_path) {
+  if (is.null(dir_path) || dir_path == "" || !dir.exists(dir_path)) {
+    return(character(0))
+  }
+  
+  # Find all CSV files recursively
+  files <- list.files(
+    dir_path,
+    pattern = "\\.csv$",
+    recursive = TRUE,
+    full.names = FALSE,
+    ignore.case = TRUE
+  )
+  
+  return(files)
+}
+
+#' Organize Directory Hierarchy
+#'
+#' Organizes a flat list of file paths into a hierarchical structure
+#'
+#' @param files Character vector of file paths (relative paths with / separators)
+#' @return Named list representing directory hierarchy
+organize_directory_hierarchy <- function(files) {
+  if (length(files) == 0) {
+    return(list())
+  }
+  
+  hierarchy <- list()
+  
+  # Process each file
+  for (file_path in files) {
+    # Skip if empty
+    if (is.null(file_path) || file_path == "") next
+    
+    # Normalize path separators to forward slashes
+    file_path <- gsub("\\\\", "/", file_path)
+    
+    # Split into directory components
+    parts <- strsplit(file_path, "/")[[1]]
+    
+    # If file is in a subdirectory
+    if (length(parts) > 1) {
+      # Build directory path progressively
+      current_path <- ""
+      for (i in 1:(length(parts) - 1)) {
+        if (i == 1) {
+          current_path <- parts[i]
+        } else {
+          current_path <- paste(current_path, parts[i], sep = "/")
+        }
+        
+        # Add directory to hierarchy if not already present
+        if (!current_path %in% names(hierarchy)) {
+          hierarchy[[current_path]] <- list(
+            name = parts[i],
+            level = i - 1,
+            is_file = FALSE,
+            files = character(0)
+          )
+        }
+      }
+      
+      # Add file to its parent directory
+      parent_dir <- paste(parts[1:(length(parts) - 1)], collapse = "/")
+      if (parent_dir %in% names(hierarchy)) {
+        hierarchy[[parent_dir]]$files <- c(
+          hierarchy[[parent_dir]]$files,
+          parts[length(parts)]
+        )
+      }
+    }
+  }
+  
+  return(hierarchy)
+}
+
 #' File Browser Server Module - Fixed Version
 #'
 #' Handles file listing and selection
@@ -995,6 +1078,45 @@ fileBrowserServer <- function(id, state, dir_path, session) {
   moduleServer(id, function(input, output, session) {
     # Store selected files
     selected <- reactiveVal(character(0))
+    
+    # Track the last directory to detect changes
+    last_dir <- reactiveVal(NULL)
+    restored <- reactiveVal(FALSE)  # Track if we've restored from state
+    
+    # Detect when directory changes and clear selection
+    observe({
+      current_dir <- dir_path()
+      
+      # Skip if no directory yet
+      if (is.null(current_dir) || current_dir == "") {
+        return()
+      }
+      
+      # Check if directory has changed
+      last <- last_dir()
+      dir_changed <- is.null(last) || current_dir != last
+      
+      if (dir_changed && !is.null(last)) {
+        message("FILE BROWSER: Directory changed from '", last, "' to '", current_dir, "' - clearing selection")
+        
+        # Clear selection
+        selected(character(0))
+        
+        # Update global state to reflect cleared selection
+        state$data_files <- character(0)
+        
+        # Reset restored flag
+        restored(FALSE)
+      } else if (!dir_changed && !restored() && !is.null(state$data_files) && length(state$data_files) > 0) {
+        # Same directory and haven't restored yet - restore selection from state
+        message("FILE BROWSER: Restoring selection from state: ", length(state$data_files), " files")
+        selected(state$data_files)
+        restored(TRUE)
+      }
+      
+      # Update last directory
+      last_dir(current_dir)
+    })
 
     # Handle file selection
     observeEvent(input$toggle_file, {
@@ -1038,6 +1160,31 @@ fileBrowserServer <- function(id, state, dir_path, session) {
       # Update global state
       state$data_files <- selected()
     })
+    
+    # Handle Select All button
+    observeEvent(input$select_all, {
+      message("Select all files clicked")
+      
+      # Get all files in the current directory
+      all_files <- list_csv_files(dir_path())
+      
+      # Select all files
+      selected(all_files)
+      
+      # Update global state
+      state$data_files <- selected()
+    })
+    
+    # Handle Deselect All button
+    observeEvent(input$deselect_all, {
+      message("Deselect all files clicked")
+      
+      # Clear selection
+      selected(character(0))
+      
+      # Update global state
+      state$data_files <- selected()
+    })
 
     # Render the file browser with complete hierarchy
     output$file_container <- renderUI({
@@ -1066,12 +1213,14 @@ fileBrowserServer <- function(id, state, dir_path, session) {
       # Create a hierarchical directory structure
       hierarchy <- organize_directory_hierarchy(files)
 
-      # Sort directories by their full path to maintain hierarchy order
+      # Sort directories by their full path to maintain hierarchy order (only if there are directories)
       dir_paths <- names(hierarchy)
-      dir_paths <- dir_paths[order(sapply(dir_paths, function(d) {
-        # Count the number of path components to sort by depth
-        length(strsplit(d, "/")[[1]])
-      }), dir_paths)]
+      if (length(dir_paths) > 0) {
+        dir_paths <- dir_paths[order(sapply(dir_paths, function(d) {
+          # Count the number of path components to sort by depth
+          length(strsplit(d, "/")[[1]])
+        }), dir_paths)]
+      }
 
       # Get current selection count
       current_selection <- selected()
@@ -1156,33 +1305,34 @@ fileBrowserServer <- function(id, state, dir_path, session) {
         # Sort root files alphabetically
         root_files <- sort(root_files)
 
-        # Add a header for root files
-        if (length(root_files) > 0) {
+        # Add a header for root files only if there are also subdirectories
+        # (otherwise it's redundant to say "Root files" when there are no subdirs)
+        if (length(dir_paths) > 0) {
           ui_elements <- tagAppendChild(ui_elements,
                                         div(
                                           style = "margin-top: 8px; font-weight: bold;",
                                           "Root files:"
                                         )
           )
+        }
 
-          # Add each root file
-          current_selection <- selected()
-          for (file in root_files) {
-            is_selected <- file %in% current_selection
+        # Add each root file
+        current_selection <- selected()
+        for (file in root_files) {
+          is_selected <- file %in% current_selection
 
-            ui_elements <- tagAppendChild(ui_elements,
-                                          div(
-                                            style = paste0(
-                                              "padding: 2px 5px; margin: 1px 0; cursor: pointer; ",
-                                              if (is_selected) "background-color: #e3f2fd; border-radius: 3px;" else ""
-                                            ),
-                                            # File indentation and name
-                                            HTML(paste0("&nbsp;&nbsp;&nbsp;", file)),
-                                            onclick = paste0("Shiny.setInputValue('", session$ns("toggle_file"), "', '",
-                                                             file, "', {priority: 'event'})")
-                                          )
-            )
-          }
+          ui_elements <- tagAppendChild(ui_elements,
+                                        div(
+                                          style = paste0(
+                                            "padding: 2px 5px; margin: 1px 0; cursor: pointer; ",
+                                            if (is_selected) "background-color: #e3f2fd; border-radius: 3px;" else ""
+                                          ),
+                                          # File indentation and name (no indentation if no subdirs)
+                                          HTML(if (length(dir_paths) > 0) paste0("&nbsp;&nbsp;&nbsp;", file) else file),
+                                          onclick = paste0("Shiny.setInputValue('", session$ns("toggle_file"), "', '",
+                                                           file, "', {priority: 'event'})")
+                                        )
+          )
         }
       }
 
@@ -2072,6 +2222,46 @@ step3Server <- function(id, state, session) {
     constant_columns <- reactiveVal(list())
     ui_trigger <- reactiveVal(0)
     initialized <- reactiveVal(FALSE)
+    last_data_files <- reactiveVal(NULL)  # Track the last set of data files we initialized with
+    
+    # Detect when data files change and reset state
+    observe({
+      current_files <- state$data_files
+      
+      # Skip if no files yet
+      if (is.null(current_files) || length(current_files) == 0) {
+        return()
+      }
+      
+      # Check if files have changed
+      last_files <- last_data_files()
+      files_changed <- is.null(last_files) || 
+                       length(current_files) != length(last_files) ||
+                       !all(current_files == last_files)
+      
+      if (files_changed) {
+        message("STEP3: Data files have changed - resetting state")
+        message("  Old files: ", if (!is.null(last_files)) paste(last_files, collapse = ", ") else "NULL")
+        message("  New files: ", paste(current_files, collapse = ", "))
+        
+        # Clear all state to force re-initialization
+        initialized(FALSE)
+        file_mappings(list())
+        selected_files(integer(0))
+        selected_keywords(list())
+        current_file(NULL)
+        constant_columns(list())
+        
+        # Clear state's file_mappings too so we don't restore stale data
+        state$file_mappings <- NULL
+        
+        # Update last_data_files
+        last_data_files(current_files)
+        
+        # Increment UI trigger to force re-render
+        ui_trigger(ui_trigger() + 1)
+      }
+    }, priority = 100)  # High priority so it runs before initialization
 
     # Debug output for keyword troubleshooting
     output$debug_text <- renderPrint({
@@ -2173,20 +2363,15 @@ step3Server <- function(id, state, session) {
         }
       }
       
+      # Mark as initialized and remember which files we initialized with
       initialized(TRUE)
+      last_data_files(state$data_files)
+      message("STEP3 INIT: Initialization complete for ", length(state$data_files), " files")
     })
 
-    # Handle returning to step 3 - reset initialized flag to allow state restoration
-    observeEvent(state$current_step, {
-      if (state$current_step == 3) {
-        # If we're coming back to step 3 and have state$file_mappings but file_mappings() is empty,
-        # reset initialized to allow restoration
-        if (!is.null(state$file_mappings) && length(state$file_mappings) > 0 && 
-            length(file_mappings()) == 0) {
-          initialized(FALSE)
-        }
-      }
-    }, ignoreInit = TRUE)
+    # Note: The old "Handle returning to step 3" observer has been removed
+    # because we now have a more robust change detection system above that
+    # monitors state$data_files directly
 
     #
     # Analyzes CSV files to find columns with constant values
@@ -2285,19 +2470,32 @@ step3Server <- function(id, state, session) {
     })
     outputOptions(output, "has_selection", suspendWhenHidden = FALSE)
     
-    # Check if selected files have constant columns
+    # Check if selected files have constant columns (constant across ALL selected files)
     output$has_constant_columns <- reactive({
       selected <- selected_files()
       file_indices <- if (length(selected) > 0) selected else c(current_file())
       
       const_cols <- constant_columns()
       
+      # Find columns that are constant in ALL selected files (intersection)
+      all_const_cols <- NULL
+      
       for (idx in file_indices) {
         if (!is.null(idx) && length(const_cols) >= idx && length(const_cols[[idx]]) > 0) {
-          return(TRUE)
+          file_const_cols <- names(const_cols[[idx]])
+          
+          if (is.null(all_const_cols)) {
+            all_const_cols <- file_const_cols
+          } else {
+            all_const_cols <- intersect(all_const_cols, file_const_cols)
+          }
+        } else {
+          # This file has no constant columns, so intersection is empty
+          return(FALSE)
         }
       }
-      return(FALSE)
+      
+      return(!is.null(all_const_cols) && length(all_const_cols) > 0)
     })
     outputOptions(output, "has_constant_columns", suspendWhenHidden = FALSE)
     
@@ -2310,21 +2508,30 @@ step3Server <- function(id, state, session) {
       
       const_cols <- constant_columns()
       
-      # Collect constant columns across all selected files
-      all_const_cols <- list()
+      # Find columns that are constant in ALL selected files (intersection)
+      all_const_cols <- NULL  # Will hold column names constant across all files
+      
       for (idx in file_indices) {
         if (length(const_cols) >= idx && length(const_cols[[idx]]) > 0) {
-          for (col_name in names(const_cols[[idx]])) {
-            if (!(col_name %in% names(all_const_cols))) {
-              all_const_cols[[col_name]] <- TRUE
-            }
+          file_const_cols <- names(const_cols[[idx]])
+          
+          if (is.null(all_const_cols)) {
+            # First file - start with its constant columns
+            all_const_cols <- file_const_cols
+          } else {
+            # Subsequent files - keep only columns that appear in both
+            all_const_cols <- intersect(all_const_cols, file_const_cols)
           }
+        } else {
+          # This file has no constant columns, so intersection is empty
+          all_const_cols <- character(0)
+          break
         }
       }
       
       # Update column dropdown
-      if (length(all_const_cols) > 0) {
-        col_choices <- setNames(names(all_const_cols), names(all_const_cols))
+      if (!is.null(all_const_cols) && length(all_const_cols) > 0) {
+        col_choices <- setNames(all_const_cols, all_const_cols)
         updateSelectInput(session, "auto_column", choices = col_choices)
         
         # Build keyword choices from standard and custom keywords
@@ -3176,7 +3383,7 @@ step3Server <- function(id, state, session) {
               })
             ),
             p(style = "margin-top: 15px; color: #666;", 
-              "Select each file, choose keywords, fill in values, and click \"Apply Filename\".")
+              "Select each file, choose keywords, fill in values, and click \"Use Filename\".")
           ),
           easyClose = TRUE,
           footer = modalButton("OK")
@@ -3188,67 +3395,230 @@ step3Server <- function(id, state, session) {
 
     # Create HTML preview of file structure
     create_file_structure_html <- function(project_dir, file_mappings, optional_dirs) {
+      
+      # Build a nested tree structure from file paths
+      build_tree <- function(file_paths) {
+        message("\n=== Building tree with ", length(file_paths), " file paths ===")
+        
+        # Helper function to insert a path into the tree
+        # NOTE: Files are marked with TRUE, directories are lists
+        insert_path <- function(tree, parts, depth = 0) {
+          indent <- paste(rep("  ", depth), collapse = "")
+          
+          if (length(parts) == 0) {
+            message(indent, "ERROR: No parts to insert!")
+            return(tree)
+          }
+          
+          if (length(parts) == 1) {
+            # It's a file at this level - mark with TRUE (not NULL which removes it!)
+            if (depth == 0) message(indent, "Adding file: ", parts[1])
+            tree[[parts[1]]] <- TRUE  # Changed from NULL to TRUE
+            if (depth == 0) message(indent, "Tree now has ", length(tree), " items")
+            return(tree)
+          }
+          
+          # It's a directory - recurse
+          dir_name <- parts[1]
+          remaining_parts <- parts[-1]
+          
+          if (is.null(tree[[dir_name]]) || !is.list(tree[[dir_name]])) {
+            tree[[dir_name]] <- list()
+          }
+          
+          tree[[dir_name]] <- insert_path(tree[[dir_name]], remaining_parts, depth + 1)
+          return(tree)
+        }
+        
+        tree <- list()
+        
+        for (i in seq_along(file_paths)) {
+          path <- file_paths[i]
+          if (is.null(path) || path == "") {
+            next
+          }
+          
+          parts <- strsplit(path, "/")[[1]]
+          tree <- insert_path(tree, parts)
+          
+          if (i <= 3) {
+            message("After path ", i, ", tree has ", length(tree), " top-level items")
+          }
+        }
+        
+        message("\n=== Tree built with ", length(tree), " top-level items ===")
+        if (length(tree) > 0) {
+          message("Final top-level items: ", paste(names(tree)[1:min(5, length(tree))], collapse = ", "))
+        }
+        message("")
+        return(tree)
+      }
+      
+      # Recursively render tree as HTML with collapsible folders
+      render_tree <- function(tree, depth = 0) {
+        if (is.null(tree) || length(tree) == 0) {
+          message("render_tree: Empty tree at depth ", depth)
+          return(NULL)
+        }
+        
+        message("render_tree: Rendering ", length(tree), " items at depth ", depth)
+        
+        items <- lapply(names(tree), function(name) {
+          node <- tree[[name]]
+          
+          # Check if it's a file (TRUE) or directory (list)
+          if (isTRUE(node)) {
+            # It's a file
+            message("  Rendering file: ", name)
+            tags$li(
+              class = "tree-file",
+              tags$span(class = "file-icon", "📄"),
+              name
+            )
+          } else if (is.list(node)) {
+            # It's a directory
+            message("  Rendering directory: ", name, " with ", length(node), " children")
+            tags$li(
+              class = "tree-folder",
+              tags$details(
+                open = if (depth < 2) NA else NULL,  # Auto-expand first 2 levels
+                tags$summary(
+                  tags$span(class = "folder-icon", "📁"),
+                  paste0(name, "/")
+                ),
+                tags$ul(
+                  class = "tree-children",
+                  render_tree(node, depth + 1)
+                )
+              )
+            )
+          } else {
+            # Unexpected node type
+            message("  WARNING: Unexpected node type for ", name, ": ", class(node))
+            NULL
+          }
+        })
+        
+        # IMPORTANT: Must use do.call(tagList, ...) to properly combine list of tags
+        result <- do.call(tagList, items)
+        message("render_tree: Returning ", length(items), " items")
+        return(result)
+      }
+      
+      # Build the complete structure
       create_nested_list <- function() {
         root_items <- list(
           tags$li(
+            class = "tree-file",
             tags$span(class = "file-icon", "📄"),
             "dataset_description.json"
           )
         )
 
-        # Add optional directories
+        # Add optional directories (empty folders)
         standard_dirs <- c("analysis", "materials", "results", "products", "documentation")
         for (dir in standard_dirs) {
           if (optional_dirs[[dir]]) {
             root_items[[length(root_items) + 1]] <- tags$li(
+              class = "tree-folder",
               tags$span(class = "folder-icon", "📁"),
               paste0(dir, "/")
             )
           }
         }
 
-        # Add custom directories
+        # Add custom directories (empty folders)
         if (!is.null(optional_dirs$custom)) {
           for (custom_dir in optional_dirs$custom) {
             root_items[[length(root_items) + 1]] <- tags$li(
+              class = "tree-folder",
               tags$span(class = "folder-icon", "📁"),
               paste0(custom_dir, "/")
             )
           }
         }
 
-        # Build data directory structure with subdirectories
-        data_structure <- list()
-        
+        # Build data directory tree structure
+        data_files <- character(0)  # Use character vector, not list
         for (mapping in file_mappings()) {
           if (mapping$new != "") {
-            # Parse the original path to get subdirectory structure
+            # Parse the original path to preserve subdirectory structure
             file_parts <- strsplit(mapping$original, "/")[[1]]
             
+            # Reconstruct path: skip first part (which is typically "data" or root)
+            # and use the subdirectory structure with the new filename
             if (length(file_parts) > 2) {
-              # File is in subdirectory
-              subdir_path <- paste(file_parts[2:(length(file_parts)-1)], collapse = "/")
-              full_path <- paste0(subdir_path, "/", mapping$new)
+              # Has subdirectories: data/subdir1/subdir2/file.csv
+              subdir_parts <- file_parts[2:(length(file_parts)-1)]
+              full_path <- paste(c(subdir_parts, mapping$new), collapse = "/")
             } else {
-              # File is directly in data/
+              # No subdirectories: data/file.csv
               full_path <- mapping$new
             }
             
-            data_structure[[length(data_structure) + 1]] <- tags$li(
-              tags$span(class = "file-icon", "📄"),
-              full_path
-            )
+            data_files <- c(data_files, full_path)  # Append to character vector
           }
         }
+        
+        message("\n=== Step 3 Modal: File Processing ===")
+        message("Total files to display: ", length(data_files))
+        if (length(data_files) > 0) {
+          message("Sample files: ", paste(head(data_files, 3), collapse = ", "))
+        }
+        
+        # Build tree from file paths
+        data_tree <- build_tree(data_files)
+        
+        # Debug: show tree structure
+        if (length(data_tree) > 0) {
+          message("Tree structure keys: ", paste(names(data_tree), collapse = ", "))
+          message("Tree structure (first level):")
+          for (name in names(data_tree)) {
+            node <- data_tree[[name]]
+            if (is.null(node)) {
+              message("  ", name, " (file)")
+            } else {
+              message("  ", name, "/ (directory with ", length(node), " items)")
+            }
+          }
+        }
+        
+        # Check if we have any files
+        has_files <- length(data_files) > 0
+        
+        message("\n=== Creating data folder UI ===")
+        message("has_files: ", has_files)
+        message("About to call render_tree with data_tree")
+        
+        # Create the data folder with nested structure
+        data_folder <- tags$li(
+          class = "tree-folder",
+          tags$details(
+            open = NA,  # Auto-expand data folder
+            tags$summary(
+              tags$span(class = "folder-icon", "📁"),
+              "data/"
+            ),
+            if (has_files) {
+              tags$ul(
+                class = "tree-children",
+                render_tree(data_tree, depth = 1)
+              )
+            } else {
+              tags$div(
+                style = "padding-left: 20px; color: #999; font-style: italic; font-size: 12px;",
+                "No data files"
+              )
+            }
+          )
+        )
+        
+        message("=== Data folder UI created ===\n")
 
-        # Create the full structure
+        # Combine everything
         tags$ul(
           class = "file-tree",
-          tags$li(
-            tags$span(class = "folder-icon", "📁"),
-            "data/",
-            tags$ul(data_structure)
-          ),
+          data_folder,
           root_items
         )
       }
@@ -3256,16 +3626,76 @@ step3Server <- function(id, state, session) {
       tagList(
         tags$style(HTML("
       .file-tree {
-        font-family: monospace;
-        line-height: 1.5;
+        font-family: 'Monaco', 'Menlo', 'Consolas', monospace;
+        line-height: 1.6;
+        list-style-type: none;
+        padding-left: 0;
+        margin: 0;
+      }
+      
+      .file-tree ul {
         list-style-type: none;
         padding-left: 20px;
+        margin: 4px 0;
       }
-      .file-tree ul {
-        padding-left: 20px;
+      
+      .file-tree li {
+        margin: 2px 0;
       }
+      
+      .file-tree details {
+        margin: 2px 0;
+      }
+      
+      .file-tree summary {
+        cursor: pointer;
+        user-select: none;
+        padding: 2px 4px;
+        border-radius: 3px;
+        transition: background-color 0.15s ease;
+      }
+      
+      .file-tree summary:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+      }
+      
+      .file-tree summary::-webkit-details-marker {
+        display: none;
+      }
+      
+      .file-tree summary::marker {
+        content: '';
+      }
+      
+      .file-tree summary::before {
+        content: '▶';
+        display: inline-block;
+        margin-right: 6px;
+        font-size: 10px;
+        transition: transform 0.15s ease;
+      }
+      
+      .file-tree details[open] > summary::before {
+        transform: rotate(90deg);
+      }
+      
       .file-icon, .folder-icon {
-        margin-right: 5px;
+        margin-right: 6px;
+        font-size: 14px;
+      }
+      
+      .tree-file {
+        padding: 2px 4px;
+      }
+      
+      .tree-folder > span {
+        padding: 2px 4px;
+        border-radius: 3px;
+      }
+      
+      .tree-children {
+        border-left: 1px dotted #ccc;
+        margin-left: 10px;
       }
     ")),
         create_nested_list()
@@ -3632,14 +4062,43 @@ check_validator_available <- function() {
 }
 
 validateServer <- function(id, state, session) {
+  message("\n*** validateServer module starting ***\n")
   moduleServer(id, function(input, output, session) {
+    message("*** Inside moduleServer for validateServer ***\n")
     # Track validation status
     validation_status <- reactiveValues(
       is_validating = FALSE,
       is_complete = FALSE,
       is_valid = FALSE,
-      step_statuses = list() 
+      step_statuses = list()
     )
+    
+    # Setup directory chooser
+    volumes <- c(Home = "~")
+    if (.Platform$OS.type == "windows") {
+      volumes <- c(volumes, getVolumes()())
+    }
+    
+    shinyDirChoose(
+      input,
+      "validate_dir_select",
+      roots = volumes,
+      session = session
+    )
+    
+    # Update the validate_dir text input when directory is selected via button
+    observeEvent(input$validate_dir_select, {
+      tryCatch({
+        dir_info <- parseDirPath(volumes, input$validate_dir_select)
+        if (length(dir_info) > 0) {
+          selected_path <- as.character(dir_info)
+          message("Directory selected via button: ", selected_path)
+          updateTextInput(session, "validate_dir", value = selected_path)
+        }
+      }, error = function(e) {
+        message("Error parsing directory path: ", e$message)
+      })
+    })
     
     # Define steps for the UI rendering
     validation_steps <- list(
@@ -3934,7 +4393,9 @@ validateServer <- function(id, state, session) {
     # Handle validation results
     observeEvent(input$validation_results, {
       if (!is.null(input$validation_results)) {
-        message("Validation results received")
+        message("=== Validation results received ===")
+        message("  input$validate_dir: '", if (!is.null(input$validate_dir)) input$validate_dir else "NULL", "'")
+        
         validation_status$is_complete <- TRUE
         validation_status$is_valid <- input$validation_results$valid
         validation_status$is_validating <- FALSE
@@ -3943,9 +4404,53 @@ validateServer <- function(id, state, session) {
         # Store the validated directory path for later use
         if (!is.null(input$validate_dir) && input$validate_dir != "") {
           state$validated_dataset_dir <- input$validate_dir
+          message("  -> Set validated_dataset_dir to: '", state$validated_dataset_dir, "'")
+        } else {
+          message("  -> Could NOT set validated_dataset_dir (validate_dir is NULL or empty)")
         }
       }
     })
+    
+    # Clear old validation results when directory changes
+    observeEvent(input$validate_dir, {
+      message("=== validate_dir changed ===")
+      message("  New value: '", input$validate_dir, "'")
+      message("  Has validation results: ", !is.null(state$validation_results))
+      message("  Last validated dir: '", if (!is.null(state$validated_dataset_dir)) state$validated_dataset_dir else "NULL", "'")
+      
+      # Clear results if we have them and directory is different from last validated
+      if (!is.null(state$validation_results)) {
+        # Check if directory actually changed
+        if (is.null(state$validated_dataset_dir) || 
+            state$validated_dataset_dir != input$validate_dir) {
+          
+          message("  -> CLEARING validation results")
+          
+          # Clear validation state
+          validation_status$is_validating <- FALSE
+          validation_status$is_complete <- FALSE
+          validation_status$is_valid <- FALSE
+          validation_status$step_statuses <- list()
+          state$validation_results <- NULL
+          
+          # Send JavaScript message to reset the validation UI
+          session$sendCustomMessage("reset_validation_ui", list(timestamp = Sys.time()))
+          message("  -> Sent reset_validation_ui message to JavaScript")
+          
+          # Show a brief notification
+          showNotification(
+            "New dataset selected. Previous validation results cleared.",
+            type = "message",
+            duration = 3
+          )
+        } else {
+          message("  -> Same directory, keeping results")
+        }
+      } else {
+        message("  -> No validation results to clear")
+      }
+    }, ignoreInit = TRUE, ignoreNULL = FALSE)
+
 
     # Add this to your validateServer function in server_modules.R
     # Replace the existing observeEvent for validation_step_status with this:
@@ -4013,217 +4518,6 @@ validateServer <- function(id, state, session) {
       }
     }, ignoreNULL = TRUE)
     
-    # Render the validation UI with checklist
-    output$validation_results_ui <- renderUI({
-      # If validation hasn't started or is in progress, show appropriate message
-      if (!validation_status$is_validating && is.null(state$validation_results)) {
-        return(div(
-          style = "text-align: center; padding: 20px;",
-          p("Select a dataset directory and click 'Validate' to check compliance with Psych-DS standard.")
-        ))
-      }
-      
-      # Debug text to show current status
-      status_text <- paste(
-        "Validating:", validation_status$is_validating,
-        "Complete:", validation_status$is_complete,
-        "Valid:", validation_status$is_valid,
-        "Steps:", length(validation_status$step_statuses)
-      )
-      
-      # If validation is in progress or results are available, show the checklist
-      checklist <- div(
-        h3("Validation Progress", 
-           if (validation_status$is_complete) {
-             span(
-               style = paste0("color: ", ifelse(validation_status$is_valid, "#4caf50", "#f44336"), "; margin-left: 10px;"),
-               ifelse(validation_status$is_valid, "✓ Dataset is valid", "✗ Dataset has issues")
-             )
-           }
-        ),
-        p(style = "color: #999; font-style: italic;", status_text),
-        
-        # Main steps
-        div(
-          class = "validation-checklist",
-          style = "max-height: 500px; overflow-y: auto;",
-          
-          # Check if steps are defined
-          if (length(validation_status$steps) > 0) {
-            lapply(validation_status$steps, function(step) {
-              # Get status for this step
-              status <- validation_status$step_statuses[[step$key]]
-              
-              # Default status if not found
-              if (is.null(status)) {
-                status <- list(complete = FALSE, success = FALSE)
-              }
-              
-              # Determine message and icon
-              message <- if (status$complete) step$message$pastTense else step$message$imperative
-              icon <- if (status$complete) {
-                if (status$success) "✓" else "✗"
-              } else "⋯"
-              icon_color <- if (status$complete) {
-                if (status$success) "#4caf50" else "#f44336"
-              } else "#ffc107"
-              
-              div(
-                class = "step-item",
-                style = "margin-bottom: 15px; padding: 10px; border-radius: 5px; background-color: #f9f9f9; border: 1px solid #ddd;",
-                
-                div(
-                  class = "step-header",
-                  style = "font-weight: bold; display: flex; align-items: center;",
-                  span(icon, style = paste0("color: ", icon_color, "; margin-right: 10px; font-size: 18px;")),
-                  message
-                ),
-                
-                # Display issue if there is one
-                if (!is.null(status$issue) && !is.null(status$issue$reason) && status$issue$reason != "") {
-                  div(
-                    class = "step-issue",
-                    style = "margin-top: 10px; color: #f44336; padding-left: 20px;",
-                    p(strong("Issue:"), status$issue$reason)
-                  )
-                },
-                
-                # Render substeps if any
-                if (length(step$subSteps) > 0) {
-                  div(
-                    class = "substeps",
-                    style = "margin-top: 10px; margin-left: 20px; padding-left: 10px; border-left: 2px solid #ddd;",
-                    
-                    lapply(step$subSteps, function(subStep) {
-                      # Get substep status
-                      subStatus <- validation_status$step_statuses[[subStep$key]]
-                      
-                      # Default status if not found
-                      if (is.null(subStatus)) {
-                        subStatus <- list(complete = FALSE, success = FALSE)
-                      }
-                      
-                      # Determine message and icon
-                      subMessage <- if (subStatus$complete) subStep$message$pastTense else subStep$message$imperative
-                      subIcon <- if (subStatus$complete) {
-                        if (subStatus$success) "✓" else "✗"
-                      } else "⋯"
-                      subIconColor <- if (subStatus$complete) {
-                        if (subStatus$success) "#4caf50" else "#f44336"
-                      } else "#ffc107"
-                      
-                      div(
-                        class = "substep-item",
-                        style = "margin-bottom: 8px; display: flex; align-items: flex-start;",
-                        
-                        span(subIcon, style = paste0("color: ", subIconColor, "; margin-right: 10px;")),
-                        div(
-                          style = "flex: 1;",
-                          p(style = "margin: 0;", subMessage),
-                          
-                          # Display issue if there is one
-                          if (!is.null(subStatus$issue) && !is.null(subStatus$issue$reason) && subStatus$issue$reason != "") {
-                            div(
-                              class = "substep-issue",
-                              style = "margin-top: 5px; color: #f44336; font-size: 0.9em;",
-                              p(strong("Issue:"), subStatus$issue$reason)
-                            )
-                          }
-                        )
-                      )
-                    })
-                  )
-                }
-              )
-            })
-          } else {
-            div("No validation steps defined")
-          }
-        )
-      )
-      
-      # If validation is complete, also show the results summary
-      if (validation_status$is_complete && !is.null(state$validation_results)) {
-        result <- state$validation_results
-        
-        # Full results with checklist and summary
-        return(tagList(
-          # Checklist
-          div(
-            class = "section-box",
-            style = "margin-bottom: 20px;",
-            div(class = "section-title", "Validation Process"),
-            checklist
-          ),
-          
-          # Summary
-          div(
-            class = "section-box",
-            div(class = "section-title", "Results Summary"),
-            div(
-              style = paste0("padding: 15px; border-radius: 5px; background-color: ", 
-                            ifelse(result$valid, "#e8f5e9", "#ffebee"), ";"),
-              h3(
-                style = paste0("color: ", ifelse(result$valid, "#4caf50", "#f44336"), ";"),
-                ifelse(result$valid, "✓ Dataset is valid", "✗ Dataset has validation errors")
-              ),
-              
-              # Summary details
-              div(
-                style = "margin-top: 15px;",
-                h4("Details:"),
-                tags$ul(
-                  tags$li(paste0("Total files scanned: ", result$summary$totalFiles)),
-                  if (!is.null(result$summary$dataTypes) && length(result$summary$dataTypes) > 0) {
-                    tags$li(paste0("Data types found: ", paste(result$summary$dataTypes, collapse = ", ")))
-                  },
-                  tags$li(
-                    span(style = paste0("color: ", ifelse(result$valid, "#4caf50", "#f44336"), "; font-weight: bold;"), 
-                         ifelse(result$valid, 
-                               "This dataset appears to be Psych-DS compatible", 
-                               "This dataset does not appear to be Psych-DS compatible"))
-                  )
-                )
-              ),
-              
-              # Only show errors section if there are any
-              if (!result$valid && !is.null(result$issues) && !is.null(result$issues$errors) && length(result$issues$errors) > 0) {
-                div(
-                  style = "margin-top: 15px;",
-                  h4("Errors:"),
-                  tags$ul(
-                    lapply(result$issues$errors, function(error) {
-                      # Handle NULL values gracefully
-                      error_key <- if (!is.null(error$key) && error$key != "") error$key else "Validation Error"
-                      error_reason <- if (!is.null(error$reason) && error$reason != "") {
-                        error$reason
-                      } else if (!is.null(error$message) && error$message != "") {
-                        error$message
-                      } else {
-                        "Unknown error"
-                      }
-                      
-                      tags$li(
-                        p(style = "font-weight: bold;", error_key),
-                        p(error_reason)
-                      )
-                    })
-                  )
-                )
-              }
-            )
-          )
-        ))
-      } else {
-        # Just return the checklist during validation
-        return(div(
-          class = "section-box",
-          div(class = "section-title", "Validation Progress"),
-          checklist
-        ))
-      }
-    })
-
     
     
     # Handle the validate button click
@@ -4231,6 +4525,13 @@ validateServer <- function(id, state, session) {
       req(input$validate_dir)
       
       if (dir.exists(input$validate_dir)) {
+        message("VALIDATE BUTTON CLICKED - Preparing validation")
+        message("  Directory to validate: '", input$validate_dir, "'")
+        
+        # Store the directory we're about to validate BEFORE starting validation
+        state$validated_dataset_dir <- input$validate_dir
+        message("  -> Set validated_dataset_dir to: '", state$validated_dataset_dir, "'")
+        
         # Reset validation state
         validation_status$is_validating <- TRUE
         validation_status$is_complete <- FALSE
@@ -4304,18 +4605,6 @@ validateServer <- function(id, state, session) {
       cat("VALIDATION HALTED EVENT - Value:", input$validation_halted, "\n")
     }, ignoreNULL = TRUE)
 
-    # Debug JavaScript communication
-    observeEvent(input$validate_btn, {
-      cat("VALIDATE BUTTON CLICKED - Preparing validation\n")
-      cat("Directory:", input$validate_dir, "\n")
-      
-      # Add JavaScript debugging
-      session$sendCustomMessage("debug_validator", list(
-        message = "Starting validation debug mode",
-        timestamp = Sys.time()
-      ))
-    })
-
     # Add a test message handler to verify communication
     observeEvent(input$test_js_communication, {
       cat("Test JS communication received:", input$test_js_communication, "\n")
@@ -4324,389 +4613,389 @@ validateServer <- function(id, state, session) {
 }
 
 # -------------------------------------------------------------------------
-    # Helper: Detect identifier fields
-    # -------------------------------------------------------------------------
-    detect_identifier <- function(var_name, uniqueness_ratio, n_unique, n_clean) {
-      var_lower <- tolower(var_name)
-      
-      id_patterns <- c(
-        "\\bid\\b", "\\bids\\b", "_id$", "^id_",
-        "\\buuid\\b", "\\bguid\\b", "\\bkey\\b", "\\bcode$",
-        "^subject", "^participant", "^child_?id",
-        "^session_?id", "^trial_?id", "^user_?id", "^record_?id"
-      )
-      
-      name_matches_id <- any(sapply(id_patterns, function(p) grepl(p, var_lower)))
-      name_matches_id && (uniqueness_ratio > 0.5 || n_unique >= n_clean * 0.5)
-    }
-    
-    # -------------------------------------------------------------------------
-    # Helper: Detect JSON strings
-    # -------------------------------------------------------------------------
-    detect_json_strings <- function(col_clean) {
-      if (length(col_clean) == 0) return(list(is_json = FALSE, pattern = ""))
-      
-      sample_vals <- head(col_clean, 100)
-      
-      is_array <- all(grepl("^\\[.*\\]$", sample_vals))
-      is_object <- all(grepl("^\\{.*\\}$", sample_vals))
-      
-      if (is_array) return(list(is_json = TRUE, pattern = "JSON array"))
-      if (is_object) return(list(is_json = TRUE, pattern = "JSON object"))
-      list(is_json = FALSE, pattern = "")
-    }
-    
-    # -------------------------------------------------------------------------
-    # Helper: Detect boolean variables  
-    # -------------------------------------------------------------------------
-    detect_boolean <- function(col_clean, n_unique, var_name = "") {
-      if (n_unique > 2) return(list(is_boolean = FALSE, values = list()))
-      
-      var_lower <- tolower(var_name)
-      unique_vals <- unique(col_clean)
-      vals_lower <- tolower(as.character(unique_vals))
-      vals_sorted <- sort(vals_lower)
-      
-      boolean_pairs <- list(
-        c("false", "true"), c("f", "t"), c("n", "y"), c("no", "yes")
-      )
-      
-      is_text_boolean <- any(sapply(boolean_pairs, function(pair) identical(vals_sorted, sort(pair))))
-      
-      boolean_name_patterns <- c(
-        "\\bcorrect\\b", "\\bsuccess\\b", "\\bvalid\\b", "\\bcomplete\\b",
-        "\\bfinished\\b", "\\bdone\\b", "\\bfailed\\b", "\\berror\\b",
-        "\\btimeout\\b", "\\bflag\\b", "\\bis_", "\\bhas_", "\\bwas_"
-      )
-      response_name_patterns <- c(
-        "\\bresponse\\b", "\\bresp\\b", "\\bchoice\\b", "\\bbutton\\b",
-        "\\bkey\\b", "\\banswer\\b", "\\bselect"
-      )
-      
-      name_suggests_boolean <- any(sapply(boolean_name_patterns, function(p) grepl(p, var_lower)))
-      name_suggests_response <- any(sapply(response_name_patterns, function(p) grepl(p, var_lower)))
-      
-      is_01_boolean <- identical(vals_sorted, c("0", "1")) && 
-                       name_suggests_boolean && !name_suggests_response
-      
-      single_boolean_vals <- c("true", "false", "yes", "no", "t", "f", "y", "n")
-      is_single_boolean <- n_unique == 1 && vals_lower[1] %in% single_boolean_vals
-      
-      if (is_text_boolean || is_01_boolean || is_single_boolean) {
-        values <- lapply(sort(unique_vals), function(v) {
-          list(value = as.character(v), label = as.character(v), description = "")
-        })
-        return(list(is_boolean = TRUE, values = values))
-      }
-      
-      list(is_boolean = FALSE, values = list())
-    }
-    
-    # -------------------------------------------------------------------------
-    # Helper: Try parsing character vector as numeric
-    # -------------------------------------------------------------------------
-    try_parse_numeric <- function(col_clean) {
-      if (length(col_clean) == 0) return(list(success = FALSE, values = NULL))
-      
-      col_clean <- trimws(col_clean)
-      col_clean <- col_clean[col_clean != "" & !is.na(col_clean)]
-      
-      if (length(col_clean) == 0) return(list(success = FALSE, values = NULL))
-      
-      numeric_attempt <- suppressWarnings(as.numeric(col_clean))
-      
-      n_parsed <- sum(!is.na(numeric_attempt))
-      n_total <- length(col_clean)
-      parse_ratio <- n_parsed / n_total
-      
-      if (parse_ratio >= 0.90 && n_parsed >= 1) {
-        return(list(
-          success = TRUE,
-          values = numeric_attempt[!is.na(numeric_attempt)]
-        ))
-      }
-      
-      list(success = FALSE, values = NULL)
-    }
-    
-    # -------------------------------------------------------------------------
-    # Helper: Analyze numeric variables
-    # -------------------------------------------------------------------------
-    analyze_numeric <- function(col_clean, var_name, n_unique, uniqueness_ratio) {
-      var_lower <- tolower(var_name)
-      result <- list(categorical_values = list())
-      
-      unique_vals <- unique(col_clean)
-      is_integer <- all(col_clean == floor(col_clean), na.rm = TRUE)
-      
-      is_categorical <- FALSE
-      
-      if (n_unique <= 3 && is_integer) {
-        sorted_vals <- sort(unique_vals)
-        is_code_sequence <- length(sorted_vals) > 1 && 
-                           all(diff(sorted_vals) == 1) && 
-                           min(sorted_vals) >= 0 && max(sorted_vals) <= 10
-        
-        cat_patterns <- c("\\bgroup\\b", "\\bcondition\\b", "\\btreatment\\b",
-                         "\\bcategory\\b", "\\btype\\b", "\\bclass\\b",
-                         "\\blevel\\b", "\\bfactor\\b", "\\barm\\b")
-        name_suggests_cat <- any(sapply(cat_patterns, function(p) grepl(p, var_lower)))
-        
-        if (is_code_sequence && (name_suggests_cat || n_unique == 2)) {
-          is_categorical <- TRUE
-        }
-      }
-      
-      if (is_categorical) {
-        result$type <- "categorical"
-        sorted_vals <- sort(unique_vals)
-        result$categorical_values <- lapply(sorted_vals, function(v) {
-          list(value = as.character(v), label = as.character(v), description = "")
-        })
-      } else {
-        result$type <- if (is_integer) "integer" else "number"
-        result$min_value <- as.character(min(col_clean, na.rm = TRUE))
-        result$max_value <- as.character(max(col_clean, na.rm = TRUE))
-        result$unit <- inferUnit(var_name, mean(col_clean, na.rm = TRUE))
-      }
-      
-      result
-    }
-    
-    # -------------------------------------------------------------------------
-    # Helper: Analyze string variables
-    # -------------------------------------------------------------------------
-    analyze_string <- function(col_clean, var_name, n_unique, uniqueness_ratio, n_clean) {
-      var_lower <- tolower(var_name)
-      result <- list(type = "string", categorical_values = list())
-      
-      avg_length <- mean(nchar(col_clean))
-      max_length <- max(nchar(col_clean))
-      
-      if (avg_length > 50 || max_length > 200) return(result)
-      
-      strong_cat_patterns <- c(
-        "\\bcondition\\b", "\\bgroup\\b", "\\btreatment\\b", "\\barm\\b",
-        "\\bcategory\\b", "\\btype\\b", "\\bclass\\b", "\\blevel\\b",
-        "\\bfactor\\b", "\\bstatus\\b", "\\bstate\\b", "\\bphase\\b",
-        "\\bwave\\b", "\\bcohort\\b"
-      )
-      
-      name_strongly_suggests_cat <- any(sapply(strong_cat_patterns, function(p) grepl(p, var_lower)))
-      
-      is_categorical <- FALSE
-      
-      if (name_strongly_suggests_cat && n_unique <= 20) {
-        is_categorical <- TRUE
-      }
-      
-      if (n_unique >= 2 && n_unique <= 20 && uniqueness_ratio < 0.05 && n_clean >= 20) {
-        is_categorical <- TRUE
-      }
-      
-      if (n_unique >= 2 && n_unique <= 10) {
-        unique_vals <- unique(col_clean)
-        if (mean(nchar(unique_vals)) < 30) {
-          is_categorical <- TRUE
-        }
-      }
-      
-      if (is_categorical) {
-        result$type <- "categorical"
-        unique_vals <- sort(unique(col_clean))
-        result$categorical_values <- lapply(unique_vals, function(v) {
-          list(value = as.character(v), label = as.character(v), description = "")
-        })
-      }
-      
-      result
-    }
-    
-    # -------------------------------------------------------------------------
-    # Helper: Infer unit from variable name
-    # -------------------------------------------------------------------------
-    inferUnit <- function(var_name, mean_val) {
-      var_lower <- tolower(var_name)
-      
-      if (grepl("\\b(rt|reaction_?time|response_?time|latency|duration)\\b", var_lower)) {
-        return(if (mean_val > 100) "milliseconds" else "seconds")
-      }
-      if (grepl("time_?elapsed|elapsed_?time", var_lower)) {
-        return(if (mean_val > 1000) "milliseconds" else "seconds")
-      }
-      if (grepl("\\bage\\b", var_lower)) return("years")
-      if (grepl("\\b(score|rating|points)\\b", var_lower)) return("points")
-      if (grepl("\\b(percent|pct|proportion)\\b", var_lower)) {
-        return(if (mean_val <= 1) "proportion" else "percent")
-      }
-      ""
-    }
+# Helper: Detect identifier fields
+# -------------------------------------------------------------------------
+detect_identifier <- function(var_name, uniqueness_ratio, n_unique, n_clean) {
+  var_lower <- tolower(var_name)
+  
+  id_patterns <- c(
+    "\\bid\\b", "\\bids\\b", "_id$", "^id_",
+    "\\buuid\\b", "\\bguid\\b", "\\bkey\\b", "\\bcode$",
+    "^subject", "^participant", "^child_?id",
+    "^session_?id", "^trial_?id", "^user_?id", "^record_?id"
+  )
+  
+  name_matches_id <- any(sapply(id_patterns, function(p) grepl(p, var_lower)))
+  name_matches_id && (uniqueness_ratio > 0.5 || n_unique >= n_clean * 0.5)
+}
 
-    # =========================================================================
-    # MAIN FUNCTION: analyzeVariable - PURE BASE R VERSION
-    # =========================================================================
-    analyzeVariable <- function(csv_file, var_name) {
-      result <- list(
-        type = "string",
-        unit = "",
-        min_value = "",
-        max_value = "",
-        categorical_values = list(),
-        required = FALSE,
-        unique = FALSE,
-        pattern = ""
-      )
-      
-      tryCatch({
-        # Use base R read.csv - read all as character
-        data <- read.csv(
-          csv_file, 
-          stringsAsFactors = FALSE,
-          colClasses = "character",  # Force all columns as character
-          nrows = 10000,
-          na.strings = character(0)  # Don't convert anything to NA automatically
-        )
-        
-        if (!var_name %in% names(data)) return(result)
-        
-        col_data <- data[[var_name]]
-        
-        # Comprehensive NA values
-        na_values <- c("", "NA", "N/A", "na", "n/a", "null", "NULL", "Null", 
-                       "None", "none", "NONE", "undefined", "NaN", "-999", 
-                       "missing", ".", "-")
-        
-        # Trim whitespace
-        col_data <- trimws(col_data)
-        
-        # Filter NA-like values
-        is_na <- is.na(col_data) | (col_data %in% na_values)
-        col_clean <- col_data[!is_na]
-        n_total <- length(col_data)
-        n_clean <- length(col_clean)
-        
-        if (n_clean == 0) return(result)
-        
-        n_unique <- length(unique(col_clean))
-        uniqueness_ratio <- n_unique / n_clean
-        completeness <- n_clean / n_total
-        
-        result$required <- completeness > 0.95
-        result$unique <- n_unique == n_clean
-        
-        # STEP 1: Identifier check
-        if (detect_identifier(var_name, uniqueness_ratio, n_unique, n_clean)) {
-          result$type <- "string"
-          result$unique <- TRUE
-          return(result)
-        }
-        
-        # STEP 2: JSON check
-        json_check <- detect_json_strings(col_clean)
-        if (json_check$is_json) {
-          result$type <- "string"
-          result$pattern <- json_check$pattern
-          return(result)
-        }
-        
-        # STEP 3: Boolean check
-        boolean_result <- detect_boolean(col_clean, n_unique, var_name)
-        if (boolean_result$is_boolean) {
-          result$type <- "boolean"
-          result$categorical_values <- boolean_result$values
-          return(result)
-        }
-        
-        # STEP 4: Numeric check
-        numeric_parsed <- try_parse_numeric(col_clean)
-        if (numeric_parsed$success) {
-          col_numeric <- numeric_parsed$values
-          n_unique_num <- length(unique(col_numeric))
-          uniqueness_ratio_num <- n_unique_num / length(col_numeric)
-          
-          numeric_result <- analyze_numeric(col_numeric, var_name, n_unique_num, uniqueness_ratio_num)
-          return(modifyList(result, numeric_result))
-        }
-        
-        # STEP 5: String/categorical check (skip date detection for simplicity)
-        string_result <- analyze_string(col_clean, var_name, n_unique, uniqueness_ratio, n_clean)
-        return(modifyList(result, string_result))
-        
-      }, error = function(e) {
-        warning(paste("Error analyzing", var_name, ":", e$message))
-        result
-      })
-    }
+# -------------------------------------------------------------------------
+# Helper: Detect JSON strings
+# -------------------------------------------------------------------------
+detect_json_strings <- function(col_clean) {
+  if (length(col_clean) == 0) return(list(is_json = FALSE, pattern = ""))
+  
+  sample_vals <- head(col_clean, 100)
+  
+  is_array <- all(grepl("^\\[.*\\]$", sample_vals))
+  is_object <- all(grepl("^\\{.*\\}$", sample_vals))
+  
+  if (is_array) return(list(is_json = TRUE, pattern = "JSON array"))
+  if (is_object) return(list(is_json = TRUE, pattern = "JSON object"))
+  list(is_json = FALSE, pattern = "")
+}
 
-    # =========================================================================
-    # generateDescription
-    # =========================================================================
-    generateDescription <- function(var_name, var_analysis) {
-      var_lower <- tolower(var_name)
-      
-      if (grepl("^(participant|subject|sub)_?(id|ID|Id)$|\\bparticipant_?id\\b", var_name)) {
-        return("Unique identifier for each participant in the study")
-      }
-      if (grepl("\\bchild_?id\\b", var_lower)) return("Unique identifier for each child participant")
-      if (grepl("\\bsession_?id\\b", var_lower)) return("Unique identifier for each session")
-      if (grepl("\\btrial_?id\\b", var_lower)) return("Unique identifier for each trial")
-      if (grepl("\\btrial_?type\\b", var_lower)) return("Type of trial or experimental event")
-      if (grepl("\\btrial_?index\\b|\\btrial_?num(ber)?\\b", var_lower)) {
-        return("Sequential trial number within the experiment")
-      }
-      if (grepl("\\btrial\\b", var_lower) && !grepl("type|index|id", var_lower)) {
-        return("Trial number or trial identifier")
-      }
-      if (grepl("\\brt\\b|\\breaction_?time\\b|\\bresponse_?time\\b", var_lower)) {
-        return("Response time or reaction time measurement")
-      }
-      if (grepl("\\btime_?elapsed\\b|\\belapsed_?time\\b", var_lower)) {
-        return("Total time elapsed since experiment start")
-      }
-      if (grepl("\\btimestamp\\b", var_lower)) return("Timestamp of the event")
-      if (grepl("\\btimeout\\b", var_lower)) return("Whether the trial timed out")
-      if (grepl("\\bduration\\b", var_lower)) return("Duration of the event")
-      if (grepl("\\bresponse\\b", var_lower) && !grepl("time", var_lower)) {
-        return("Participant response or response value")
-      }
-      if (grepl("\\baccuracy\\b|\\bcorrect\\b|\\bacc\\b", var_lower)) {
-        return("Accuracy or correctness of response")
-      }
-      if (grepl("\\bsuccess\\b", var_lower)) return("Whether the action was successful")
-      if (grepl("\\bcondition\\b", var_lower)) return("Experimental condition or group assignment")
-      if (grepl("\\bgroup\\b", var_lower)) return("Group assignment")
-      if (grepl("\\bblock\\b", var_lower)) return("Block number in the experimental design")
-      if (grepl("\\bsession\\b", var_lower) && !grepl("id", var_lower)) {
-        return("Session number or session identifier")
-      }
-      if (grepl("\\bstimulus\\b|\\bstim\\b", var_lower)) {
-        return("Stimulus identifier or stimulus information")
-      }
-      if (grepl("\\bage\\b", var_lower)) return("Age of the participant")
-      if (grepl("\\bgender\\b|\\bsex\\b", var_lower)) {
-        return("Gender or biological sex of the participant")
-      }
-      if (grepl("\\bscore\\b|\\brating\\b", var_lower)) return("Score or rating value")
-      if (grepl("internal_node_id", var_lower)) {
-        return("Internal node identifier from the experiment framework")
-      }
-      if (grepl("^failed_", var_lower)) {
-        resource_type <- sub("^failed_", "", var_lower)
-        return(paste0("List of ", resource_type, " resources that failed to load"))
-      }
-      
-      type_desc <- switch(
-        var_analysis$type,
-        "integer" = "Numeric variable (whole numbers)",
-        "number" = "Numeric variable (decimal numbers)",
-        "boolean" = "Boolean variable (true/false)",
-        "categorical" = "Categorical variable",
-        "string" = "Text variable",
-        "Unknown variable type"
-      )
-      
-      paste0("Variable: ", var_name, " - ", type_desc)
+# -------------------------------------------------------------------------
+# Helper: Detect boolean variables  
+# -------------------------------------------------------------------------
+detect_boolean <- function(col_clean, n_unique, var_name = "") {
+  if (n_unique > 2) return(list(is_boolean = FALSE, values = list()))
+  
+  var_lower <- tolower(var_name)
+  unique_vals <- unique(col_clean)
+  vals_lower <- tolower(as.character(unique_vals))
+  vals_sorted <- sort(vals_lower)
+  
+  boolean_pairs <- list(
+    c("false", "true"), c("f", "t"), c("n", "y"), c("no", "yes")
+  )
+  
+  is_text_boolean <- any(sapply(boolean_pairs, function(pair) identical(vals_sorted, sort(pair))))
+  
+  boolean_name_patterns <- c(
+    "\\bcorrect\\b", "\\bsuccess\\b", "\\bvalid\\b", "\\bcomplete\\b",
+    "\\bfinished\\b", "\\bdone\\b", "\\bfailed\\b", "\\berror\\b",
+    "\\btimeout\\b", "\\bflag\\b", "\\bis_", "\\bhas_", "\\bwas_"
+  )
+  response_name_patterns <- c(
+    "\\bresponse\\b", "\\bresp\\b", "\\bchoice\\b", "\\bbutton\\b",
+    "\\bkey\\b", "\\banswer\\b", "\\bselect"
+  )
+  
+  name_suggests_boolean <- any(sapply(boolean_name_patterns, function(p) grepl(p, var_lower)))
+  name_suggests_response <- any(sapply(response_name_patterns, function(p) grepl(p, var_lower)))
+  
+  is_01_boolean <- identical(vals_sorted, c("0", "1")) && 
+                   name_suggests_boolean && !name_suggests_response
+  
+  single_boolean_vals <- c("true", "false", "yes", "no", "t", "f", "y", "n")
+  is_single_boolean <- n_unique == 1 && vals_lower[1] %in% single_boolean_vals
+  
+  if (is_text_boolean || is_01_boolean || is_single_boolean) {
+    values <- lapply(sort(unique_vals), function(v) {
+      list(value = as.character(v), label = as.character(v), description = "")
+    })
+    return(list(is_boolean = TRUE, values = values))
+  }
+  
+  list(is_boolean = FALSE, values = list())
+}
+
+# -------------------------------------------------------------------------
+# Helper: Try parsing character vector as numeric
+# -------------------------------------------------------------------------
+try_parse_numeric <- function(col_clean) {
+  if (length(col_clean) == 0) return(list(success = FALSE, values = NULL))
+  
+  col_clean <- trimws(col_clean)
+  col_clean <- col_clean[col_clean != "" & !is.na(col_clean)]
+  
+  if (length(col_clean) == 0) return(list(success = FALSE, values = NULL))
+  
+  numeric_attempt <- suppressWarnings(as.numeric(col_clean))
+  
+  n_parsed <- sum(!is.na(numeric_attempt))
+  n_total <- length(col_clean)
+  parse_ratio <- n_parsed / n_total
+  
+  if (parse_ratio >= 0.90 && n_parsed >= 1) {
+    return(list(
+      success = TRUE,
+      values = numeric_attempt[!is.na(numeric_attempt)]
+    ))
+  }
+  
+  list(success = FALSE, values = NULL)
+}
+
+# -------------------------------------------------------------------------
+# Helper: Analyze numeric variables
+# -------------------------------------------------------------------------
+analyze_numeric <- function(col_clean, var_name, n_unique, uniqueness_ratio) {
+  var_lower <- tolower(var_name)
+  result <- list(categorical_values = list())
+  
+  unique_vals <- unique(col_clean)
+  is_integer <- all(col_clean == floor(col_clean), na.rm = TRUE)
+  
+  is_categorical <- FALSE
+  
+  if (n_unique <= 3 && is_integer) {
+    sorted_vals <- sort(unique_vals)
+    is_code_sequence <- length(sorted_vals) > 1 && 
+                       all(diff(sorted_vals) == 1) && 
+                       min(sorted_vals) >= 0 && max(sorted_vals) <= 10
+    
+    cat_patterns <- c("\\bgroup\\b", "\\bcondition\\b", "\\btreatment\\b",
+                     "\\bcategory\\b", "\\btype\\b", "\\bclass\\b",
+                     "\\blevel\\b", "\\bfactor\\b", "\\barm\\b")
+    name_suggests_cat <- any(sapply(cat_patterns, function(p) grepl(p, var_lower)))
+    
+    if (is_code_sequence && (name_suggests_cat || n_unique == 2)) {
+      is_categorical <- TRUE
     }
+  }
+  
+  if (is_categorical) {
+    result$type <- "categorical"
+    sorted_vals <- sort(unique_vals)
+    result$categorical_values <- lapply(sorted_vals, function(v) {
+      list(value = as.character(v), label = as.character(v), description = "")
+    })
+  } else {
+    result$type <- if (is_integer) "integer" else "number"
+    result$min_value <- as.character(min(col_clean, na.rm = TRUE))
+    result$max_value <- as.character(max(col_clean, na.rm = TRUE))
+    result$unit <- inferUnit(var_name, mean(col_clean, na.rm = TRUE))
+  }
+  
+  result
+}
+
+# -------------------------------------------------------------------------
+# Helper: Analyze string variables
+# -------------------------------------------------------------------------
+analyze_string <- function(col_clean, var_name, n_unique, uniqueness_ratio, n_clean) {
+  var_lower <- tolower(var_name)
+  result <- list(type = "string", categorical_values = list())
+  
+  avg_length <- mean(nchar(col_clean))
+  max_length <- max(nchar(col_clean))
+  
+  if (avg_length > 50 || max_length > 200) return(result)
+  
+  strong_cat_patterns <- c(
+    "\\bcondition\\b", "\\bgroup\\b", "\\btreatment\\b", "\\barm\\b",
+    "\\bcategory\\b", "\\btype\\b", "\\bclass\\b", "\\blevel\\b",
+    "\\bfactor\\b", "\\bstatus\\b", "\\bstate\\b", "\\bphase\\b",
+    "\\bwave\\b", "\\bcohort\\b"
+  )
+  
+  name_strongly_suggests_cat <- any(sapply(strong_cat_patterns, function(p) grepl(p, var_lower)))
+  
+  is_categorical <- FALSE
+  
+  if (name_strongly_suggests_cat && n_unique <= 20) {
+    is_categorical <- TRUE
+  }
+  
+  if (n_unique >= 2 && n_unique <= 20 && uniqueness_ratio < 0.05 && n_clean >= 20) {
+    is_categorical <- TRUE
+  }
+  
+  if (n_unique >= 2 && n_unique <= 10) {
+    unique_vals <- unique(col_clean)
+    if (mean(nchar(unique_vals)) < 30) {
+      is_categorical <- TRUE
+    }
+  }
+  
+  if (is_categorical) {
+    result$type <- "categorical"
+    unique_vals <- sort(unique(col_clean))
+    result$categorical_values <- lapply(unique_vals, function(v) {
+      list(value = as.character(v), label = as.character(v), description = "")
+    })
+  }
+  
+  result
+}
+
+# -------------------------------------------------------------------------
+# Helper: Infer unit from variable name
+# -------------------------------------------------------------------------
+inferUnit <- function(var_name, mean_val) {
+  var_lower <- tolower(var_name)
+  
+  if (grepl("\\b(rt|reaction_?time|response_?time|latency|duration)\\b", var_lower)) {
+    return(if (mean_val > 100) "milliseconds" else "seconds")
+  }
+  if (grepl("time_?elapsed|elapsed_?time", var_lower)) {
+    return(if (mean_val > 1000) "milliseconds" else "seconds")
+  }
+  if (grepl("\\bage\\b", var_lower)) return("years")
+  if (grepl("\\b(score|rating|points)\\b", var_lower)) return("points")
+  if (grepl("\\b(percent|pct|proportion)\\b", var_lower)) {
+    return(if (mean_val <= 1) "proportion" else "percent")
+  }
+  ""
+}
+
+# =========================================================================
+# MAIN FUNCTION: analyzeVariable - PURE BASE R VERSION
+# =========================================================================
+analyzeVariable <- function(csv_file, var_name) {
+  result <- list(
+    type = "string",
+    unit = "",
+    min_value = "",
+    max_value = "",
+    categorical_values = list(),
+    required = FALSE,
+    unique = FALSE,
+    pattern = ""
+  )
+  
+  tryCatch({
+    # Use base R read.csv - read all as character
+    data <- read.csv(
+      csv_file, 
+      stringsAsFactors = FALSE,
+      colClasses = "character",  # Force all columns as character
+      nrows = 10000,
+      na.strings = character(0)  # Don't convert anything to NA automatically
+    )
+    
+    if (!var_name %in% names(data)) return(result)
+    
+    col_data <- data[[var_name]]
+    
+    # Comprehensive NA values
+    na_values <- c("", "NA", "N/A", "na", "n/a", "null", "NULL", "Null", 
+                   "None", "none", "NONE", "undefined", "NaN", "-999", 
+                   "missing", ".", "-")
+    
+    # Trim whitespace
+    col_data <- trimws(col_data)
+    
+    # Filter NA-like values
+    is_na <- is.na(col_data) | (col_data %in% na_values)
+    col_clean <- col_data[!is_na]
+    n_total <- length(col_data)
+    n_clean <- length(col_clean)
+    
+    if (n_clean == 0) return(result)
+    
+    n_unique <- length(unique(col_clean))
+    uniqueness_ratio <- n_unique / n_clean
+    completeness <- n_clean / n_total
+    
+    result$required <- completeness > 0.95
+    result$unique <- n_unique == n_clean
+    
+    # STEP 1: Identifier check
+    if (detect_identifier(var_name, uniqueness_ratio, n_unique, n_clean)) {
+      result$type <- "string"
+      result$unique <- TRUE
+      return(result)
+    }
+    
+    # STEP 2: JSON check
+    json_check <- detect_json_strings(col_clean)
+    if (json_check$is_json) {
+      result$type <- "string"
+      result$pattern <- json_check$pattern
+      return(result)
+    }
+    
+    # STEP 3: Boolean check
+    boolean_result <- detect_boolean(col_clean, n_unique, var_name)
+    if (boolean_result$is_boolean) {
+      result$type <- "boolean"
+      result$categorical_values <- boolean_result$values
+      return(result)
+    }
+    
+    # STEP 4: Numeric check
+    numeric_parsed <- try_parse_numeric(col_clean)
+    if (numeric_parsed$success) {
+      col_numeric <- numeric_parsed$values
+      n_unique_num <- length(unique(col_numeric))
+      uniqueness_ratio_num <- n_unique_num / length(col_numeric)
+      
+      numeric_result <- analyze_numeric(col_numeric, var_name, n_unique_num, uniqueness_ratio_num)
+      return(modifyList(result, numeric_result))
+    }
+    
+    # STEP 5: String/categorical check (skip date detection for simplicity)
+    string_result <- analyze_string(col_clean, var_name, n_unique, uniqueness_ratio, n_clean)
+    return(modifyList(result, string_result))
+    
+  }, error = function(e) {
+    warning(paste("Error analyzing", var_name, ":", e$message))
+    result
+  })
+}
+
+# =========================================================================
+# generateDescription
+# =========================================================================
+generateDescription <- function(var_name, var_analysis) {
+  var_lower <- tolower(var_name)
+  
+  if (grepl("^(participant|subject|sub)_?(id|ID|Id)$|\\bparticipant_?id\\b", var_name)) {
+    return("Unique identifier for each participant in the study")
+  }
+  if (grepl("\\bchild_?id\\b", var_lower)) return("Unique identifier for each child participant")
+  if (grepl("\\bsession_?id\\b", var_lower)) return("Unique identifier for each session")
+  if (grepl("\\btrial_?id\\b", var_lower)) return("Unique identifier for each trial")
+  if (grepl("\\btrial_?type\\b", var_lower)) return("Type of trial or experimental event")
+  if (grepl("\\btrial_?index\\b|\\btrial_?num(ber)?\\b", var_lower)) {
+    return("Sequential trial number within the experiment")
+  }
+  if (grepl("\\btrial\\b", var_lower) && !grepl("type|index|id", var_lower)) {
+    return("Trial number or trial identifier")
+  }
+  if (grepl("\\brt\\b|\\breaction_?time\\b|\\bresponse_?time\\b", var_lower)) {
+    return("Response time or reaction time measurement")
+  }
+  if (grepl("\\btime_?elapsed\\b|\\belapsed_?time\\b", var_lower)) {
+    return("Total time elapsed since experiment start")
+  }
+  if (grepl("\\btimestamp\\b", var_lower)) return("Timestamp of the event")
+  if (grepl("\\btimeout\\b", var_lower)) return("Whether the trial timed out")
+  if (grepl("\\bduration\\b", var_lower)) return("Duration of the event")
+  if (grepl("\\bresponse\\b", var_lower) && !grepl("time", var_lower)) {
+    return("Participant response or response value")
+  }
+  if (grepl("\\baccuracy\\b|\\bcorrect\\b|\\bacc\\b", var_lower)) {
+    return("Accuracy or correctness of response")
+  }
+  if (grepl("\\bsuccess\\b", var_lower)) return("Whether the action was successful")
+  if (grepl("\\bcondition\\b", var_lower)) return("Experimental condition or group assignment")
+  if (grepl("\\bgroup\\b", var_lower)) return("Group assignment")
+  if (grepl("\\bblock\\b", var_lower)) return("Block number in the experimental design")
+  if (grepl("\\bsession\\b", var_lower) && !grepl("id", var_lower)) {
+    return("Session number or session identifier")
+  }
+  if (grepl("\\bstimulus\\b|\\bstim\\b", var_lower)) {
+    return("Stimulus identifier or stimulus information")
+  }
+  if (grepl("\\bage\\b", var_lower)) return("Age of the participant")
+  if (grepl("\\bgender\\b|\\bsex\\b", var_lower)) {
+    return("Gender or biological sex of the participant")
+  }
+  if (grepl("\\bscore\\b|\\brating\\b", var_lower)) return("Score or rating value")
+  if (grepl("internal_node_id", var_lower)) {
+    return("Internal node identifier from the experiment framework")
+  }
+  if (grepl("^failed_", var_lower)) {
+    resource_type <- sub("^failed_", "", var_lower)
+    return(paste0("List of ", resource_type, " resources that failed to load"))
+  }
+  
+  type_desc <- switch(
+    var_analysis$type,
+    "integer" = "Numeric variable (whole numbers)",
+    "number" = "Numeric variable (decimal numbers)",
+    "boolean" = "Boolean variable (true/false)",
+    "categorical" = "Categorical variable",
+    "string" = "Text variable",
+    "Unknown variable type"
+  )
+  
+  paste0("Variable: ", var_name, " - ", type_desc)
+}
 
 #' Data Dictionary Server Module
 #'
@@ -4717,206 +5006,206 @@ validateServer <- function(id, state, session) {
 #' @param session The current session object
 dataDictionaryServer <- function(id, state, session) {
   moduleServer(id, function(input, output, session) {
+
+# Reactive values for dictionary state
+dictionary_state <- reactiveValues(
+  dataset_path = NULL,
+  variables = list(),
+  current_variable = NULL,
+  variable_data = list(),
+  is_modified = FALSE,
+  editing_cat_index = NULL,  # Add this for tracking which categorical value is being edited
+  missing_values = c("NA", "N/A", "null", "NULL", "-999", "missing", "")
+)
+
+# Initialize categorical values storage for current variable
+categorical_values <- reactiveVal(list())
+
+# Function to save current variable state
+saveCurrentVariable <- function() {
+  if (!is.null(dictionary_state$current_variable)) {
+    var_name <- dictionary_state$current_variable
     
-    # Reactive values for dictionary state
-    dictionary_state <- reactiveValues(
-      dataset_path = NULL,
-      variables = list(),
-      current_variable = NULL,
-      variable_data = list(),
-      is_modified = FALSE,
-      editing_cat_index = NULL,  # Add this for tracking which categorical value is being edited
-      missing_values = c("NA", "N/A", "null", "NULL", "-999", "missing", "")
-    )
-
-    # Initialize categorical values storage for current variable
-    categorical_values <- reactiveVal(list())
-
-    # Function to save current variable state
-    saveCurrentVariable <- function() {
-      if (!is.null(dictionary_state$current_variable)) {
-        var_name <- dictionary_state$current_variable
-        
-        # Update variable data including new fields
-        dictionary_state$variables[[var_name]]$description <- input$var_description %||% ""
-        dictionary_state$variables[[var_name]]$type <- input$var_type %||% "string"
-        dictionary_state$variables[[var_name]]$unit <- input$var_unit %||% ""
-        
-        # Only save min/max if checkbox is enabled
-        if (input$var_use_minmax %||% FALSE) {
-          dictionary_state$variables[[var_name]]$min_value <- input$var_min %||% ""
-          dictionary_state$variables[[var_name]]$max_value <- input$var_max %||% ""
-        } else {
-          dictionary_state$variables[[var_name]]$min_value <- ""
-          dictionary_state$variables[[var_name]]$max_value <- ""
-        }
-        
-        dictionary_state$variables[[var_name]]$value_reference <- input$var_value_reference %||% ""
-        dictionary_state$variables[[var_name]]$default_value <- input$var_default %||% ""
-        dictionary_state$variables[[var_name]]$required <- input$var_required %||% FALSE
-        dictionary_state$variables[[var_name]]$unique <- input$var_unique %||% FALSE
-        dictionary_state$variables[[var_name]]$pattern <- input$var_pattern %||% ""
-        dictionary_state$variables[[var_name]]$source <- input$var_source %||% ""
-        dictionary_state$variables[[var_name]]$notes <- input$var_notes %||% ""
-        
-        # Save categorical values
-        cat_values <- categorical_values()
-        dictionary_state$variables[[var_name]]$categorical_values <- cat_values
-        
-        dictionary_state$is_modified <- TRUE
-      }
+    # Update variable data including new fields
+    dictionary_state$variables[[var_name]]$description <- input$var_description %||% ""
+    dictionary_state$variables[[var_name]]$type <- input$var_type %||% "string"
+    dictionary_state$variables[[var_name]]$unit <- input$var_unit %||% ""
+    
+    # Only save min/max if checkbox is enabled
+    if (input$var_use_minmax %||% FALSE) {
+      dictionary_state$variables[[var_name]]$min_value <- input$var_min %||% ""
+      dictionary_state$variables[[var_name]]$max_value <- input$var_max %||% ""
+    } else {
+      dictionary_state$variables[[var_name]]$min_value <- ""
+      dictionary_state$variables[[var_name]]$max_value <- ""
     }
-
-    observeEvent(input$remove_missing_value, {
-      index <- input$remove_missing_value
-      current_values <- dictionary_state$missing_values
-      
-      if (!is.null(index) && index > 0 && index <= length(current_values)) {
-        dictionary_state$missing_values <- current_values[-index]
-        showNotification("Missing value code removed", type = "message")
-      }
-    }, ignoreInit = TRUE)
     
-    # Track if dataset is loaded
-    output$dataset_loaded <- reactive({
-      !is.null(dictionary_state$dataset_path)
-    })
-    outputOptions(output, "dataset_loaded", suspendWhenHidden = FALSE)
+    dictionary_state$variables[[var_name]]$value_reference <- input$var_value_reference %||% ""
+    dictionary_state$variables[[var_name]]$default_value <- input$var_default %||% ""
+    dictionary_state$variables[[var_name]]$required <- input$var_required %||% FALSE
+    dictionary_state$variables[[var_name]]$unique <- input$var_unique %||% FALSE
+    dictionary_state$variables[[var_name]]$pattern <- input$var_pattern %||% ""
+    dictionary_state$variables[[var_name]]$source <- input$var_source %||% ""
+    dictionary_state$variables[[var_name]]$notes <- input$var_notes %||% ""
     
-    # Track if variable is selected  
-    output$variable_selected <- reactive({
-      !is.null(dictionary_state$current_variable)
-    })
-    outputOptions(output, "variable_selected", suspendWhenHidden = FALSE)
+    # Save categorical values
+    cat_values <- categorical_values()
+    dictionary_state$variables[[var_name]]$categorical_values <- cat_values
+    
+    dictionary_state$is_modified <- TRUE
+  }
+}
 
-    output$missing_values_table <- renderUI({
-      values <- dictionary_state$missing_values
-      
-      if (length(values) == 0) {
-        return(div(
-          style = "padding: 20px; text-align: center; color: #6c757d;",
-          "No missing value codes defined. Add common codes like NA, -999, etc."
-        ))
-      }
-      
-      rows <- lapply(seq_along(values), function(i) {
-        div(
-          style = "display: flex; padding: 8px; border-bottom: 1px solid #ced4da; align-items: center;",
-          div(style = "flex: 3; padding-right: 10px; font-family: monospace;", values[i]),
-          div(
-            style = "flex: 0; width: 60px;",
-            actionButton(
-              session$ns(paste0("remove_missing_", i)),
-              label = NULL,
-              icon = icon("trash"),
-              class = "btn btn-sm btn-danger",
-              style = "padding: 2px 6px;",
-              onclick = paste0("Shiny.setInputValue('", session$ns("remove_missing_value"), "', ", i, ", {priority: 'event'});")
-            )
-          )
+observeEvent(input$remove_missing_value, {
+  index <- input$remove_missing_value
+  current_values <- dictionary_state$missing_values
+  
+  if (!is.null(index) && index > 0 && index <= length(current_values)) {
+    dictionary_state$missing_values <- current_values[-index]
+    showNotification("Missing value code removed", type = "message")
+  }
+}, ignoreInit = TRUE)
+
+# Track if dataset is loaded
+output$dataset_loaded <- reactive({
+  !is.null(dictionary_state$dataset_path)
+})
+outputOptions(output, "dataset_loaded", suspendWhenHidden = FALSE)
+
+# Track if variable is selected  
+output$variable_selected <- reactive({
+  !is.null(dictionary_state$current_variable)
+})
+outputOptions(output, "variable_selected", suspendWhenHidden = FALSE)
+
+output$missing_values_table <- renderUI({
+  values <- dictionary_state$missing_values
+  
+  if (length(values) == 0) {
+    return(div(
+      style = "padding: 20px; text-align: center; color: #6c757d;",
+      "No missing value codes defined. Add common codes like NA, -999, etc."
+    ))
+  }
+  
+  rows <- lapply(seq_along(values), function(i) {
+    div(
+      style = "display: flex; padding: 8px; border-bottom: 1px solid #ced4da; align-items: center;",
+      div(style = "flex: 3; padding-right: 10px; font-family: monospace;", values[i]),
+      div(
+        style = "flex: 0; width: 60px;",
+        actionButton(
+          session$ns(paste0("remove_missing_", i)),
+          label = NULL,
+          icon = icon("trash"),
+          class = "btn btn-sm btn-danger",
+          style = "padding: 2px 6px;",
+          onclick = paste0("Shiny.setInputValue('", session$ns("remove_missing_value"), "', ", i, ", {priority: 'event'});")
         )
-      })
-      
-      do.call(tagList, rows)
-    })
-    
-    # Add missing value
-    observeEvent(input$add_missing_value, {
-      if (!is.null(input$new_missing_value) && input$new_missing_value != "") {
-        current_values <- dictionary_state$missing_values
-        
-        # Check for duplicates
-        if (input$new_missing_value %in% current_values) {
-          showNotification("This missing value code already exists", type = "warning")
-          return()
-        }
-        
-        # Add new value
-        dictionary_state$missing_values <- c(current_values, input$new_missing_value)
-        
-        # Clear input
-        updateTextInput(session, "new_missing_value", value = "")
-        
-        showNotification("Missing value code added", type = "message")
-      } else {
-        showNotification("Please enter a value", type = "warning")
-      }
-    })
-    
-    # Handler for Generate Human-Readable Dictionary button
-    observeEvent(input$generate_dictionary, {
-      req(dictionary_state$dataset_path)
-      
-      ns <- session$ns
-      
-      showModal(modalDialog(
-        title = "Generate Data Dictionary",
-        size = "m",
-        
-        tags$div(
-          tags$p("Generate a professional, printable data dictionary with all variable 
-                  definitions, descriptions, and metadata."),
-          tags$br(),
-          tags$div(
-            class = "alert alert-info",
-            style = "margin-bottom: 15px;",
-            icon("file-alt", style = "margin-right: 8px;"),
-            tags$strong("Format: "), "HTML Document",
-            tags$br(),
-            tags$small("Open in any browser • Print to PDF with Ctrl+P / Cmd+P")
-          )
-        ),
-        
-        checkboxInput(
-          inputId = ns("include_stats"),
-          label = "Include summary statistics (if available)",
-          value = TRUE
-        ),
-        
-        checkboxInput(
-          inputId = ns("include_missing"),
-          label = "Include global missing value codes",
-          value = TRUE
-        ),
-        
-        footer = tagList(
-          modalButton("Cancel"),
-          actionButton(
-            inputId = ns("confirm_generate"), 
-            label = "Generate Dictionary", 
-            class = "btn-primary",
-            icon = icon("file-alt")
-          )
-        )
-      ))
-    })
+      )
+    )
+  })
+  
+  do.call(tagList, rows)
+})
 
-    observeEvent(input$setup_pdf, {
-      removeModal()
-      
-      showModal(modalDialog(
-        title = "Setup PDF Generation",
-        size = "m",
-        
-        tags$div(
-          tags$h4("To enable PDF generation, run this in your R console:"),
-          tags$pre(
-            style = "background-color: #f5f5f5; padding: 10px; border-radius: 4px;",
-            "# Recommended: Install TinyTeX (lightweight LaTeX)\n",
-            "psychds::setup_pdf_generation()\n\n",
-            "# Or manually:\n",
-            "install.packages('tinytex')\n",
-            "tinytex::install_tinytex()"
-          ),
-          tags$hr(),
-          tags$p("After installation, restart your R session and try again."),
-          tags$p("Alternative: You can always generate HTML and print to PDF from your browser.")
-        ),
-        
-        footer = modalButton("Close"),
-        easyClose = TRUE
-      ))
-    })
+# Add missing value
+observeEvent(input$add_missing_value, {
+  if (!is.null(input$new_missing_value) && input$new_missing_value != "") {
+    current_values <- dictionary_state$missing_values
+    
+    # Check for duplicates
+    if (input$new_missing_value %in% current_values) {
+      showNotification("This missing value code already exists", type = "warning")
+      return()
+    }
+    
+    # Add new value
+    dictionary_state$missing_values <- c(current_values, input$new_missing_value)
+    
+    # Clear input
+    updateTextInput(session, "new_missing_value", value = "")
+    
+    showNotification("Missing value code added", type = "message")
+  } else {
+    showNotification("Please enter a value", type = "warning")
+  }
+})
+
+# Handler for Generate Human-Readable Dictionary button
+observeEvent(input$generate_dictionary, {
+  req(dictionary_state$dataset_path)
+  
+  ns <- session$ns
+  
+  showModal(modalDialog(
+    title = "Generate Data Dictionary",
+    size = "m",
+    
+    tags$div(
+      tags$p("Generate a professional, printable data dictionary with all variable 
+              definitions, descriptions, and metadata."),
+      tags$br(),
+      tags$div(
+        class = "alert alert-info",
+        style = "margin-bottom: 15px;",
+        icon("file-alt", style = "margin-right: 8px;"),
+        tags$strong("Format: "), "HTML Document",
+        tags$br(),
+        tags$small("Open in any browser • Print to PDF with Ctrl+P / Cmd+P")
+      )
+    ),
+    
+    checkboxInput(
+      inputId = ns("include_stats"),
+      label = "Include summary statistics (if available)",
+      value = TRUE
+    ),
+    
+    checkboxInput(
+      inputId = ns("include_missing"),
+      label = "Include global missing value codes",
+      value = TRUE
+    ),
+    
+    footer = tagList(
+      modalButton("Cancel"),
+      actionButton(
+        inputId = ns("confirm_generate"), 
+        label = "Generate Dictionary", 
+        class = "btn-primary",
+        icon = icon("file-alt")
+      )
+    )
+  ))
+})
+
+observeEvent(input$setup_pdf, {
+  removeModal()
+  
+  showModal(modalDialog(
+    title = "Setup PDF Generation",
+    size = "m",
+    
+    tags$div(
+      tags$h4("To enable PDF generation, run this in your R console:"),
+      tags$pre(
+        style = "background-color: #f5f5f5; padding: 10px; border-radius: 4px;",
+        "# Recommended: Install TinyTeX (lightweight LaTeX)\n",
+        "psychds::setup_pdf_generation()\n\n",
+        "# Or manually:\n",
+        "install.packages('tinytex')\n",
+        "tinytex::install_tinytex()"
+      ),
+      tags$hr(),
+      tags$p("After installation, restart your R session and try again."),
+      tags$p("Alternative: You can always generate HTML and print to PDF from your browser.")
+    ),
+    
+    footer = modalButton("Close"),
+    easyClose = TRUE
+  ))
+})
 
 # Handler for confirming generation
 observeEvent(input$confirm_generate, {
@@ -4926,75 +5215,75 @@ observeEvent(input$confirm_generate, {
   saveCurrentVariable()
   
   prog_id <- showNotification(
-    "Generating data dictionary...", 
-    duration = NULL, 
-    type = "message",
-    closeButton = FALSE
+"Generating data dictionary...", 
+duration = NULL, 
+type = "message",
+closeButton = FALSE
   )
   
   dict_data <- list(
-    variables = dictionary_state$variables,
-    missing_values = if(isTRUE(input$include_missing)) dictionary_state$missing_values else NULL
+variables = dictionary_state$variables,
+missing_values = if(isTRUE(input$include_missing)) dictionary_state$missing_values else NULL
   )
   
   dataset_info <- NULL
   desc_file <- file.path(dictionary_state$dataset_path, "dataset_description.json")
   if (file.exists(desc_file)) {
-    tryCatch({
-      dataset_info <- jsonlite::fromJSON(desc_file, simplifyVector = FALSE)
-    }, error = function(e) {})
+tryCatch({
+  dataset_info <- jsonlite::fromJSON(desc_file, simplifyVector = FALSE)
+}, error = function(e) {})
   }
   
   output_file <- file.path(
-    dictionary_state$dataset_path,
-    paste0("data_dictionary_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".html")
+dictionary_state$dataset_path,
+paste0("data_dictionary_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".html")
   )
   
   result <- generate_dictionary_html(
-    dictionary_data = dict_data,
-    dataset_info = dataset_info,
-    output_file = output_file,
-    include_stats = input$include_stats
+dictionary_data = dict_data,
+dataset_info = dataset_info,
+output_file = output_file,
+include_stats = input$include_stats
   )
   
   removeNotification(prog_id)
   
   if (result$success) {
-    showModal(modalDialog(
-      title = "Success!",
-      size = "m",
-      
-      tags$div(
-        tags$div(
-          style = "text-align: center; margin-bottom: 20px;",
-          icon("check-circle", style = "font-size: 48px; color: #28a745;")
-        ),
-        tags$h4("Dictionary Generated!", style = "text-align: center; color: #28a745;"),
-        tags$hr(),
-        tags$p("Saved to:"),
-        tags$div(
-          style = "background-color: #f8f9fa; padding: 12px; border-radius: 6px; 
-                   margin: 15px 0; word-break: break-all;",
-          tags$code(style = "font-size: 12px;", result$file)
-        ),
-        tags$div(
-          class = "alert alert-info",
-          style = "margin-top: 15px;",
-          icon("lightbulb", style = "margin-right: 8px;"),
-          "Open in browser, then press ", tags$kbd("Ctrl+P"), " / ", 
-          tags$kbd("Cmd+P"), " to save as PDF."
-        )
-      ),
-      
-      footer = modalButton("Close"),
-      easyClose = TRUE
-    ))
-  } else {
-    showNotification(
-      paste("Failed to generate dictionary:", result$error),
-      type = "error",
-      duration = 10
+showModal(modalDialog(
+  title = "Success!",
+  size = "m",
+  
+  tags$div(
+    tags$div(
+      style = "text-align: center; margin-bottom: 20px;",
+      icon("check-circle", style = "font-size: 48px; color: #28a745;")
+    ),
+    tags$h4("Dictionary Generated!", style = "text-align: center; color: #28a745;"),
+    tags$hr(),
+    tags$p("Saved to:"),
+    tags$div(
+      style = "background-color: #f8f9fa; padding: 12px; border-radius: 6px; 
+               margin: 15px 0; word-break: break-all;",
+      tags$code(style = "font-size: 12px;", result$file)
+    ),
+    tags$div(
+      class = "alert alert-info",
+      style = "margin-top: 15px;",
+      icon("lightbulb", style = "margin-right: 8px;"),
+      "Open in browser, then press ", tags$kbd("Ctrl+P"), " / ", 
+      tags$kbd("Cmd+P"), " to save as PDF."
     )
+  ),
+  
+  footer = modalButton("Close"),
+  easyClose = TRUE
+))
+  } else {
+showNotification(
+  paste("Failed to generate dictionary:", result$error),
+  type = "error",
+  duration = 10
+)
   }
 })
 
@@ -5020,1328 +5309,1398 @@ observeEvent(input$confirm_generate, {
   #' @param format Requested format ("pdf", "html", "auto")
   #' @return List with status and file path
   generate_dictionary <- function(dictionary_data, 
-                                      dataset_info = NULL,
-                                      output_file = NULL,
-                                      include_stats = TRUE,
-                                      format = "auto") {
+                                  dataset_info = NULL,
+                                  output_file = NULL,
+                                  include_stats = TRUE,
+                                  format = "auto") {
+
+# Check capabilities
+caps <- check_pdf_capabilities()
+
+# Determine actual format based on capabilities
+actual_format <- format
+method_used <- NULL
+
+if (format == "pdf" || format == "auto") {
+  if (caps$has_rmarkdown && caps$has_system_latex) {
+    # Best option: Use LaTeX (either TinyTeX or system)
+    actual_format <- "pdf"
+    method_used <- if (caps$has_tinytex) "TinyTeX" else "System LaTeX"
     
-    # Check capabilities
-    caps <- check_pdf_capabilities()
+  } else if (caps$has_pagedown) {
+    # Good option: Use pagedown
+    actual_format <- "pdf"
+    method_used <- "pagedown (Chrome-based)"
     
-    # Determine actual format based on capabilities
-    actual_format <- format
-    method_used <- NULL
+  } else {
+    # Fallback: HTML only
+    actual_format <- "html"
+    method_used <- "HTML (PDF not available)"
     
-    if (format == "pdf" || format == "auto") {
-      if (caps$has_rmarkdown && caps$has_system_latex) {
-        # Best option: Use LaTeX (either TinyTeX or system)
-        actual_format <- "pdf"
-        method_used <- if (caps$has_tinytex) "TinyTeX" else "System LaTeX"
-        
-      } else if (caps$has_pagedown) {
-        # Good option: Use pagedown
-        actual_format <- "pdf"
-        method_used <- "pagedown (Chrome-based)"
-        
-      } else {
-        # Fallback: HTML only
-        actual_format <- "html"
-        method_used <- "HTML (PDF not available)"
-        
-        if (format == "pdf") {
-          # User specifically requested PDF but we can't do it
-          message("PDF generation not available, creating HTML instead")
-        }
-      }
-    } else {
-      actual_format <- "html"
-      method_used <- "HTML (requested)"
+    if (format == "pdf") {
+      # User specifically requested PDF but we can't do it
+      message("PDF generation not available, creating HTML instead")
     }
+  }
+} else {
+  actual_format <- "html"
+  method_used <- "HTML (requested)"
+}
+
+# Set output file with correct extension
+if (is.null(output_file)) {
+  timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
+  extension <- if (actual_format == "pdf") ".pdf" else ".html"
+  output_file <- paste0("data_dictionary_", timestamp, extension)
+} else {
+  # Ensure correct extension
+  if (actual_format == "pdf" && !grepl("\\.pdf$", output_file)) {
+    output_file <- gsub("\\.[^.]+$", ".pdf", output_file)
+  } else if (actual_format == "html" && !grepl("\\.html$", output_file)) {
+    output_file <- gsub("\\.[^.]+$", ".html", output_file)
+  }
+}
+
+# Generate based on selected method
+result <- tryCatch({
+  
+  if (actual_format == "pdf" && method_used == "pagedown (Chrome-based)") {
+    # Use pagedown method
+    message("Generating PDF using pagedown...")
     
-    # Set output file with correct extension
-    if (is.null(output_file)) {
-      timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-      extension <- if (actual_format == "pdf") ".pdf" else ".html"
-      output_file <- paste0("data_dictionary_", timestamp, extension)
-    } else {
-      # Ensure correct extension
-      if (actual_format == "pdf" && !grepl("\\.pdf$", output_file)) {
-        output_file <- gsub("\\.[^.]+$", ".pdf", output_file)
-      } else if (actual_format == "html" && !grepl("\\.html$", output_file)) {
-        output_file <- gsub("\\.[^.]+$", ".html", output_file)
-      }
-    }
+    generated_file <- generate_pdf_dictionary_pagedown(
+      dictionary_data = dictionary_data,
+      dataset_info = dataset_info,
+      output_file = output_file,
+      include_stats = include_stats
+    )
     
-    # Generate based on selected method
-    result <- tryCatch({
-      
-      if (actual_format == "pdf" && method_used == "pagedown (Chrome-based)") {
-        # Use pagedown method
-        message("Generating PDF using pagedown...")
-        
-        generated_file <- generate_pdf_dictionary_pagedown(
-          dictionary_data = dictionary_data,
-          dataset_info = dataset_info,
-          output_file = output_file,
-          include_stats = include_stats
-        )
-        
-      } else if (actual_format == "pdf" && caps$has_rmarkdown) {
-        # Use standard rmarkdown/LaTeX method
-        message(paste0("Generating PDF using ", method_used, "..."))
-        
-        generated_file <- generate_pdf_dictionary(
-          dictionary_data = dictionary_data,
-          dataset_info = dataset_info,
-          output_file = output_file,
-          include_stats = include_stats
-        )
-        
-      } else if (caps$has_rmarkdown) {
-        # Generate nice HTML using rmarkdown
-        message("Generating HTML document using rmarkdown...")
-        
-        # Force HTML output in the standard generator
-        html_file <- gsub("\\.pdf$", ".html", output_file)
-        generated_file <- generate_pdf_dictionary(
-          dictionary_data = dictionary_data,
-          dataset_info = dataset_info,
-          output_file = html_file,
-          include_stats = include_stats
-        )
-        
-      } else {
-        # Use simple HTML generator
-        message("Generating HTML document...")
-        
-        generated_file <- generate_html_dictionary_simple(
-          dictionary_data = dictionary_data,
-          output_file = output_file
-        )
-      }
+  } else if (actual_format == "pdf" && caps$has_rmarkdown) {
+    # Use standard rmarkdown/LaTeX method
+    message(paste0("Generating PDF using ", method_used, "..."))
+    
+    generated_file <- generate_pdf_dictionary(
+      dictionary_data = dictionary_data,
+      dataset_info = dataset_info,
+      output_file = output_file,
+      include_stats = include_stats
+    )
+    
+  } else if (caps$has_rmarkdown) {
+    # Generate nice HTML using rmarkdown
+    message("Generating HTML document using rmarkdown...")
+    
+    # Force HTML output in the standard generator
+    html_file <- gsub("\\.pdf$", ".html", output_file)
+    generated_file <- generate_pdf_dictionary(
+      dictionary_data = dictionary_data,
+      dataset_info = dataset_info,
+      output_file = html_file,
+      include_stats = include_stats
+    )
+    
+  } else {
+    # Use simple HTML generator
+    message("Generating HTML document...")
+    
+    generated_file <- generate_html_dictionary_simple(
+      dictionary_data = dictionary_data,
+      output_file = output_file
+    )
+  }
+  
+  list(
+    success = TRUE,
+    file = generated_file,
+    format = actual_format,
+    method = method_used
+  )
+  
+}, error = function(e) {
+  # If primary method fails, try fallback
+  if (actual_format == "pdf") {
+    message("PDF generation failed, falling back to HTML...")
+    
+    # Try simple HTML as last resort
+    tryCatch({
+      generated_file <- generate_html_dictionary_simple(
+        dictionary_data = dictionary_data,
+        output_file = gsub("\\.pdf$", ".html", output_file)
+      )
       
       list(
         success = TRUE,
         file = generated_file,
-        format = actual_format,
-        method = method_used
+        format = "html",
+        method = "HTML (fallback)",
+        warning = paste("PDF generation failed:", e$message)
       )
       
-    }, error = function(e) {
-      # If primary method fails, try fallback
-      if (actual_format == "pdf") {
-        message("PDF generation failed, falling back to HTML...")
-        
-        # Try simple HTML as last resort
-        tryCatch({
-          generated_file <- generate_html_dictionary_simple(
-            dictionary_data = dictionary_data,
-            output_file = gsub("\\.pdf$", ".html", output_file)
-          )
-          
-          list(
-            success = TRUE,
-            file = generated_file,
-            format = "html",
-            method = "HTML (fallback)",
-            warning = paste("PDF generation failed:", e$message)
-          )
-          
-        }, error = function(e2) {
-          list(
-            success = FALSE,
-            error = e2$message,
-            format = NULL,
-            method = NULL
-          )
-        })
-        
-      } else {
-        list(
-          success = FALSE,
-          error = e$message,
-          format = actual_format,
-          method = method_used
-        )
-      }
+    }, error = function(e2) {
+      list(
+        success = FALSE,
+        error = e2$message,
+        format = NULL,
+        method = NULL
+      )
     })
     
-    return(result)
+  } else {
+    list(
+      success = FALSE,
+      error = e$message,
+      format = actual_format,
+      method = method_used
+    )
+  }
+})
+
+return(result)
   }
 
-    # Handler for download button (appears in success modal)
-    output$download_dict <- downloadHandler(
-      filename = function() {
-        if (input$output_format == "pdf") {
-          paste0("data_dictionary_", format(Sys.Date(), "%Y%m%d"), ".pdf")
-        } else {
-          paste0("data_dictionary_", format(Sys.Date(), "%Y%m%d"), ".html")
-        }
-      },
-      content = function(file) {
-        # The file has already been generated, just copy it
-        generated_file <- if (input$output_format == "pdf") {
-          list.files(dictionary_state$dataset_path, 
-                    pattern = "data_dictionary.*\\.pdf$", 
-                    full.names = TRUE)[1]
-        } else {
-          list.files(dictionary_state$dataset_path, 
-                    pattern = "data_dictionary.*\\.html$", 
-                    full.names = TRUE)[1]
-        }
-        
-        if (file.exists(generated_file)) {
-          file.copy(generated_file, file, overwrite = TRUE)
-        }
-      }
+# Handler for download button (appears in success modal)
+output$download_dict <- downloadHandler(
+  filename = function() {
+    if (input$output_format == "pdf") {
+      paste0("data_dictionary_", format(Sys.Date(), "%Y%m%d"), ".pdf")
+    } else {
+      paste0("data_dictionary_", format(Sys.Date(), "%Y%m%d"), ".html")
+    }
+  },
+  content = function(file) {
+    # The file has already been generated, just copy it
+    generated_file <- if (input$output_format == "pdf") {
+      list.files(dictionary_state$dataset_path, 
+                pattern = "data_dictionary.*\\.pdf$", 
+                full.names = TRUE)[1]
+    } else {
+      list.files(dictionary_state$dataset_path, 
+                pattern = "data_dictionary.*\\.html$", 
+                full.names = TRUE)[1]
+    }
+    
+    if (file.exists(generated_file)) {
+      file.copy(generated_file, file, overwrite = TRUE)
+    }
+  }
+)
+
+# Handler for "Generate Another Format" button
+observeEvent(input$generate_another, {
+  removeModal()
+  # Trigger the generate dialog again
+  shinyjs::click("generate_dictionary")
+})
+
+# Handler for "Try HTML Instead" button (shown on PDF failure)
+observeEvent(input$try_html_instead, {
+  removeModal()
+  
+  # Update format to simple HTML and regenerate
+  updateRadioButtons(session, "output_format", selected = "simple_html")
+  
+  # Trigger generation with HTML format
+  shinyjs::delay(100, {
+    shinyjs::click("confirm_generate")
+  })
+})
+
+# Display dataset info
+output$dataset_info <- renderUI({
+  if (!is.null(dictionary_state$dataset_path)) {
+    dataset_name <- basename(dictionary_state$dataset_path)
+    variable_count <- length(dictionary_state$variables)
+    
+    div(
+      icon("check-circle", style = "color: #28a745; margin-right: 8px;"),
+      strong("Dataset loaded: "), dataset_name,
+      span(style = "margin-left: 15px; color: #6c757d;",
+           paste(variable_count, "variables detected"))
     )
+  }
+})
 
-    # Handler for "Generate Another Format" button
-    observeEvent(input$generate_another, {
-      removeModal()
-      # Trigger the generate dialog again
-      shinyjs::click("generate_dictionary")
-    })
+# Set up directory selection for modal
+volumes <- c(Home = "~")
+if (.Platform$OS.type == "windows") {
+  volumes <- c(volumes, getVolumes()())
+}
 
-    # Handler for "Try HTML Instead" button (shown on PDF failure)
-    observeEvent(input$try_html_instead, {
-      removeModal()
+shinyDirChoose(
+  input,
+  "dataset_dir_select", 
+  roots = volumes,
+  session = session,
+  restrictions = system.file(package = "base")
+)
+
+observeEvent(input$dataset_dir_select, {
+  if (!is.null(input$dataset_dir_select)) {
+    selected_dir <- parseDirPath(volumes, input$dataset_dir_select)
+    if (length(selected_dir) > 0 && selected_dir != "") {
+      updateTextInput(session, "dataset_dir", value = selected_dir)
+    }
+  }
+})
+
+# Load dataset when button clicked
+observeEvent(input$load_dataset_btn, {
+  dataset_path <- input$dataset_dir
+  
+  if (dataset_path == "" || !dir.exists(dataset_path)) {
+    showNotification("Please select a valid dataset directory", type = "error")
+    return()
+  }
+  
+  # Check if it's a valid Psych-DS dataset
+  if (!file.exists(file.path(dataset_path, "dataset_description.json"))) {
+    showNotification("Selected directory does not contain dataset_description.json", type = "error")
+    return()
+  }
+  
+  if (!dir.exists(file.path(dataset_path, "data"))) {
+    showNotification("Selected directory does not contain a 'data' folder", type = "error") 
+    return()
+  }
+  
+  # Load variables from CSV files
+  tryCatch({
+    variables <- extractVariablesFromDataset(dataset_path)
+    
+    # Load existing metadata from JSON and merge with auto-detected info
+    variables <- loadExistingMetadata(dataset_path, variables)
+    
+    dictionary_state$dataset_path <- dataset_path
+    dictionary_state$variables <- variables
+    dictionary_state$current_variable <- NULL
+    
+    removeModal()
+    showNotification("Dataset loaded successfully! Running validation...", type = "message")
+    
+    # Store current validation result (if any) before starting new validation
+    # This lets us ignore it and only process NEW results
+    parent_session <- session$rootScope()
+    if (!is.null(parent_session) && !is.null(parent_session$input$validation_results)) {
+      old_result <- isolate(parent_session$input$validation_results)
+      dict_validation$last_validation_result <- old_result
+      cat("=== Data dictionary starting validation ===\n")
+      cat("  Stored old validation result to ignore it\n")
+    } else {
+      dict_validation$last_validation_result <- NULL
+      cat("=== Data dictionary starting validation ===\n")
+      cat("  No old validation result to ignore\n")
+    }
+    
+    # Run validation using JavaScript validator
+    dict_validation$is_validating <- TRUE
+    dict_validation$is_complete <- FALSE
+    dict_validation$validation_start_time <- Sys.time()  # Track when we started
+    cat("  Set dict_validation$is_validating to TRUE\n")
+    cat("  Dataset path:", dataset_path, "\n")
+    
+    tryCatch({
+      # Build file tree for validation - use the SAME format as validateServer
+      file_tree <- buildFileTreeForValidation(dataset_path)
       
-      # Update format to simple HTML and regenerate
-      updateRadioButtons(session, "output_format", selected = "simple_html")
-      
-      # Trigger generation with HTML format
-      shinyjs::delay(100, {
-        shinyjs::click("confirm_generate")
-      })
+      # Send to JavaScript validator using the SAME handler as Validate tab
+      session$sendCustomMessage("run_validation", file_tree)
+      cat("  Sent run_validation message\n")
+    }, error = function(e) {
+      cat("Error building file tree for validation:", e$message, "\n")
+      dict_validation$is_validating <- FALSE
+      showNotification(
+        "Dataset loaded but validation failed. Please check dataset structure.", 
+        type = "warning"
+      )
     })
     
-    # Display dataset info
-    output$dataset_info <- renderUI({
-      if (!is.null(dictionary_state$dataset_path)) {
-        dataset_name <- basename(dictionary_state$dataset_path)
-        variable_count <- length(dictionary_state$variables)
+  }, error = function(e) {
+    showNotification(paste("Error loading dataset:", e$message), type = "error")
+  })
+})
+
+# Function to build file tree for validation
+buildFileTreeForValidation <- function(dataset_path) {
+  # Helper function to read file as text
+  readFileText <- function(file_path) {
+    tryCatch({
+      # Try to read as UTF-8
+      text <- paste(readLines(file_path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
+      return(text)
+    }, error = function(e) {
+      # If that fails, try with different encoding detection
+      tryCatch({
+        text <- paste(readLines(file_path, warn = FALSE), collapse = "\n")
+        # Check if it's valid UTF-8
+        if (validUTF8(text)) {
+          return(text)
+        } else {
+          return("ERROR_ENCODING")
+        }
+      }, error = function(e2) {
+        return("ERROR_READ_FAILED")
+      })
+    })
+  }
+  
+  # Recursive function to build tree
+  buildTree <- function(path, base_path) {
+    items <- list.files(path, all.files = FALSE, full.names = FALSE)
+    tree <- list()
+    
+    for (item in items) {
+      full_path <- file.path(path, item)
+      rel_path <- sub(paste0("^", base_path, "/?"), "", full_path)
+      
+      if (dir.exists(full_path)) {
+        # Directory entry
+        tree[[item]] <- list(
+          type = "directory",
+          contents = buildTree(full_path, base_path)
+        )
+      } else {
+        # File entry
+        file_text <- readFileText(full_path)
         
-        div(
-          icon("check-circle", style = "color: #28a745; margin-right: 8px;"),
-          strong("Dataset loaded: "), dataset_name,
-          span(style = "margin-left: 15px; color: #6c757d;",
-               paste(variable_count, "variables detected"))
+        tree[[item]] <- list(
+          type = "file",
+          file = list(
+            path = paste0("/", rel_path),
+            name = item,
+            text = file_text,
+            size = file.info(full_path)$size
+          )
         )
       }
-    })
-    
-    # Set up directory selection for modal
-    volumes <- c(Home = "~")
-    if (.Platform$OS.type == "windows") {
-      volumes <- c(volumes, getVolumes()())
     }
     
-    shinyDirChoose(
-      input,
-      "dataset_dir_select", 
-      roots = volumes,
-      session = session,
-      restrictions = system.file(package = "base")
-    )
+    return(tree)
+  }
+  
+  # Build tree starting from dataset root
+  file_tree <- buildTree(dataset_path, dataset_path)
+  return(file_tree)
+}
 
-    observeEvent(input$dataset_dir_select, {
-      if (!is.null(input$dataset_dir_select)) {
-        selected_dir <- parseDirPath(volumes, input$dataset_dir_select)
-        if (length(selected_dir) > 0 && selected_dir != "") {
-          updateTextInput(session, "dataset_dir", value = selected_dir)
-        }
-      }
-    })
+# Track validation results for data dictionary
+dict_validation <- reactiveValues(
+  is_validating = FALSE,
+  is_complete = FALSE,
+  is_valid = FALSE,
+  errors = list(),
+  warnings = list(),
+  last_validation_result = NULL,  # Store previous result to detect changes
+  validation_start_time = NULL     # Track when validation started
+)
+
+# Poll for validation results from parent session (same approach as OSF module)
+validation_check <- reactiveTimer(500)  # Check every 500ms
+
+observe({
+  validation_check()  # Trigger on timer
+  
+  # Only check if we're expecting validation results
+  if (!isTRUE(dict_validation$is_validating)) {
+    return()
+  }
+  
+  # Access parent session's validation results
+  parent_session <- session$rootScope()
+  
+  if (!is.null(parent_session) && !is.null(parent_session$input$validation_results)) {
+    validation_result <- isolate(parent_session$input$validation_results)
     
-    # Load dataset when button clicked
-    observeEvent(input$load_dataset_btn, {
-      dataset_path <- input$dataset_dir
+    # Check if this is a DIFFERENT result from what we had when we started
+    # Compare the serialized results to detect any change
+    current_result_json <- jsonlite::toJSON(validation_result, auto_unbox = TRUE)
+    
+    is_different_result <- TRUE
+    if (!is.null(dict_validation$last_validation_result)) {
+      old_result_json <- jsonlite::toJSON(dict_validation$last_validation_result, auto_unbox = TRUE)
       
-      if (dataset_path == "" || !dir.exists(dataset_path)) {
-        showNotification("Please select a valid dataset directory", type = "error")
-        return()
+      if (identical(current_result_json, old_result_json)) {
+        is_different_result <- FALSE
       }
-      
-      # Check if it's a valid Psych-DS dataset
-      if (!file.exists(file.path(dataset_path, "dataset_description.json"))) {
-        showNotification("Selected directory does not contain dataset_description.json", type = "error")
-        return()
-      }
-      
-      if (!dir.exists(file.path(dataset_path, "data"))) {
-        showNotification("Selected directory does not contain a 'data' folder", type = "error") 
-        return()
-      }
-      
-      # Load variables from CSV files
-      tryCatch({
-        variables <- extractVariablesFromDataset(dataset_path)
-        
-        # Load existing metadata from JSON and merge with auto-detected info
-        variables <- loadExistingMetadata(dataset_path, variables)
-        
-        dictionary_state$dataset_path <- dataset_path
-        dictionary_state$variables <- variables
-        dictionary_state$current_variable <- NULL
-        
-        removeModal()
-        showNotification("Dataset loaded successfully! Running validation...", type = "message")
-        
-        # Run validation using JavaScript validator
-        dict_validation$is_validating <- TRUE
-        dict_validation$is_complete <- FALSE
-        
-        tryCatch({
-          # Build file tree for validation
-          file_tree <- buildFileTreeForValidation(dataset_path)
-          
-          # Send to JavaScript validator with custom event name
-          session$sendCustomMessage("run_dict_validation", file_tree)
-        }, error = function(e) {
-          cat("Error building file tree for validation:", e$message, "\n")
-          dict_validation$is_validating <- FALSE
-          showNotification(
-            "Dataset loaded but validation failed. Please check dataset structure.", 
-            type = "warning"
-          )
-        })
-        
-      }, error = function(e) {
-        showNotification(paste("Error loading dataset:", e$message), type = "error")
-      })
-    })
-
-    # Function to build file tree for validation
-    buildFileTreeForValidation <- function(dataset_path) {
-      # Helper function to read file as text
-      readFileText <- function(file_path) {
-        tryCatch({
-          # Try to read as UTF-8
-          text <- paste(readLines(file_path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-          return(text)
-        }, error = function(e) {
-          # If that fails, try with different encoding detection
-          tryCatch({
-            text <- paste(readLines(file_path, warn = FALSE), collapse = "\n")
-            # Check if it's valid UTF-8
-            if (validUTF8(text)) {
-              return(text)
-            } else {
-              return("ERROR_ENCODING")
-            }
-          }, error = function(e2) {
-            return("ERROR_READ_FAILED")
-          })
-        })
-      }
-      
-      # Recursive function to build tree
-      buildTree <- function(path, base_path) {
-        items <- list.files(path, all.files = FALSE, full.names = FALSE)
-        tree <- list()
-        
-        for (item in items) {
-          full_path <- file.path(path, item)
-          rel_path <- sub(paste0("^", base_path, "/?"), "", full_path)
-          
-          if (dir.exists(full_path)) {
-            # Directory entry
-            tree[[item]] <- list(
-              type = "directory",
-              contents = buildTree(full_path, base_path)
-            )
-          } else {
-            # File entry
-            file_text <- readFileText(full_path)
-            
-            tree[[item]] <- list(
-              type = "file",
-              file = list(
-                path = paste0("/", rel_path),
-                name = item,
-                text = file_text,
-                size = file.info(full_path)$size
-              )
-            )
-          }
-        }
-        
-        return(tree)
-      }
-      
-      # Build tree starting from dataset root
-      file_tree <- buildTree(dataset_path, dataset_path)
-      return(file_tree)
     }
     
-    # Track validation results for data dictionary
-    dict_validation <- reactiveValues(
-      is_validating = FALSE,
-      is_complete = FALSE,
-      is_valid = FALSE,
-      errors = list(),
-      warnings = list()
-    )
+    # Check how long we've been waiting
+    time_waiting <- as.numeric(difftime(Sys.time(), dict_validation$validation_start_time, units = "secs"))
     
-    # Listen for validation completion from JavaScript
-    observeEvent(input$dict_validation_complete, {
-      cat("Dictionary validation complete:", input$dict_validation_complete$isValid, "\n")
+    # Process if result is different OR we've been waiting more than 3 seconds
+    # (the timeout handles re-validating the same dataset)
+    if (is_different_result) {
+      # This is a NEW result - process it!
+      cat("=== Data dictionary validation_results observer triggered ===\n")
+      cat("  dict_validation$is_validating:", dict_validation$is_validating, "\n")
+      cat("  validation result valid:", validation_result$valid, "\n")
+      cat("  Processing NEW validation result (result changed)\n")
+      
+      cat("Dictionary validation complete:", validation_result$valid, "\n")
       
       dict_validation$is_validating <- FALSE
       dict_validation$is_complete <- TRUE
-      dict_validation$is_valid <- input$dict_validation_complete$isValid
+      dict_validation$is_valid <- validation_result$valid
+      dict_validation$last_validation_result <- validation_result  # Store for next time
       
-      if (!is.null(input$dict_validation_complete$issues)) {
-        issues <- input$dict_validation_complete$issues
+      if (!is.null(validation_result$issues)) {
+        issues <- validation_result$issues
         dict_validation$errors <- issues$errors %||% list()
         dict_validation$warnings <- issues$warnings %||% list()
       }
-    }, ignoreNULL = TRUE)
-    
-    # Listen for validation step updates
-    observeEvent(input$dict_validation_step, {
-      # Track validation progress if needed
-      cat("Validation step:", input$dict_validation_step$key, "\n")
-    }, ignoreNULL = TRUE)
-    
-    # Render validation status
-    output$validation_status <- renderUI({
-      req(dictionary_state$dataset_path)
+    } else if (time_waiting > 3) {
+      # Result is same, but we've waited long enough - assume it's a re-validation of same dataset
+      cat("=== Data dictionary validation_results observer triggered ===\n")
+      cat("  dict_validation$is_validating:", dict_validation$is_validating, "\n")
+      cat("  validation result valid:", validation_result$valid, "\n")
+      cat("  Processing result after timeout (same dataset re-validated)\n")
       
-      if (dict_validation$is_validating) {
-        div(
-          class = "alert alert-info",
-          style = "margin-bottom: 20px;",
-          icon("spinner fa-spin", style = "margin-right: 8px;"),
-          tags$strong("Validating dataset..."),
-          " Please wait while we check your dataset structure."
-        )
-      } else if (dict_validation$is_complete) {
-        if (dict_validation$is_valid) {
-          div(
-            class = "alert alert-success",
-            style = "margin-bottom: 20px;",
-            icon("check-circle", style = "margin-right: 8px;"),
-            tags$strong("Dataset Valid"),
-            " - This dataset passes Psych-DS validation."
-          )
-        } else if (length(dict_validation$errors) > 0) {
-          div(
-            class = "alert alert-danger",
-            style = "margin-bottom: 20px;",
-            icon("times-circle", style = "margin-right: 8px;"),
-            tags$strong("Validation Failed"),
-            tags$ul(
-              style = "margin-top: 10px; margin-bottom: 0;",
-              lapply(dict_validation$errors, function(err) {
-                tags$li(
-                  tags$strong(err$key %||% "Error: "),
-                  err$reason %||% err$message %||% "Unknown error"
-                )
-              })
-            )
-          )
-        } else {
-          div(
-            class = "alert alert-warning",
-            style = "margin-bottom: 20px; background-color: #fff3cd; border-color: #ffc107;",
-            icon("exclamation-triangle", style = "margin-right: 8px;"),
-            tags$strong("Validation Errors"),
-            tags$ul(
-              style = "margin-top: 10px; margin-bottom: 0;",
-              lapply(dict_validation$warnings, function(warn) {
-                tags$li(warn$message %||% warn$reason %||% "Unknown warning")
-              })
-            )
-          )
-        }
-      } else {
-        # No validation run yet
-        NULL
+      cat("Dictionary validation complete:", validation_result$valid, "\n")
+      
+      dict_validation$is_validating <- FALSE
+      dict_validation$is_complete <- TRUE
+      dict_validation$is_valid <- validation_result$valid
+      dict_validation$last_validation_result <- validation_result
+      
+      if (!is.null(validation_result$issues)) {
+        issues <- validation_result$issues
+        dict_validation$errors <- issues$errors %||% list()
+        dict_validation$warnings <- issues$warnings %||% list()
       }
-    })
+    }
+  } else if (!is.null(dict_validation$validation_start_time)) {
+    # No result in parent session yet, check if we've been waiting too long
+    time_waiting <- as.numeric(difftime(Sys.time(), dict_validation$validation_start_time, units = "secs"))
+    if (time_waiting > 5) {
+      cat("=== Validation timeout - no results received ===\n")
+      dict_validation$is_validating <- FALSE
+      showNotification("Validation timed out. Please try again.", type = "warning")
+    }
+  }
+})
+
+# Render validation status
+
+# Function to load existing metadata from dataset_description.json
+loadExistingMetadata <- function(dataset_path, variables) {
+  json_path <- file.path(dataset_path, "dataset_description.json")
+  
+  if (!file.exists(json_path)) {
+    return(variables)
+  }
+  
+  tryCatch({
+    json_data <- jsonlite::read_json(json_path, simplifyVector = FALSE)
     
-    # Function to load existing metadata from dataset_description.json
-    loadExistingMetadata <- function(dataset_path, variables) {
-      json_path <- file.path(dataset_path, "dataset_description.json")
-      
-      if (!file.exists(json_path)) {
-        return(variables)
-      }
-      
-      tryCatch({
-        json_data <- jsonlite::read_json(json_path, simplifyVector = FALSE)
+    if (!is.null(json_data$variableMeasured)) {
+      for (var_meta in json_data$variableMeasured) {
+        var_name <- var_meta$name
         
-        if (!is.null(json_data$variableMeasured)) {
-          for (var_meta in json_data$variableMeasured) {
-            var_name <- var_meta$name
-            
-            if (!is.null(var_name) && var_name %in% names(variables)) {
-              # Convert Schema.org valueType to internal type
-              schema_type <- var_meta$valueType %||% var_meta$`@type`
-              internal_type <- switch(
-                tolower(schema_type),
-                "text" = "string",
-                "string" = "string",
-                "number" = "number",
-                "float" = "number",
-                "integer" = "integer",
-                "boolean" = "boolean",
-                "date" = "date",
-                "datetime" = "datetime",
-                "categorical" = "categorical",
-                variables[[var_name]]$type  # default to auto-detected
+        if (!is.null(var_name) && var_name %in% names(variables)) {
+          # Convert Schema.org valueType to internal type
+          schema_type <- var_meta$valueType %||% var_meta$`@type`
+          internal_type <- switch(
+            tolower(schema_type),
+            "text" = "string",
+            "string" = "string",
+            "number" = "number",
+            "float" = "number",
+            "integer" = "integer",
+            "boolean" = "boolean",
+            "date" = "date",
+            "datetime" = "datetime",
+            "categorical" = "categorical",
+            variables[[var_name]]$type  # default to auto-detected
+          )
+          
+          # Override auto-detected values with JSON metadata
+          variables[[var_name]]$description <- var_meta$description %||% variables[[var_name]]$description
+          variables[[var_name]]$type <- internal_type
+          variables[[var_name]]$unit <- var_meta$unitText %||% variables[[var_name]]$unit
+          variables[[var_name]]$min_value <- as.character(var_meta$minValue %||% "")
+          variables[[var_name]]$max_value <- as.character(var_meta$maxValue %||% "")
+          variables[[var_name]]$required <- var_meta$required %||% FALSE
+          variables[[var_name]]$unique <- var_meta$unique %||% FALSE
+          variables[[var_name]]$pattern <- var_meta$pattern %||% ""
+          
+          # Load categorical values from valueReference
+          if (!is.null(var_meta$valueReference) && length(var_meta$valueReference) > 0) {
+            cat_vals <- lapply(var_meta$valueReference, function(vr) {
+              list(
+                value = as.character(vr$value %||% ""),
+                label = as.character(vr$label %||% vr$value %||% ""),
+                description = as.character(vr$description %||% "")
               )
-              
-              # Override auto-detected values with JSON metadata
-              variables[[var_name]]$description <- var_meta$description %||% variables[[var_name]]$description
-              variables[[var_name]]$type <- internal_type
-              variables[[var_name]]$unit <- var_meta$unitText %||% variables[[var_name]]$unit
-              variables[[var_name]]$min_value <- as.character(var_meta$minValue %||% "")
-              variables[[var_name]]$max_value <- as.character(var_meta$maxValue %||% "")
-              variables[[var_name]]$required <- var_meta$required %||% FALSE
-              variables[[var_name]]$unique <- var_meta$unique %||% FALSE
-              variables[[var_name]]$pattern <- var_meta$pattern %||% ""
-              
-              # Load categorical values from valueReference
-              if (!is.null(var_meta$valueReference) && length(var_meta$valueReference) > 0) {
-                cat_vals <- lapply(var_meta$valueReference, function(vr) {
-                  list(
-                    value = as.character(vr$value %||% ""),
-                    label = as.character(vr$label %||% vr$value %||% ""),
-                    description = as.character(vr$description %||% "")
-                  )
-                })
-                variables[[var_name]]$categorical_values <- cat_vals
-              }
-            }
+            })
+            variables[[var_name]]$categorical_values <- cat_vals
           }
         }
-        
-        # Load global missing value codes if present
-        if (!is.null(json_data$missingValueCodes)) {
-          dictionary_state$missing_values <- unlist(json_data$missingValueCodes)
-        }
-        
-      }, error = function(e) {
-        warning(paste("Error loading existing metadata:", e$message))
-      })
-      
-      return(variables)
+      }
     }
     
-    # Function to validate dataset
-    validateDataset <- function(dataset_path) {
-      result <- list(
-        valid = FALSE,
-        errors = character(),
-        warnings = character(),
-        timed_out = FALSE
-      )
-      
-      tryCatch({
-        # Check basic structure
-        if (!file.exists(file.path(dataset_path, "dataset_description.json"))) {
-          result$errors <- c(result$errors, "Missing dataset_description.json")
-          return(result)
-        }
-        
-        if (!dir.exists(file.path(dataset_path, "data"))) {
-          result$errors <- c(result$errors, "Missing data directory")
-          return(result)
-        }
-        
-        # Try to parse JSON
-        json_data <- jsonlite::read_json(
-          file.path(dataset_path, "dataset_description.json"),
-          simplifyVector = FALSE
-        )
-        
-        # Check required fields
-        if (is.null(json_data$name)) {
-          result$warnings <- c(result$warnings, "Dataset name not specified")
-        }
-        
-        if (is.null(json_data$description)) {
-          result$warnings <- c(result$warnings, "Dataset description not specified")
-        }
-        
-        # If we got here, basic validation passed
-        result$valid <- TRUE
-        
-      }, error = function(e) {
-        result$errors <- c(result$errors, paste("Validation error:", e$message))
-      })
-      
+    # Load global missing value codes if present
+    if (!is.null(json_data$missingValueCodes)) {
+      dictionary_state$missing_values <- unlist(json_data$missingValueCodes)
+    }
+    
+  }, error = function(e) {
+    warning(paste("Error loading existing metadata:", e$message))
+  })
+  
+  return(variables)
+}
+
+# Function to validate dataset
+validateDataset <- function(dataset_path) {
+  result <- list(
+    valid = FALSE,
+    errors = character(),
+    warnings = character(),
+    timed_out = FALSE
+  )
+  
+  tryCatch({
+    # Check basic structure
+    if (!file.exists(file.path(dataset_path, "dataset_description.json"))) {
+      result$errors <- c(result$errors, "Missing dataset_description.json")
       return(result)
     }
     
-    # Render validation status
-    output$validation_status <- renderUI({
-      req(dictionary_state$dataset_path)
-      
-      validation <- validateDataset(dictionary_state$dataset_path)
-      
-      if (!validation$valid || length(validation$errors) > 0) {
-        div(
-          class = "alert alert-danger",
-          style = "margin-bottom: 20px;",
-          icon("times-circle", style = "margin-right: 8px;"),
-          tags$strong("Validation Failed"),
-          tags$ul(
-            style = "margin-top: 10px; margin-bottom: 0;",
-            lapply(validation$errors, function(err) tags$li(err))
-          )
-        )
-      } else if (length(validation$warnings) > 0) {
-        div(
-          class = "alert alert-warning",
-          style = "margin-bottom: 20px; background-color: #fff3cd; border-color: #ffc107;",
-          icon("exclamation-triangle", style = "margin-right: 8px;"),
-          tags$strong("Validation Warnings"),
-          tags$ul(
-            style = "margin-top: 10px; margin-bottom: 0;",
-            lapply(validation$warnings, function(warn) tags$li(warn))
-          )
-        )
-      } else {
-        div(
-          class = "alert alert-success",
-          style = "margin-bottom: 20px;",
-          icon("check-circle", style = "margin-right: 8px;"),
-          tags$strong("Dataset Valid"),
-          " - Basic Psych-DS structure is correct"
-        )
-      }
-    })
+    if (!dir.exists(file.path(dataset_path, "data"))) {
+      result$errors <- c(result$errors, "Missing data directory")
+      return(result)
+    }
     
-    # Function to auto-populate categorical values
-    autoPopulateCategoricalValues <- function(var_name) {
-      if (is.null(dictionary_state$dataset_path) || is.null(var_name)) return()
+    # Try to parse JSON
+    json_data <- jsonlite::read_json(
+      file.path(dataset_path, "dataset_description.json"),
+      simplifyVector = FALSE
+    )
+    
+    # Check required fields
+    if (is.null(json_data$name)) {
+      result$warnings <- c(result$warnings, "Dataset name not specified")
+    }
+    
+    if (is.null(json_data$description)) {
+      result$warnings <- c(result$warnings, "Dataset description not specified")
+    }
+    
+    # If we got here, basic validation passed
+    result$valid <- TRUE
+    
+  }, error = function(e) {
+    result$errors <- c(result$errors, paste("Validation error:", e$message))
+  })
+  
+  return(result)
+}
+
+# Render validation status
+output$validation_status <- renderUI({
+  req(dictionary_state$dataset_path)
+  
+  # Check if validation is in progress
+  if (dict_validation$is_validating) {
+    return(div(
+      class = "alert alert-info",
+      style = "margin-bottom: 20px;",
+      icon("spinner", class = "fa-spin", style = "margin-right: 8px;"),
+      tags$strong("Validating..."),
+      " Running Psych-DS validation"
+    ))
+  }
+  
+  # Check if validation has completed
+  if (!dict_validation$is_complete) {
+    return(div(
+      class = "alert alert-info",
+      style = "margin-bottom: 20px;",
+      icon("info-circle", style = "margin-right: 8px;"),
+      "Dataset loaded. Validation will run automatically."
+    ))
+  }
+  
+  # Show validation results
+  if (!dict_validation$is_valid || length(dict_validation$errors) > 0) {
+    div(
+      class = "alert alert-danger",
+      style = "margin-bottom: 20px;",
+      icon("times-circle", style = "margin-right: 8px;"),
+      tags$strong("Dataset Invalid"),
+      " - Does not pass Psych-DS validation",
+      if (length(dict_validation$errors) > 0) {
+        tags$ul(
+          style = "margin-top: 10px; margin-bottom: 0;",
+          lapply(dict_validation$errors, function(err) {
+            error_text <- if (!is.null(err$reason)) err$reason else if (!is.null(err$message)) err$message else "Unknown error"
+            tags$li(error_text)
+          })
+        )
+      },
+      tags$div(
+        style = "margin-top: 15px; padding: 10px; background-color: #fff3cd; border-left: 4px solid #856404; border-radius: 4px;",
+        tags$p(
+          style = "margin: 0; color: #856404;",
+          icon("exclamation-triangle", style = "margin-right: 5px;"),
+          tags$strong("Important: "),
+          "The data dictionary editing features may not work properly with an invalid dataset. ",
+          "Please return to the ",
+          tags$strong("Validate Dataset"),
+          " page to see detailed validation errors and fix them before proceeding."
+        )
+      )
+    )
+  } else if (length(dict_validation$warnings) > 0) {
+    div(
+      class = "alert alert-warning",
+      style = "margin-bottom: 20px; background-color: #fff3cd; border-color: #ffc107;",
+      icon("exclamation-triangle", style = "margin-right: 8px;"),
+      tags$strong("Dataset Valid with Warnings"),
+      tags$ul(
+        style = "margin-top: 10px; margin-bottom: 0;",
+        lapply(dict_validation$warnings, function(warn) {
+          warn_text <- if (!is.null(warn$reason)) warn$reason else if (!is.null(warn$message)) warn$message else warn
+          tags$li(warn_text)
+        })
+      )
+    )
+  } else {
+    div(
+      class = "alert alert-success",
+      style = "margin-bottom: 20px;",
+      icon("check-circle", style = "margin-right: 8px;"),
+      tags$strong("Dataset Valid"),
+      " - Passes Psych-DS validation"
+    )
+  }
+})
+
+# Function to auto-populate categorical values
+autoPopulateCategoricalValues <- function(var_name) {
+  if (is.null(dictionary_state$dataset_path) || is.null(var_name)) return()
+  
+  var_info <- dictionary_state$variables[[var_name]]
+  all_values <- character(0)
+  
+  # Read values from all files containing this variable
+  withProgress(message = "Detecting categorical values...", value = 0, {
+    data_dir <- file.path(dictionary_state$dataset_path, "data")
+    csv_files <- list.files(data_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE)
+    
+    for (i in seq_along(csv_files)) {
+      setProgress(i / length(csv_files))
+      tryCatch({
+        data <- read.csv(csv_files[i], stringsAsFactors = FALSE, nrows = 1000)
+        if (var_name %in% names(data)) {
+          col_values <- unique(data[[var_name]][!is.na(data[[var_name]])])
+          all_values <- c(all_values, as.character(col_values))
+        }
+      }, error = function(e) {})
+    }
+  })
+  
+  unique_values <- unique(all_values)
+  
+  if (length(unique_values) > 0 && length(unique_values) <= 50) {
+    # Create categorical values with default labels and descriptions
+    cat_values <- lapply(sort(unique_values), function(val) {
+      list(
+        value = val,
+        label = val,  # Default label same as value
+        description = ""  # Empty description for user to fill
+      )
+    })
+    categorical_values(cat_values)
+    showNotification(paste("Auto-populated", length(unique_values), "categorical values"), type = "message")
+  } else if (length(unique_values) > 50) {
+    showNotification("Too many unique values (>50) to auto-populate. Add manually.", type = "warning")
+  }
+}
+
+# Extract variables from dataset with enhanced analysis
+extractVariablesFromDataset <- function(dataset_path) {
+  data_dir <- file.path(dataset_path, "data")
+  csv_files <- list.files(data_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE)
+  
+  if (length(csv_files) == 0) {
+    stop("No CSV files found in data directory")
+  }
+  
+  all_variables <- list()
+  
+  withProgress(message = "Analyzing dataset variables...", value = 0, {
+    for (i in seq_along(csv_files)) {
+      csv_file <- csv_files[i]
+      rel_path <- gsub(paste0("^", dataset_path, "/"), "", csv_file)
       
-      var_info <- dictionary_state$variables[[var_name]]
-      all_values <- character(0)
+      setProgress(i / length(csv_files), detail = paste("Processing", basename(csv_file)))
       
-      # Read values from all files containing this variable
-      withProgress(message = "Detecting categorical values...", value = 0, {
-        data_dir <- file.path(dictionary_state$dataset_path, "data")
-        csv_files <- list.files(data_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE)
+      tryCatch({
+        # Read just the header first
+        header <- names(read.csv(csv_file, nrows = 1))
         
-        for (i in seq_along(csv_files)) {
-          setProgress(i / length(csv_files))
+        for (var_name in header) {
+          if (var_name %in% names(all_variables)) {
+            # Variable exists - just add this file
+            all_variables[[var_name]]$files <- c(all_variables[[var_name]]$files, rel_path)
+          } else {
+            # Create new variable entry with enhanced analysis
+            var_analysis <- analyzeVariable(csv_file, var_name)
+            
+            all_variables[[var_name]] <- list(
+              name = var_name,
+              files = rel_path,
+              description = generateDescription(var_name, var_analysis),
+              type = var_analysis$type,
+              unit = var_analysis$unit,
+              min_value = var_analysis$min_value,
+              max_value = var_analysis$max_value,
+              value_reference = var_analysis$value_reference,
+              default_value = "",
+              source = "",
+              notes = "",
+              categorical_values = var_analysis$categorical_values,  # Store initial values
+              required = FALSE,
+              unique = FALSE,
+              pattern = ""
+            )
+          }
+        }
+      }, error = function(e) {
+        warning(paste("Could not read file:", csv_file, "-", e$message))
+      })
+    }
+  })
+  
+  # Second pass: For all categorical variables, collect actual values from all files
+  categorical_vars <- names(all_variables)[sapply(all_variables, function(v) v$type == "categorical")]
+  
+  if (length(categorical_vars) > 0) {
+    withProgress(message = "Collecting categorical values...", value = 0, {
+      for (i in seq_along(categorical_vars)) {
+        var_name <- categorical_vars[i]
+        setProgress(i / length(categorical_vars), detail = paste("Processing", var_name))
+        
+        all_values <- character(0)
+        
+        # Read from all CSV files
+        for (csv_file in csv_files) {
           tryCatch({
-            data <- read.csv(csv_files[i], stringsAsFactors = FALSE, nrows = 1000)
+            # Read up to 1000 rows to collect values
+            data <- read.csv(csv_file, stringsAsFactors = FALSE, nrows = 1000)
             if (var_name %in% names(data)) {
-              col_values <- unique(data[[var_name]][!is.na(data[[var_name]])])
+              # Get non-NA values
+              col_values <- data[[var_name]]
+              col_values <- col_values[!is.na(col_values) & col_values != ""]
               all_values <- c(all_values, as.character(col_values))
             }
           }, error = function(e) {})
         }
-      })
-      
-      unique_values <- unique(all_values)
-      
-      if (length(unique_values) > 0 && length(unique_values) <= 50) {
-        # Create categorical values with default labels and descriptions
-        cat_values <- lapply(sort(unique_values), function(val) {
-          list(
-            value = val,
-            label = val,  # Default label same as value
-            description = ""  # Empty description for user to fill
-          )
-        })
-        categorical_values(cat_values)
-        showNotification(paste("Auto-populated", length(unique_values), "categorical values"), type = "message")
-      } else if (length(unique_values) > 50) {
-        showNotification("Too many unique values (>50) to auto-populate. Add manually.", type = "warning")
-      }
-    }
-    
-    # Extract variables from dataset with enhanced analysis
-    extractVariablesFromDataset <- function(dataset_path) {
-      data_dir <- file.path(dataset_path, "data")
-      csv_files <- list.files(data_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE)
-      
-      if (length(csv_files) == 0) {
-        stop("No CSV files found in data directory")
-      }
-      
-      all_variables <- list()
-      
-      withProgress(message = "Analyzing dataset variables...", value = 0, {
-        for (i in seq_along(csv_files)) {
-          csv_file <- csv_files[i]
-          rel_path <- gsub(paste0("^", dataset_path, "/"), "", csv_file)
-          
-          setProgress(i / length(csv_files), detail = paste("Processing", basename(csv_file)))
-          
-          tryCatch({
-            # Read just the header first
-            header <- names(read.csv(csv_file, nrows = 1))
-            
-            for (var_name in header) {
-              if (var_name %in% names(all_variables)) {
-                # Variable exists - just add this file
-                all_variables[[var_name]]$files <- c(all_variables[[var_name]]$files, rel_path)
-              } else {
-                # Create new variable entry with enhanced analysis
-                var_analysis <- analyzeVariable(csv_file, var_name)
-                
-                all_variables[[var_name]] <- list(
-                  name = var_name,
-                  files = rel_path,
-                  description = generateDescription(var_name, var_analysis),
-                  type = var_analysis$type,
-                  unit = var_analysis$unit,
-                  min_value = var_analysis$min_value,
-                  max_value = var_analysis$max_value,
-                  value_reference = var_analysis$value_reference,
-                  default_value = "",
-                  source = "",
-                  notes = "",
-                  categorical_values = var_analysis$categorical_values,  # Store initial values
-                  required = FALSE,
-                  unique = FALSE,
-                  pattern = ""
-                )
-              }
-            }
-          }, error = function(e) {
-            warning(paste("Could not read file:", csv_file, "-", e$message))
+        
+        # Get unique values
+        unique_values <- unique(all_values)
+        
+        # Only populate if we have a reasonable number of unique values
+        if (length(unique_values) > 0 && length(unique_values) <= 50) {
+          cat_values <- lapply(sort(unique_values), function(val) {
+            list(
+              value = val,
+              label = val,
+              description = ""
+            )
           })
-        }
-      })
-      
-      # Second pass: For all categorical variables, collect actual values from all files
-      categorical_vars <- names(all_variables)[sapply(all_variables, function(v) v$type == "categorical")]
-      
-      if (length(categorical_vars) > 0) {
-        withProgress(message = "Collecting categorical values...", value = 0, {
-          for (i in seq_along(categorical_vars)) {
-            var_name <- categorical_vars[i]
-            setProgress(i / length(categorical_vars), detail = paste("Processing", var_name))
-            
-            all_values <- character(0)
-            
-            # Read from all CSV files
-            for (csv_file in csv_files) {
-              tryCatch({
-                # Read up to 1000 rows to collect values
-                data <- read.csv(csv_file, stringsAsFactors = FALSE, nrows = 1000)
-                if (var_name %in% names(data)) {
-                  # Get non-NA values
-                  col_values <- data[[var_name]]
-                  col_values <- col_values[!is.na(col_values) & col_values != ""]
-                  all_values <- c(all_values, as.character(col_values))
-                }
-              }, error = function(e) {})
-            }
-            
-            # Get unique values
-            unique_values <- unique(all_values)
-            
-            # Only populate if we have a reasonable number of unique values
-            if (length(unique_values) > 0 && length(unique_values) <= 50) {
-              cat_values <- lapply(sort(unique_values), function(val) {
-                list(
-                  value = val,
-                  label = val,
-                  description = ""
-                )
-              })
-              all_variables[[var_name]]$categorical_values <- cat_values
-            }
-          }
-        })
-      }
-      
-      return(all_variables)
-    }
-    
-
-
-
-    
-    # Render variables list
-    output$variables_list <- renderUI({
-      variables <- dictionary_state$variables
-      search_term <- input$variable_search
-      
-      if (length(variables) == 0) {
-        return(div(
-          style = "text-align: center; padding: 50px 20px; color: #6c757d;",
-          p("No variables found. Load a dataset to begin.")
-        ))
-      }
-      
-      # Filter variables based on search
-      if (!is.null(search_term) && search_term != "") {
-        variables <- variables[grepl(search_term, names(variables), ignore.case = TRUE)]
-      }
-      
-      if (length(variables) == 0) {
-        return(div(
-          style = "text-align: center; padding: 30px 20px; color: #6c757d;",
-          p("No variables match your search.")
-        ))
-      }
-      
-      # Create variable list items
-      variable_items <- lapply(names(variables), function(var_name) {
-        var_info <- variables[[var_name]]
-        file_count <- length(var_info$files)
-        is_selected <- identical(dictionary_state$current_variable, var_name)
-        
-        div(
-          class = if (is_selected) "variable-item selected" else "variable-item",
-          style = paste0(
-            "padding: 12px 15px; cursor: pointer; border-bottom: 1px solid #f0f0f0; ",
-            if (is_selected) "background-color: #3498db; color: white;" else "background-color: white; color: #333;",
-            if (match(var_name, names(variables)) %% 2 == 0 && !is_selected) " background-color: #f8f9fa;" else ""
-          ),
-          onclick = paste0("Shiny.setInputValue('", session$ns("select_variable"), "', '", var_name, "', {priority: 'event'});"),
-          
-          div(
-            style = "display: flex; justify-content: space-between; align-items: center;",
-            span(var_name, style = "font-weight: 500;"),
-            span(
-              paste(file_count, if (file_count == 1) "file" else "files"),
-              style = paste0("font-size: 12px; ", if (is_selected) "color: rgba(255,255,255,0.8);" else "color: #6c757d;")
-            )
-          )
-        )
-      })
-      
-      do.call(tagList, variable_items)
-    })
-    
-    # Update the variable selection handler to include new fields:
-    observeEvent(input$select_variable, {
-      # Save current variable before switching
-      saveCurrentVariable()
-
-      var_name <- input$select_variable
-      
-      if (!is.null(var_name) && var_name %in% names(dictionary_state$variables)) {
-        dictionary_state$current_variable <- var_name
-        
-        # Load variable data into form
-        var_info <- dictionary_state$variables[[var_name]]
-        
-        updateTextAreaInput(session, "var_description", value = var_info$description %||% "")
-        updateSelectInput(session, "var_type", selected = var_info$type %||% "string")
-        updateTextInput(session, "var_unit", value = var_info$unit %||% "")
-        updateTextInput(session, "var_min", value = var_info$min_value %||% "")
-        updateTextInput(session, "var_max", value = var_info$max_value %||% "")
-        updateTextAreaInput(session, "var_value_reference", value = var_info$value_reference %||% "")
-        updateTextInput(session, "var_default", value = var_info$default_value %||% "")
-
-        updateCheckboxInput(session, "var_use_minmax", value = FALSE)
-        
-        # Update new fields
-        updateTextInput(session, "var_source", value = var_info$source %||% "")
-        updateTextAreaInput(session, "var_notes", value = var_info$notes %||% "")
-        updateCheckboxInput(session, "var_required", value = var_info$required %||% FALSE)
-        updateCheckboxInput(session, "var_unique", value = var_info$unique %||% FALSE)
-        updateTextInput(session, "var_pattern", value = var_info$pattern %||% "")
-
-        # Set categorical values
-        if (!is.null(var_info$categorical_values) && length(var_info$categorical_values) > 0) {
-          categorical_values(var_info$categorical_values)
-        } else if (var_info$type == "categorical" && length(var_info$categorical_values) == 0) {
-          # Auto-populate from data if switching to categorical
-          autoPopulateCategoricalValues(var_name)
-        } else {
-          categorical_values(list())
+          all_variables[[var_name]]$categorical_values <- cat_values
         }
       }
     })
-    
-    # Add observer for when type changes to categorical
-    observeEvent(input$var_type, {
-      if (!is.null(input$var_type) && input$var_type == "categorical") {
-        # If switching to categorical and no values exist, auto-populate
-        if (length(categorical_values()) == 0 && !is.null(dictionary_state$current_variable)) {
-          autoPopulateCategoricalValues(dictionary_state$current_variable)
-        }
-      }
-    })
-    
-    # Render variable name header
-    output$variable_name_header <- renderUI({
-      if (!is.null(dictionary_state$current_variable)) {
-        h3(
-          dictionary_state$current_variable,
-          style = "color: #333; margin: 0; font-weight: bold;"
-        )
-      }
-    })
-    
-    output$file_badges_content <- renderUI({
-      if (!is.null(dictionary_state$current_variable)) {
-        var_info <- dictionary_state$variables[[dictionary_state$current_variable]]
-        
-        tagList(
-          lapply(var_info$files, function(file_path) {
-            span(
-              basename(file_path),
-              class = "badge",
-              title = file_path,
-              style = "background-color: #3498db; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; cursor: help; margin: 2px;"
-            )
-          }),
-          if (length(var_info$files) > 10) {
-            div(
-              style = "margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 12px; color: #666; text-align: center;",
-              paste("Total:", length(var_info$files), "files")
-            )
-          }
-        )
-      }
-    })
+  }
+  
+  return(all_variables)
+}
 
-    # Update the categorical values table renderer:
-    output$categorical_values_table <- renderUI({
-      values <- categorical_values()
+
+
+
+
+# Render variables list
+output$variables_list <- renderUI({
+  variables <- dictionary_state$variables
+  search_term <- input$variable_search
+  
+  if (length(variables) == 0) {
+    return(div(
+      style = "text-align: center; padding: 50px 20px; color: #6c757d;",
+      p("No variables found. Load a dataset to begin.")
+    ))
+  }
+  
+  # Filter variables based on search
+  if (!is.null(search_term) && search_term != "") {
+    variables <- variables[grepl(search_term, names(variables), ignore.case = TRUE)]
+  }
+  
+  if (length(variables) == 0) {
+    return(div(
+      style = "text-align: center; padding: 30px 20px; color: #6c757d;",
+      p("No variables match your search.")
+    ))
+  }
+  
+  # Create variable list items
+  variable_items <- lapply(names(variables), function(var_name) {
+    var_info <- variables[[var_name]]
+    file_count <- length(var_info$files)
+    is_selected <- identical(dictionary_state$current_variable, var_name)
+    
+    div(
+      class = if (is_selected) "variable-item selected" else "variable-item",
+      style = paste0(
+        "padding: 12px 15px; cursor: pointer; border-bottom: 1px solid #f0f0f0; ",
+        if (is_selected) "background-color: #3498db; color: white;" else "background-color: white; color: #333;",
+        if (match(var_name, names(variables)) %% 2 == 0 && !is_selected) " background-color: #f8f9fa;" else ""
+      ),
+      onclick = paste0("Shiny.setInputValue('", session$ns("select_variable"), "', '", var_name, "', {priority: 'event'});"),
       
-      if (length(values) == 0) {
-        return(div(
-          style = "padding: 20px; text-align: center; color: #6c757d;",
-          "No categorical values defined. They will be auto-populated when you select 'Categorical' as the type."
-        ))
-      }
-      
-      rows <- lapply(seq_along(values), function(i) {
-        value_info <- values[[i]]
-        div(
-          style = "display: flex; padding: 8px; border-bottom: 1px solid #ced4da; align-items: center;",
-          div(style = "flex: 2; padding-right: 10px; font-weight: 500;", value_info$value),
-          div(style = "flex: 2; padding-right: 10px;", value_info$label %||% ""),
-          div(style = "flex: 3; padding-right: 10px;", value_info$description %||% ""),
-          div(
-            style = "flex: 0; width: 80px; display: flex; gap: 5px;",
-            actionButton(
-              session$ns(paste0("edit_cat_", i)),
-              label = NULL,
-              icon = icon("edit"),
-              class = "btn btn-sm btn-info",
-              style = "padding: 2px 6px;"
-            ),
-            actionButton(
-              session$ns(paste0("remove_cat_", i)),
-              label = NULL,
-              icon = icon("trash"),
-              class = "btn btn-sm btn-danger",
-              style = "padding: 2px 6px;",
-              onclick = paste0("Shiny.setInputValue('", session$ns("remove_cat_value"), "', ", i, ", {priority: 'event'});")
-            )
-          )
+      div(
+        style = "display: flex; justify-content: space-between; align-items: center;",
+        span(var_name, style = "font-weight: 500;"),
+        span(
+          paste(file_count, if (file_count == 1) "file" else "files"),
+          style = paste0("font-size: 12px; ", if (is_selected) "color: rgba(255,255,255,0.8);" else "color: #6c757d;")
         )
-      })
-      
-      do.call(tagList, rows)
-    })
-    
-    # Handle editing categorical values
-    observe({
-      values <- categorical_values()
-      
-      for (i in seq_along(values)) {
-        local({
-          local_i <- i
-          
-          # Edit button handler
-          observeEvent(input[[paste0("edit_cat_", local_i)]], {
-            current_values <- categorical_values()
-            if (local_i <= length(current_values)) {
-              value_info <- current_values[[local_i]]
-              
-              showModal(modalDialog(
-                title = "Edit Categorical Value",
-                div(
-                  textInput(
-                    session$ns("edit_cat_value"),
-                    "Value",
-                    value = value_info$value,
-                    placeholder = "The actual value in the data"
-                  ),
-                  textInput(
-                    session$ns("edit_cat_label"),
-                    "Label",
-                    value = value_info$label %||% "",
-                    placeholder = "Human-readable label for this value"
-                  ),
-                  textInput(
-                    session$ns("edit_cat_description"),
-                    "Description",
-                    value = value_info$description %||% "",
-                    placeholder = "Description of what this value means"
-                  )
-                ),
-                footer = tagList(
-                  modalButton("Cancel"),
-                  actionButton(session$ns("save_edit_cat"), "Save", class = "btn-primary")
-                ),
-                easyClose = TRUE
-              ))
-              
-              # Store which index we're editing
-              dictionary_state$editing_cat_index <- local_i
-            }
-          }, ignoreInit = TRUE)
-        })
-      }
-    })
-    
-    # Save edited categorical value
-    observeEvent(input$save_edit_cat, {
-      if (!is.null(dictionary_state$editing_cat_index)) {
-        current_values <- categorical_values()
-        index <- dictionary_state$editing_cat_index
-        
-        if (index <= length(current_values)) {
-          # Update the value at the index
-          current_values[[index]] <- list(
-            value = input$edit_cat_value,
-            label = input$edit_cat_label,
-            description = input$edit_cat_description
-          )
-          
-          categorical_values(current_values)
-          removeModal()
-          showNotification("Categorical value updated", type = "message")
-        }
-      }
-    })
-
-    
-
-    # Update the add categorical value handler:
-    observeEvent(input$add_cat_value, {
-      if (!is.null(input$new_cat_value) && input$new_cat_value != "") {
-        current_values <- categorical_values()
-        
-        # Check for duplicates
-        existing_values <- sapply(current_values, function(x) x$value)
-        if (input$new_cat_value %in% existing_values) {
-          showNotification("This value already exists", type = "warning")
-          return()
-        }
-        
-        # Add new value with label
-        new_value <- list(
-          value = input$new_cat_value,
-          label = if(is.null(input$new_cat_label) || input$new_cat_label == "") {
-            input$new_cat_value  # Default label to value if not provided
-          } else {
-            input$new_cat_label
-          },
-          description = input$new_cat_description %||% ""
-        )
-        
-        categorical_values(c(current_values, list(new_value)))
-        
-        # Clear inputs
-        updateTextInput(session, "new_cat_value", value = "")
-        updateTextInput(session, "new_cat_label", value = "")
-        updateTextInput(session, "new_cat_description", value = "")
-        
-        showNotification("Categorical value added", type = "message")
-      } else {
-        showNotification("Please enter a value", type = "warning")
-      }
-    })
-    
-    # Handle removing categorical values
-    observeEvent(input$remove_cat_value, {
-      index <- input$remove_cat_value
-      current_values <- categorical_values()
-      
-      if (!is.null(index) && index > 0 && index <= length(current_values)) {
-        categorical_values(current_values[-index])
-        showNotification("Categorical value removed", type = "message")
-      }
-    }, ignoreInit = TRUE)
-
-    generateFullDatasetDescriptionPreview <- function() {
-      # Read existing dataset_description.json to get name, description, authors
-      json_path <- file.path(dictionary_state$dataset_path, "dataset_description.json")
-      
-      dataset_info <- list(
-        name = "Dataset Name",
-        description = "Dataset Description",
-        authors = list()
       )
-      
-      if (file.exists(json_path)) {
-        tryCatch({
-          existing <- jsonlite::fromJSON(json_path)
-          if (!is.null(existing$name)) dataset_info$name <- existing$name
-          if (!is.null(existing$description)) dataset_info$description <- existing$description
-          if (!is.null(existing$author)) dataset_info$authors <- existing$author
-        }, error = function(e) {})
-      }
-      
-      # Build variableMeasured array
-      global_missing_values <- dictionary_state$missing_values
-      
-      variable_measured <- lapply(names(dictionary_state$variables), function(var_name) {
-        var_info <- dictionary_state$variables[[var_name]]
-        
-        prop_value <- list(
-          `@type` = "PropertyValue",
-          name = var_name,
-          description = if(nchar(var_info$description) > 0) var_info$description else NULL,
-          valueType = var_info$type
-        )
-        
-        if (length(global_missing_values) > 0) {
-          prop_value$missingValueCodes <- global_missing_values
-        }
-        
-        if (nchar(var_info$unit) > 0) prop_value$unitText <- var_info$unit
-        if (nchar(var_info$min_value) > 0) prop_value$minValue <- var_info$min_value
-        if (nchar(var_info$max_value) > 0) prop_value$maxValue <- var_info$max_value
-        
-        if (var_info$type == "categorical" && length(var_info$categorical_values) > 0) {
-          prop_value$valueReference <- I(lapply(var_info$categorical_values, function(cat) {
-            cat_obj <- list(
-              value = cat$value,
-              label = if(nchar(cat$label) > 0 && cat$label != cat$value) cat$label else NULL,
-              description = if(nchar(cat$description) > 0) cat$description else NULL
-            )
-            cat_obj[!sapply(cat_obj, is.null)]
-          }))
-        }
-        
-        prop_value$required <- var_info$required %||% FALSE
-        prop_value$unique <- var_info$unique %||% FALSE
-        if (nchar(var_info$pattern) > 0) prop_value$pattern <- var_info$pattern
-        
-        prop_value[!sapply(prop_value, is.null)]
-      })
-      
-      # Build complete dataset_description
-      full_json <- list(
-        `@context` = "https://schema.org/",
-        `@type` = "Dataset",
-        name = dataset_info$name,
-        description = dataset_info$description,
-        author = dataset_info$authors,
-        variableMeasured = variable_measured
-      )
-      
-      # Convert to JSON string
-      json_str <- jsonlite::toJSON(full_json, pretty = TRUE, auto_unbox = TRUE)
-      
-      # Add syntax highlighting
-      json_html <- json_str
-      json_html <- gsub('"(@?[^"]+)":', '<span style="color: #0969da;">\"\\1\"</span>:', json_html)
-      json_html <- gsub(':\\s*"([^"]*)"', ': <span style="color: #0a3069;">\"\\1\"</span>', json_html)
-      json_html <- gsub(':\\s*(true|false)', ': <span style="color: #cf222e;">\\1</span>', json_html)
-      json_html <- gsub(':\\s*([0-9.]+)', ': <span style="color: #953800;">\\1</span>', json_html)
-      
-      return(json_html)
-    }
-
-
-    observeEvent(input$continue, {
-      message("Save dictionary button clicked\n")
-      
-      # Save current variable before proceeding
-      saveCurrentVariable()
-      
-      # Generate the FULL dataset_description.json preview
-      full_json_preview <- generateFullDatasetDescriptionPreview()
-      
-      # Default save path
-      default_save_path <- file.path(dictionary_state$dataset_path, "dataset_description.json")
-      
-      # Show preview modal with overwrite warning and path selector
-      showModal(modalDialog(
-        title = "Review Complete Dataset Description",
-        size = "l",
-        
-        div(
-          class = "alert alert-warning",
-          style = "margin-bottom: 20px;",
-          icon("exclamation-triangle", style = "margin-right: 8px;"),
-          tags$strong("Important: "),
-          "By default, this will overwrite the existing dataset_description.json file. ",
-          "You can change the save location below if you want to preserve the original."
-        ),
-        
-        div(
-          p("Here's the complete dataset_description.json that will be saved:"),
-          
-          # Preview container
-          tags$pre(
-            style = "background-color: #f8f9fa; padding: 15px; border-radius: 5px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px;",
-            HTML(full_json_preview)
-          ),
-          
-          # Summary stats
-          div(
-            style = "margin-top: 15px; padding: 10px; background-color: #e8f4f8; border-radius: 4px;",
-            p(strong("Summary:")),
-            p(paste("Total variables:", length(dictionary_state$variables))),
-            p(paste("Variables with descriptions:", 
-                    sum(sapply(dictionary_state$variables, function(v) nchar(v$description) > 0)))),
-            p(paste("Categorical variables:", 
-                    sum(sapply(dictionary_state$variables, function(v) v$type == "categorical")))),
-            p(paste("Missing value codes defined:", length(dictionary_state$missing_values)))
-          ),
-          
-          # Save location selector
-          div(
-            style = "margin-top: 20px;",
-            tags$label("Save Location", style = "font-weight: bold; margin-bottom: 8px; display: block;"),
-            div(
-              class = "directory-input",
-              textInput(
-                session$ns("dictionary_save_path"),
-                label = NULL,
-                value = default_save_path,
-                placeholder = "Path to save dataset_description.json",
-                width = "100%"
-              ),
-              shinySaveButton(
-                session$ns("dictionary_save_select"),
-                label = "...",
-                title = "Choose save location",
-                filetype = list(json = "json"),
-                class = "browse-btn"
-              )
-            ),
-            tags$small(
-              style = "color: #6c757d; display: block; margin-top: 5px;",
-              "Change this path if you want to save to a different location without overwriting the original"
-            )
-          )
-        ),
-        
-        footer = tagList(
-          modalButton("Back to Editing"),
-          actionButton(session$ns("confirm_save_dictionary"), "Save & Continue to Explorer", class = "btn-primary")
-        ),
-        easyClose = TRUE
-      ))
-    })
-
-    shinyFileSave(
-      input,
-      "dictionary_save_select",
-      roots = volumes,
-      session = session,
-      filetypes = c("json"),
-      restrictions = system.file(package = "base")
     )
+  })
+  
+  do.call(tagList, variable_items)
+})
 
-    observeEvent(input$dictionary_save_select, {
-      if (!is.integer(input$dictionary_save_select)) {
-        file_selected <- parseSavePath(volumes, input$dictionary_save_select)
-        if (length(file_selected$datapath) > 0) {
-          save_path <- as.character(file_selected$datapath)
-          # Ensure it has .json extension
-          if (!grepl("\\.json$", save_path)) {
-            save_path <- paste0(save_path, ".json")
-          }
-          updateTextInput(session, "dictionary_save_path", value = save_path)
-        }
-      }
-    })
+# Update the variable selection handler to include new fields:
+observeEvent(input$select_variable, {
+  # Save current variable before switching
+  saveCurrentVariable()
 
-    observeEvent(input$confirm_save_dictionary, {
-      # Use the custom save path from the input
-      json_path <- input$dictionary_save_path
-      
-      if (is.null(json_path) || json_path == "") {
-        showNotification("Please specify a save location", type = "error")
-        return()
+  var_name <- input$select_variable
+  
+  if (!is.null(var_name) && var_name %in% names(dictionary_state$variables)) {
+    dictionary_state$current_variable <- var_name
+    
+    # Load variable data into form
+    var_info <- dictionary_state$variables[[var_name]]
+    
+    updateTextAreaInput(session, "var_description", value = var_info$description %||% "")
+    updateSelectInput(session, "var_type", selected = var_info$type %||% "string")
+    updateTextInput(session, "var_unit", value = var_info$unit %||% "")
+    updateTextInput(session, "var_min", value = var_info$min_value %||% "")
+    updateTextInput(session, "var_max", value = var_info$max_value %||% "")
+    updateTextAreaInput(session, "var_value_reference", value = var_info$value_reference %||% "")
+    updateTextInput(session, "var_default", value = var_info$default_value %||% "")
+
+    updateCheckboxInput(session, "var_use_minmax", value = FALSE)
+    
+    # Update new fields
+    updateTextInput(session, "var_source", value = var_info$source %||% "")
+    updateTextAreaInput(session, "var_notes", value = var_info$notes %||% "")
+    updateCheckboxInput(session, "var_required", value = var_info$required %||% FALSE)
+    updateCheckboxInput(session, "var_unique", value = var_info$unique %||% FALSE)
+    updateTextInput(session, "var_pattern", value = var_info$pattern %||% "")
+
+    # Set categorical values
+    if (!is.null(var_info$categorical_values) && length(var_info$categorical_values) > 0) {
+      categorical_values(var_info$categorical_values)
+    } else if (var_info$type == "categorical" && length(var_info$categorical_values) == 0) {
+      # Auto-populate from data if switching to categorical
+      autoPopulateCategoricalValues(var_name)
+    } else {
+      categorical_values(list())
+    }
+  }
+})
+
+# Add observer for when type changes to categorical
+observeEvent(input$var_type, {
+  if (!is.null(input$var_type) && input$var_type == "categorical") {
+    # If switching to categorical and no values exist, auto-populate
+    if (length(categorical_values()) == 0 && !is.null(dictionary_state$current_variable)) {
+      autoPopulateCategoricalValues(dictionary_state$current_variable)
+    }
+  }
+})
+
+# Render variable name header
+output$variable_name_header <- renderUI({
+  if (!is.null(dictionary_state$current_variable)) {
+    h3(
+      dictionary_state$current_variable,
+      style = "color: #333; margin: 0; font-weight: bold;"
+    )
+  }
+})
+
+output$file_badges_content <- renderUI({
+  if (!is.null(dictionary_state$current_variable)) {
+    var_info <- dictionary_state$variables[[dictionary_state$current_variable]]
+    
+    tagList(
+      lapply(var_info$files, function(file_path) {
+        span(
+          basename(file_path),
+          class = "badge",
+          title = file_path,
+          style = "background-color: #3498db; color: white; padding: 4px 8px; border-radius: 12px; font-size: 11px; cursor: help; margin: 2px;"
+        )
+      }),
+      if (length(var_info$files) > 10) {
+        div(
+          style = "margin-top: 8px; padding-top: 8px; border-top: 1px solid #ddd; font-size: 12px; color: #666; text-align: center;",
+          paste("Total:", length(var_info$files), "files")
+        )
       }
+    )
+  }
+})
+
+# Update the categorical values table renderer:
+output$categorical_values_table <- renderUI({
+  values <- categorical_values()
+  
+  if (length(values) == 0) {
+    return(div(
+      style = "padding: 20px; text-align: center; color: #6c757d;",
+      "No categorical values defined. They will be auto-populated when you select 'Categorical' as the type."
+    ))
+  }
+  
+  rows <- lapply(seq_along(values), function(i) {
+    value_info <- values[[i]]
+    div(
+      style = "display: flex; padding: 8px; border-bottom: 1px solid #ced4da; align-items: center;",
+      div(style = "flex: 2; padding-right: 10px; font-weight: 500;", value_info$value),
+      div(style = "flex: 2; padding-right: 10px;", value_info$label %||% ""),
+      div(style = "flex: 3; padding-right: 10px;", value_info$description %||% ""),
+      div(
+        style = "flex: 0; width: 80px; display: flex; gap: 5px;",
+        actionButton(
+          session$ns(paste0("edit_cat_", i)),
+          label = NULL,
+          icon = icon("edit"),
+          class = "btn btn-sm btn-info",
+          style = "padding: 2px 6px;"
+        ),
+        actionButton(
+          session$ns(paste0("remove_cat_", i)),
+          label = NULL,
+          icon = icon("trash"),
+          class = "btn btn-sm btn-danger",
+          style = "padding: 2px 6px;",
+          onclick = paste0("Shiny.setInputValue('", session$ns("remove_cat_value"), "', ", i, ", {priority: 'event'});")
+        )
+      )
+    )
+  })
+  
+  do.call(tagList, rows)
+})
+
+# Handle editing categorical values
+observe({
+  values <- categorical_values()
+  
+  for (i in seq_along(values)) {
+    local({
+      local_i <- i
       
-      # Get the directory path from the file path
-      save_dir <- dirname(json_path)
-      
-      if (!dir.exists(save_dir)) {
-        showNotification("The directory does not exist. Please choose a valid location.", type = "error")
-        return()
-      }
-      
-      tryCatch({
-        # Read existing dataset_description.json for base info
-        original_json_path <- file.path(dictionary_state$dataset_path, "dataset_description.json")
-        
-        if (file.exists(original_json_path)) {
-          dataset_desc <- jsonlite::fromJSON(original_json_path)
-        } else {
-          dataset_desc <- list()
-        }
-        
-        # Get global missing values
-        global_missing_values <- dictionary_state$missing_values
-        
-        # Update variableMeasured with missing values in each PropertyValue
-        dataset_desc$variableMeasured <- lapply(names(dictionary_state$variables), function(var_name) {
-          var_info <- dictionary_state$variables[[var_name]]
+      # Edit button handler
+      observeEvent(input[[paste0("edit_cat_", local_i)]], {
+        current_values <- categorical_values()
+        if (local_i <= length(current_values)) {
+          value_info <- current_values[[local_i]]
           
-          prop_value <- list(
-            `@type` = "PropertyValue",
-            name = var_name,
-            description = if(nchar(var_info$description) > 0) var_info$description else NULL,
-            valueType = var_info$type
-          )
-          
-          # Add missing value codes to each variable
-          if (length(global_missing_values) > 0) {
-            prop_value$missingValueCodes <- global_missing_values
-          }
-          
-          if (nchar(var_info$unit) > 0) prop_value$unitText <- var_info$unit
-          if (nchar(var_info$min_value) > 0) prop_value$minValue <- var_info$min_value
-          if (nchar(var_info$max_value) > 0) prop_value$maxValue <- var_info$max_value
-          
-          if (var_info$type == "categorical" && length(var_info$categorical_values) > 0) {
-            prop_value$valueReference <- I(lapply(var_info$categorical_values, function(cat) {
-              cat_obj <- list(
-                value = cat$value,
-                label = if(nchar(cat$label) > 0 && cat$label != cat$value) cat$label else NULL,
-                description = if(nchar(cat$description) > 0) cat$description else NULL
+          showModal(modalDialog(
+            title = "Edit Categorical Value",
+            div(
+              textInput(
+                session$ns("edit_cat_value"),
+                "Value",
+                value = value_info$value,
+                placeholder = "The actual value in the data"
+              ),
+              textInput(
+                session$ns("edit_cat_label"),
+                "Label",
+                value = value_info$label %||% "",
+                placeholder = "Human-readable label for this value"
+              ),
+              textInput(
+                session$ns("edit_cat_description"),
+                "Description",
+                value = value_info$description %||% "",
+                placeholder = "Description of what this value means"
               )
-              cat_obj[!sapply(cat_obj, is.null)]
-            }))
-          }
+            ),
+            footer = tagList(
+              modalButton("Cancel"),
+              actionButton(session$ns("save_edit_cat"), "Save", class = "btn-primary")
+            ),
+            easyClose = TRUE
+          ))
           
-          # ALWAYS include these fields
-          prop_value$required <- var_info$required %||% FALSE
-          prop_value$unique <- var_info$unique %||% FALSE
-          
-          # Only add pattern if it has a value
-          if (nchar(var_info$pattern) > 0) prop_value$pattern <- var_info$pattern
-          
-          prop_value[!sapply(prop_value, is.null)]
-        })
-        
-        # Write to the specified path
-        jsonlite::write_json(dataset_desc, json_path, pretty = TRUE, auto_unbox = TRUE)
-        
-        # Store the dataset path in state for the explorer
-        state$dictionary_dataset_dir <- dictionary_state$dataset_path
-        
-        removeModal()
-        showNotification(paste("Data dictionary saved successfully to:", json_path), type = "message")
-        
-        # Navigate to dataset explorer
-        session$sendCustomMessage("changeTab", list(tabName = "explorer"))
-        
-      }, error = function(e) {
-        showNotification(paste("Error saving dictionary:", e$message), type = "error")
-      })
+          # Store which index we're editing
+          dictionary_state$editing_cat_index <- local_i
+        }
+      }, ignoreInit = TRUE)
+    })
+  }
+})
+
+# Save edited categorical value
+observeEvent(input$save_edit_cat, {
+  if (!is.null(dictionary_state$editing_cat_index)) {
+    current_values <- categorical_values()
+    index <- dictionary_state$editing_cat_index
+    
+    if (index <= length(current_values)) {
+      # Update the value at the index
+      current_values[[index]] <- list(
+        value = input$edit_cat_value,
+        label = input$edit_cat_label,
+        description = input$edit_cat_description
+      )
+      
+      categorical_values(current_values)
+      removeModal()
+      showNotification("Categorical value updated", type = "message")
+    }
+  }
+})
+
+
+
+# Update the add categorical value handler:
+observeEvent(input$add_cat_value, {
+  if (!is.null(input$new_cat_value) && input$new_cat_value != "") {
+    current_values <- categorical_values()
+    
+    # Check for duplicates
+    existing_values <- sapply(current_values, function(x) x$value)
+    if (input$new_cat_value %in% existing_values) {
+      showNotification("This value already exists", type = "warning")
+      return()
+    }
+    
+    # Add new value with label
+    new_value <- list(
+      value = input$new_cat_value,
+      label = if(is.null(input$new_cat_label) || input$new_cat_label == "") {
+        input$new_cat_value  # Default label to value if not provided
+      } else {
+        input$new_cat_label
+      },
+      description = input$new_cat_description %||% ""
+    )
+    
+    categorical_values(c(current_values, list(new_value)))
+    
+    # Clear inputs
+    updateTextInput(session, "new_cat_value", value = "")
+    updateTextInput(session, "new_cat_label", value = "")
+    updateTextInput(session, "new_cat_description", value = "")
+    
+    showNotification("Categorical value added", type = "message")
+  } else {
+    showNotification("Please enter a value", type = "warning")
+  }
+})
+
+# Handle removing categorical values
+observeEvent(input$remove_cat_value, {
+  index <- input$remove_cat_value
+  current_values <- categorical_values()
+  
+  if (!is.null(index) && index > 0 && index <= length(current_values)) {
+    categorical_values(current_values[-index])
+    showNotification("Categorical value removed", type = "message")
+  }
+}, ignoreInit = TRUE)
+
+generateFullDatasetDescriptionPreview <- function() {
+  # Read existing dataset_description.json to get name, description, authors
+  json_path <- file.path(dictionary_state$dataset_path, "dataset_description.json")
+  
+  dataset_info <- list(
+    name = "Dataset Name",
+    description = "Dataset Description",
+    authors = list()
+  )
+  
+  if (file.exists(json_path)) {
+    tryCatch({
+      existing <- jsonlite::fromJSON(json_path)
+      if (!is.null(existing$name)) dataset_info$name <- existing$name
+      if (!is.null(existing$description)) dataset_info$description <- existing$description
+      if (!is.null(existing$author)) dataset_info$authors <- existing$author
+    }, error = function(e) {})
+  }
+  
+  # Build variableMeasured array
+  global_missing_values <- dictionary_state$missing_values
+  
+  variable_measured <- lapply(names(dictionary_state$variables), function(var_name) {
+    var_info <- dictionary_state$variables[[var_name]]
+    
+    prop_value <- list(
+      `@type` = "PropertyValue",
+      name = var_name,
+      description = if(nchar(var_info$description) > 0) var_info$description else NULL,
+      valueType = var_info$type
+    )
+    
+    if (length(global_missing_values) > 0) {
+      prop_value$missingValueCodes <- global_missing_values
+    }
+    
+    if (nchar(var_info$unit) > 0) prop_value$unitText <- var_info$unit
+    if (nchar(var_info$min_value) > 0) prop_value$minValue <- var_info$min_value
+    if (nchar(var_info$max_value) > 0) prop_value$maxValue <- var_info$max_value
+    
+    if (var_info$type == "categorical" && length(var_info$categorical_values) > 0) {
+      prop_value$valueReference <- I(lapply(var_info$categorical_values, function(cat) {
+        cat_obj <- list(
+          value = cat$value,
+          label = if(nchar(cat$label) > 0 && cat$label != cat$value) cat$label else NULL,
+          description = if(nchar(cat$description) > 0) cat$description else NULL
+        )
+        cat_obj[!sapply(cat_obj, is.null)]
+      }))
+    }
+    
+    prop_value$required <- var_info$required %||% FALSE
+    prop_value$unique <- var_info$unique %||% FALSE
+    if (nchar(var_info$pattern) > 0) prop_value$pattern <- var_info$pattern
+    
+    prop_value[!sapply(prop_value, is.null)]
+  })
+  
+  # Build complete dataset_description
+  full_json <- list(
+    `@context` = "https://schema.org/",
+    `@type` = "Dataset",
+    name = dataset_info$name,
+    description = dataset_info$description,
+    author = dataset_info$authors,
+    variableMeasured = variable_measured
+  )
+  
+  # Convert to JSON string
+  json_str <- jsonlite::toJSON(full_json, pretty = TRUE, auto_unbox = TRUE)
+  
+  # Add syntax highlighting
+  json_html <- json_str
+  json_html <- gsub('"(@?[^"]+)":', '<span style="color: #0969da;">\"\\1\"</span>:', json_html)
+  json_html <- gsub(':\\s*"([^"]*)"', ': <span style="color: #0a3069;">\"\\1\"</span>', json_html)
+  json_html <- gsub(':\\s*(true|false)', ': <span style="color: #cf222e;">\\1</span>', json_html)
+  json_html <- gsub(':\\s*([0-9.]+)', ': <span style="color: #953800;">\\1</span>', json_html)
+  
+  return(json_html)
+}
+
+
+observeEvent(input$continue, {
+  message("Save dictionary button clicked\n")
+  
+  # Save current variable before proceeding
+  saveCurrentVariable()
+  
+  # Generate the FULL dataset_description.json preview
+  full_json_preview <- generateFullDatasetDescriptionPreview()
+  
+  # Default save path
+  default_save_path <- file.path(dictionary_state$dataset_path, "dataset_description.json")
+  
+  # Show preview modal with overwrite warning and path selector
+  showModal(modalDialog(
+    title = "Review Complete Dataset Description",
+    size = "l",
+    
+    div(
+      class = "alert alert-warning",
+      style = "margin-bottom: 20px;",
+      icon("exclamation-triangle", style = "margin-right: 8px;"),
+      tags$strong("Important: "),
+      "By default, this will overwrite the existing dataset_description.json file. ",
+      "You can change the save location below if you want to preserve the original."
+    ),
+    
+    div(
+      p("Here's the complete dataset_description.json that will be saved:"),
+      
+      # Preview container
+      tags$pre(
+        style = "background-color: #f8f9fa; padding: 15px; border-radius: 5px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px;",
+        HTML(full_json_preview)
+      ),
+      
+      # Summary stats
+      div(
+        style = "margin-top: 15px; padding: 10px; background-color: #e8f4f8; border-radius: 4px;",
+        p(strong("Summary:")),
+        p(paste("Total variables:", length(dictionary_state$variables))),
+        p(paste("Variables with descriptions:", 
+                sum(sapply(dictionary_state$variables, function(v) nchar(v$description) > 0)))),
+        p(paste("Categorical variables:", 
+                sum(sapply(dictionary_state$variables, function(v) v$type == "categorical")))),
+        p(paste("Missing value codes defined:", length(dictionary_state$missing_values)))
+      ),
+      
+      # Save location selector
+      div(
+        style = "margin-top: 20px;",
+        tags$label("Save Location", style = "font-weight: bold; margin-bottom: 8px; display: block;"),
+        div(
+          class = "directory-input",
+          textInput(
+            session$ns("dictionary_save_path"),
+            label = NULL,
+            value = default_save_path,
+            placeholder = "Path to save dataset_description.json",
+            width = "100%"
+          ),
+          shinySaveButton(
+            session$ns("dictionary_save_select"),
+            label = "...",
+            title = "Choose save location",
+            filetype = list(json = "json"),
+            class = "browse-btn"
+          )
+        ),
+        tags$small(
+          style = "color: #6c757d; display: block; margin-top: 5px;",
+          "Change this path if you want to save to a different location without overwriting the original"
+        )
+      )
+    ),
+    
+    footer = tagList(
+      modalButton("Back to Editing"),
+      actionButton(session$ns("confirm_save_dictionary"), "Save & Continue to Explorer", class = "btn-primary")
+    ),
+    easyClose = TRUE
+  ))
+})
+
+shinyFileSave(
+  input,
+  "dictionary_save_select",
+  roots = volumes,
+  session = session,
+  filetypes = c("json"),
+  restrictions = system.file(package = "base")
+)
+
+observeEvent(input$dictionary_save_select, {
+  if (!is.integer(input$dictionary_save_select)) {
+    file_selected <- parseSavePath(volumes, input$dictionary_save_select)
+    if (length(file_selected$datapath) > 0) {
+      save_path <- as.character(file_selected$datapath)
+      # Ensure it has .json extension
+      if (!grepl("\\.json$", save_path)) {
+        save_path <- paste0(save_path, ".json")
+      }
+      updateTextInput(session, "dictionary_save_path", value = save_path)
+    }
+  }
+})
+
+observeEvent(input$confirm_save_dictionary, {
+  # Use the custom save path from the input
+  json_path <- input$dictionary_save_path
+  
+  if (is.null(json_path) || json_path == "") {
+    showNotification("Please specify a save location", type = "error")
+    return()
+  }
+  
+  # Get the directory path from the file path
+  save_dir <- dirname(json_path)
+  
+  if (!dir.exists(save_dir)) {
+    showNotification("The directory does not exist. Please choose a valid location.", type = "error")
+    return()
+  }
+  
+  tryCatch({
+    # Read existing dataset_description.json for base info
+    original_json_path <- file.path(dictionary_state$dataset_path, "dataset_description.json")
+    
+    if (file.exists(original_json_path)) {
+      dataset_desc <- jsonlite::fromJSON(original_json_path)
+    } else {
+      dataset_desc <- list()
+    }
+    
+    # Get global missing values
+    global_missing_values <- dictionary_state$missing_values
+    
+    # Update variableMeasured with missing values in each PropertyValue
+    dataset_desc$variableMeasured <- lapply(names(dictionary_state$variables), function(var_name) {
+      var_info <- dictionary_state$variables[[var_name]]
+      
+      prop_value <- list(
+        `@type` = "PropertyValue",
+        name = var_name,
+        description = if(nchar(var_info$description) > 0) var_info$description else NULL,
+        valueType = var_info$type
+      )
+      
+      # Add missing value codes to each variable
+      if (length(global_missing_values) > 0) {
+        prop_value$missingValueCodes <- global_missing_values
+      }
+      
+      if (nchar(var_info$unit) > 0) prop_value$unitText <- var_info$unit
+      if (nchar(var_info$min_value) > 0) prop_value$minValue <- var_info$min_value
+      if (nchar(var_info$max_value) > 0) prop_value$maxValue <- var_info$max_value
+      
+      if (var_info$type == "categorical" && length(var_info$categorical_values) > 0) {
+        prop_value$valueReference <- I(lapply(var_info$categorical_values, function(cat) {
+          cat_obj <- list(
+            value = cat$value,
+            label = if(nchar(cat$label) > 0 && cat$label != cat$value) cat$label else NULL,
+            description = if(nchar(cat$description) > 0) cat$description else NULL
+          )
+          cat_obj[!sapply(cat_obj, is.null)]
+        }))
+      }
+      
+      # ALWAYS include these fields
+      prop_value$required <- var_info$required %||% FALSE
+      prop_value$unique <- var_info$unique %||% FALSE
+      
+      # Only add pattern if it has a value
+      if (nchar(var_info$pattern) > 0) prop_value$pattern <- var_info$pattern
+      
+      prop_value[!sapply(prop_value, is.null)]
     })
     
-    # Return reactive containing dictionary state
-    return(reactive({ dictionary_state }))
+    # Write to the specified path
+    jsonlite::write_json(dataset_desc, json_path, pretty = TRUE, auto_unbox = TRUE)
+    
+    # Store the dataset path in state for the explorer
+    state$dictionary_dataset_dir <- dictionary_state$dataset_path
+    
+    removeModal()
+    showNotification(paste("Data dictionary saved successfully to:", json_path), type = "message")
+    
+    # Navigate to dataset explorer
+    session$sendCustomMessage("changeTab", list(tabName = "explorer"))
+    
+  }, error = function(e) {
+    showNotification(paste("Error saving dictionary:", e$message), type = "error")
+  })
+})
+
+# Return reactive containing dictionary state
+return(reactive({ dictionary_state }))
   })
 }
 
@@ -6352,841 +6711,841 @@ observeEvent(input$confirm_generate, {
 #' @param session The current session object
 datasetExplorerServer <- function(id, state, session) {
   moduleServer(id, function(input, output, session) {
-    
-    # Reactive values for explorer state
-    explorer_state <- reactiveValues(
-      dataset_path = NULL,
-      csv_files = list(),
-      current_file = NULL,
-      current_data = NULL,
-      keyword_filters = list(),
-      column_filters = list(),
-      available_keywords = character(0),
-      available_columns = character(0)
-    )
-    
-    # Track if dataset is loaded
-    output$dataset_loaded <- reactive({
-      !is.null(explorer_state$dataset_path) && length(explorer_state$csv_files) > 0
-    })
-    outputOptions(output, "dataset_loaded", suspendWhenHidden = FALSE)
-    
-    # Set up directory selection
-    volumes <- c(Home = "~")
-    if (.Platform$OS.type == "windows") {
-      volumes <- c(volumes, getVolumes()())
+
+# Reactive values for explorer state
+explorer_state <- reactiveValues(
+  dataset_path = NULL,
+  csv_files = list(),
+  current_file = NULL,
+  current_data = NULL,
+  keyword_filters = list(),
+  column_filters = list(),
+  available_keywords = character(0),
+  available_columns = character(0)
+)
+
+# Track if dataset is loaded
+output$dataset_loaded <- reactive({
+  !is.null(explorer_state$dataset_path) && length(explorer_state$csv_files) > 0
+})
+outputOptions(output, "dataset_loaded", suspendWhenHidden = FALSE)
+
+# Set up directory selection
+volumes <- c(Home = "~")
+if (.Platform$OS.type == "windows") {
+  volumes <- c(volumes, getVolumes()())
+}
+
+shinyDirChoose(
+  input,
+  "dataset_dir_select", 
+  roots = volumes,
+  session = session,
+  restrictions = system.file(package = "base")
+)
+
+extractKeywordValues <- function(keyword) {
+  values <- character(0)
+  
+  for (file in explorer_state$csv_files) {
+    filename <- basename(file)
+    # Look for pattern like "keyword-value"
+    pattern <- paste0(keyword, "-([^_]+)")
+    matches <- regmatches(filename, regexec(pattern, filename))
+    if (length(matches[[1]]) > 1) {
+      values <- c(values, matches[[1]][2])
     }
-    
-    shinyDirChoose(
-      input,
-      "dataset_dir_select", 
-      roots = volumes,
-      session = session,
-      restrictions = system.file(package = "base")
-    )
+  }
+  
+  return(unique(sort(values)))
+}
 
-    extractKeywordValues <- function(keyword) {
-      values <- character(0)
-      
-      for (file in explorer_state$csv_files) {
-        filename <- basename(file)
-        # Look for pattern like "keyword-value"
-        pattern <- paste0(keyword, "-([^_]+)")
-        matches <- regmatches(filename, regexec(pattern, filename))
-        if (length(matches[[1]]) > 1) {
-          values <- c(values, matches[[1]][2])
-        }
-      }
-      
-      return(unique(sort(values)))
+observeEvent(input$dataset_dir_select, {
+  if (!is.null(input$dataset_dir_select)) {
+    selected_dir <- parseDirPath(volumes, input$dataset_dir_select)
+    if (length(selected_dir) > 0 && selected_dir != "") {
+      updateTextInput(session, "dataset_dir", value = selected_dir)
     }
-    
-    observeEvent(input$dataset_dir_select, {
-      if (!is.null(input$dataset_dir_select)) {
-        selected_dir <- parseDirPath(volumes, input$dataset_dir_select)
-        if (length(selected_dir) > 0 && selected_dir != "") {
-          updateTextInput(session, "dataset_dir", value = selected_dir)
-        }
-      }
-    })
-    
-    # Display dataset info
-    output$dataset_info <- renderUI({
-      if (!is.null(explorer_state$dataset_path) && length(explorer_state$csv_files) > 0) {
-        dataset_name <- basename(explorer_state$dataset_path)
-        file_count <- length(explorer_state$csv_files)
-        
-        div(
-          icon("check-circle", style = "color: #28a745; margin-right: 8px;"),
-          strong("Dataset loaded: "), dataset_name,
-          span(style = "margin-left: 15px; color: #6c757d;",
-               paste(file_count, "CSV files found"))
-        )
-      } else if (!is.null(explorer_state$dataset_path)) {
-        div(
-          icon("exclamation-triangle", style = "color: #ffc107; margin-right: 8px;"),
-          strong("Dataset path selected: "), basename(explorer_state$dataset_path),
-          span(style = "margin-left: 15px; color: #dc3545;",
-               "No CSV files found in data directory")
-        )
-      }
-    })
-    
-    # Load dataset when button clicked
-    observeEvent(input$load_dataset_btn, {
-      dataset_path <- input$dataset_dir
-      
-      if (dataset_path == "" || !dir.exists(dataset_path)) {
-        showNotification("Please select a valid dataset directory", type = "error")
-        return()
-      }
-      
-      # Check if it's a valid Psych-DS dataset
-      if (!file.exists(file.path(dataset_path, "dataset_description.json"))) {
-        showNotification("Selected directory does not contain dataset_description.json", type = "error")
-        return()
-      }
-      
-      if (!dir.exists(file.path(dataset_path, "data"))) {
-        showNotification("Selected directory does not contain a 'data' folder", type = "error") 
-        return()
-      }
-      
-      # Load CSV files from data directory
-      tryCatch({
-        data_dir <- file.path(dataset_path, "data")
-        # Use recursive = TRUE to find CSV files in subdirectories
-        csv_files <- list.files(data_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
-        
-        message("Looking for CSV files in: ", data_dir)
-        message("Found files: ", paste(csv_files, collapse = ", "))
-        
-        if (length(csv_files) == 0) {
-          # Try looking without the recursive flag first to debug
-          all_files <- list.files(data_dir, recursive = TRUE, full.names = TRUE)
-          message("All files in data dir: ", paste(all_files, collapse = ", "))
-          
-          showNotification("No CSV files found in data directory", type = "warning")
-          explorer_state$dataset_path <- dataset_path
-          explorer_state$csv_files <- character(0)
-          return()
-        }
-        
-        # Extract keywords from filenames
-        keywords <- extractKeywordsFromFilenames(basename(csv_files))
-        
-        explorer_state$dataset_path <- dataset_path
-        explorer_state$csv_files <- csv_files
-        explorer_state$available_keywords <- keywords
-        explorer_state$current_file <- csv_files[1]
-        
-        # Load the first file
-        loadCurrentFile()
-        
-        # Update UI choices
-        updateSelectInput(session, "keyword_select", choices = c("Select keyword..." = "", keywords))
-        
-        showNotification(paste("Dataset loaded successfully!", length(csv_files), "CSV files found"), type = "message")
-        
-      }, error = function(e) {
-        message("Error in loading dataset: ", e$message)
-        showNotification(paste("Error loading dataset:", e$message), type = "error")
-      })
-    })
+  }
+})
 
-    observeEvent(input$keyword_select, {
-      if (!is.null(input$keyword_select) && 
-          input$keyword_select != "" && 
-          input$keyword_select != "(Load dataset first)") {
-        
-        # Extract all possible values for this keyword
-        possible_values <- extractKeywordValues(input$keyword_select)
-        
-        # Update the selectize input with these values
-        updateSelectizeInput(session, "keyword_value", 
-                            choices = possible_values,
-                            server = TRUE)  # Use server-side for better performance with many options
-      } else {
-        # Clear choices if no keyword selected
-        updateSelectizeInput(session, "keyword_value", choices = character(0))
-      }
-    })
-
-    observeEvent(input$column_select, {
-      if (!is.null(input$column_select) && 
-          input$column_select != "" && 
-          input$column_select != "(Load dataset first)" &&
-          !is.null(explorer_state$current_data)) {
-        
-        # Get unique values from the selected column across all loaded files
-        all_values <- character(0)
-        
-        for (file in explorer_state$csv_files) {
-          tryCatch({
-            temp_data <- read.csv(file, stringsAsFactors = FALSE)
-            if (input$column_select %in% names(temp_data)) {
-              column_values <- as.character(temp_data[[input$column_select]])
-              # Keep blank values explicitly
-              all_values <- c(all_values, column_values)
-            }
-          }, error = function(e) {
-            # Skip files that can't be read
-          })
-        }
-        
-        # Get unique sorted values - include blanks
-        unique_values <- unique(all_values)
-        # Separate blanks and non-blanks
-        blank_values <- unique_values[unique_values == "" | is.na(unique_values)]
-        non_blank_values <- unique_values[unique_values != "" & !is.na(unique_values)]
-        
-        # Sort non-blank values
-        non_blank_values <- sort(non_blank_values)
-        
-        # Combine with blanks at the top, using a display label
-        if (length(blank_values) > 0) {
-          # Add a labeled blank option
-          unique_values <- c("(blank)" = "", non_blank_values)
-        } else {
-          unique_values <- non_blank_values
-        }
-        
-        # Limit to reasonable number if there are too many
-        if (length(unique_values) > 500) {
-          unique_values <- unique_values[1:500]
-          showNotification("Showing first 500 unique values. Type to search for specific values.", 
-                          type = "info", duration = 5)
-        }
-        
-        # Update the selectize input
-        updateSelectizeInput(session, "column_value", 
-                            choices = unique_values,
-                            server = TRUE)
-      } else {
-        # Clear choices if no column selected
-        updateSelectizeInput(session, "column_value", choices = character(0))
-      }
-    })
+# Display dataset info
+output$dataset_info <- renderUI({
+  if (!is.null(explorer_state$dataset_path) && length(explorer_state$csv_files) > 0) {
+    dataset_name <- basename(explorer_state$dataset_path)
+    file_count <- length(explorer_state$csv_files)
     
-    # Initialize the search panel UI components even before dataset is loaded
-    observe({
-      # Initialize keyword select with empty choices
-      if (length(explorer_state$available_keywords) == 0) {
-        updateSelectInput(session, "keyword_select", 
-                         choices = c("Select keyword..." = "", "(Load dataset first)" = ""))
-      }
+    div(
+      icon("check-circle", style = "color: #28a745; margin-right: 8px;"),
+      strong("Dataset loaded: "), dataset_name,
+      span(style = "margin-left: 15px; color: #6c757d;",
+           paste(file_count, "CSV files found"))
+    )
+  } else if (!is.null(explorer_state$dataset_path)) {
+    div(
+      icon("exclamation-triangle", style = "color: #ffc107; margin-right: 8px;"),
+      strong("Dataset path selected: "), basename(explorer_state$dataset_path),
+      span(style = "margin-left: 15px; color: #dc3545;",
+           "No CSV files found in data directory")
+    )
+  }
+})
+
+# Load dataset when button clicked
+observeEvent(input$load_dataset_btn, {
+  dataset_path <- input$dataset_dir
+  
+  if (dataset_path == "" || !dir.exists(dataset_path)) {
+    showNotification("Please select a valid dataset directory", type = "error")
+    return()
+  }
+  
+  # Check if it's a valid Psych-DS dataset
+  if (!file.exists(file.path(dataset_path, "dataset_description.json"))) {
+    showNotification("Selected directory does not contain dataset_description.json", type = "error")
+    return()
+  }
+  
+  if (!dir.exists(file.path(dataset_path, "data"))) {
+    showNotification("Selected directory does not contain a 'data' folder", type = "error") 
+    return()
+  }
+  
+  # Load CSV files from data directory
+  tryCatch({
+    data_dir <- file.path(dataset_path, "data")
+    # Use recursive = TRUE to find CSV files in subdirectories
+    csv_files <- list.files(data_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
+    
+    message("Looking for CSV files in: ", data_dir)
+    message("Found files: ", paste(csv_files, collapse = ", "))
+    
+    if (length(csv_files) == 0) {
+      # Try looking without the recursive flag first to debug
+      all_files <- list.files(data_dir, recursive = TRUE, full.names = TRUE)
+      message("All files in data dir: ", paste(all_files, collapse = ", "))
       
-      # Initialize column select with empty choices
-      if (length(explorer_state$available_columns) == 0) {
-        updateSelectInput(session, "column_select", 
-                         choices = c("Select column..." = "", "(Load dataset first)" = ""))
-        updateSelectInput(session, "stats_variable", 
-                         choices = c("Select variable..." = "", "(Load dataset first)" = ""))
-      }
-    })
+      showNotification("No CSV files found in data directory", type = "warning")
+      explorer_state$dataset_path <- dataset_path
+      explorer_state$csv_files <- character(0)
+      return()
+    }
     
     # Extract keywords from filenames
-    extractKeywordsFromFilenames <- function(filenames) {
-      all_keywords <- character(0)
-      
-      for (filename in filenames) {
-        # Remove file extension and split by underscore
-        base_name <- gsub("\\.[^.]*$", "", filename)
-        parts <- strsplit(base_name, "_")[[1]]
-        
-        # Extract keyword-value pairs
-        for (part in parts) {
-          if (grepl("-", part)) {
-            keyword <- strsplit(part, "-")[[1]][1]
-            all_keywords <- c(all_keywords, keyword)
-          }
+    keywords <- extractKeywordsFromFilenames(basename(csv_files))
+    
+    explorer_state$dataset_path <- dataset_path
+    explorer_state$csv_files <- csv_files
+    explorer_state$available_keywords <- keywords
+    explorer_state$current_file <- csv_files[1]
+    
+    # Load the first file
+    loadCurrentFile()
+    
+    # Update UI choices
+    updateSelectInput(session, "keyword_select", choices = c("Select keyword..." = "", keywords))
+    
+    showNotification(paste("Dataset loaded successfully!", length(csv_files), "CSV files found"), type = "message")
+    
+  }, error = function(e) {
+    message("Error in loading dataset: ", e$message)
+    showNotification(paste("Error loading dataset:", e$message), type = "error")
+  })
+})
+
+observeEvent(input$keyword_select, {
+  if (!is.null(input$keyword_select) && 
+      input$keyword_select != "" && 
+      input$keyword_select != "(Load dataset first)") {
+    
+    # Extract all possible values for this keyword
+    possible_values <- extractKeywordValues(input$keyword_select)
+    
+    # Update the selectize input with these values
+    updateSelectizeInput(session, "keyword_value", 
+                        choices = possible_values,
+                        server = TRUE)  # Use server-side for better performance with many options
+  } else {
+    # Clear choices if no keyword selected
+    updateSelectizeInput(session, "keyword_value", choices = character(0))
+  }
+})
+
+observeEvent(input$column_select, {
+  if (!is.null(input$column_select) && 
+      input$column_select != "" && 
+      input$column_select != "(Load dataset first)" &&
+      !is.null(explorer_state$current_data)) {
+    
+    # Get unique values from the selected column across all loaded files
+    all_values <- character(0)
+    
+    for (file in explorer_state$csv_files) {
+      tryCatch({
+        temp_data <- read.csv(file, stringsAsFactors = FALSE)
+        if (input$column_select %in% names(temp_data)) {
+          column_values <- as.character(temp_data[[input$column_select]])
+          # Keep blank values explicitly
+          all_values <- c(all_values, column_values)
         }
-      }
-      
-      return(unique(all_keywords))
-    }
-    
-    # Load current file data
-    loadCurrentFile <- function() {
-      if (!is.null(explorer_state$current_file) && file.exists(explorer_state$current_file)) {
-        tryCatch({
-          message("Loading file: ", explorer_state$current_file)
-          data <- read.csv(explorer_state$current_file, stringsAsFactors = FALSE)
-          explorer_state$current_data <- data
-          explorer_state$available_columns <- names(data)
-          
-          # Update column choices
-          updateSelectInput(session, "column_select", 
-                           choices = c("Select column..." = "", names(data)))
-          updateSelectInput(session, "stats_variable", 
-                           choices = c("Select variable..." = "", names(data)))
-          
-          message("File loaded successfully with ", nrow(data), " rows and ", ncol(data), " columns")
-          
-        }, error = function(e) {
-          message("Error reading file: ", e$message)
-          showNotification(paste("Error reading file:", e$message), type = "error")
-        })
-      }
-    }
-    
-    # Add keyword filter
-    observeEvent(input$add_keyword_filter, {
-      if (!is.null(input$keyword_select) && input$keyword_select != "" && 
-          input$keyword_select != "(Load dataset first)" &&
-          !is.null(input$keyword_value) && input$keyword_value != "") {
-        
-        filter_key <- paste0(input$keyword_select, ":", input$keyword_value)
-        
-        # Check if filter already exists
-        if (!filter_key %in% names(explorer_state$keyword_filters)) {
-          explorer_state$keyword_filters[[filter_key]] <- list(
-            keyword = input$keyword_select,
-            value = input$keyword_value
-          )
-          
-          # Clear inputs
-          updateTextInput(session, "keyword_value", value = "")
-          
-          # Apply filters
-          applyFilters()
-          
-          showNotification("Keyword filter added", type = "message")
-        } else {
-          showNotification("This filter already exists", type = "warning")
-        }
-      } else {
-        showNotification("Please select a keyword and enter a value", type = "warning")
-      }
-    })
-    
-    # Add column filter
-    observeEvent(input$add_column_filter, {
-      if (!is.null(input$column_select) && input$column_select != "" && 
-          input$column_select != "(Load dataset first)" &&
-          !is.null(input$column_value)) {  # Remove the check for input$column_value != ""
-        
-        filter_key <- paste0(input$column_select, ":", input$column_value)
-        
-        # Check if filter already exists
-        if (!filter_key %in% names(explorer_state$column_filters)) {
-          explorer_state$column_filters[[filter_key]] <- list(
-            column = input$column_select,
-            value = input$column_value
-          )
-          
-          # Clear inputs
-          updateSelectizeInput(session, "column_value", selected = character(0))
-          
-          showNotification("Column filter added", type = "message")
-        } else {
-          showNotification("This filter already exists", type = "warning")
-        }
-      } else {
-        showNotification("Please select a column and enter a value", type = "warning")
-      }
-    })
-    
-    # Apply filters to determine which files to show
-    applyFilters <- function() {
-      if (length(explorer_state$keyword_filters) == 0) {
-        return()
-      }
-      
-      # Filter files based on keyword filters
-      matching_files <- explorer_state$csv_files
-      
-      for (filter in explorer_state$keyword_filters) {
-        pattern <- paste0(filter$keyword, "-", filter$value)
-        matching_files <- matching_files[grepl(pattern, basename(matching_files))]
-      }
-      
-      # Load first matching file if different from current
-      if (length(matching_files) > 0 && matching_files[1] != explorer_state$current_file) {
-        explorer_state$current_file <- matching_files[1]
-        loadCurrentFile()
-      } else if (length(matching_files) == 0) {
-        showNotification("No files match the current filters", type = "warning")
-      }
-    }
-    
-    # Display keyword filters
-    output$keyword_filters_display <- renderUI({
-      filters <- explorer_state$keyword_filters
-      
-      if (length(filters) == 0) {
-        return(div(
-          style = "color: #6c757d; font-style: italic;",
-          "No keyword filters active"
-        ))
-      }
-      
-      filter_badges <- lapply(names(filters), function(filter_key) {
-        filter <- filters[[filter_key]]
-        span(
-          style = "display: inline-block; margin: 2px; padding: 4px 8px; background-color: #3498db; color: white; border-radius: 12px; font-size: 12px;",
-          paste0(filter$keyword, ': "', filter$value, '"'),
-          actionButton(
-            session$ns(paste0("remove_kw_", gsub("[^A-Za-z0-9]", "_", filter_key))),
-            "×",
-            style = "background: none; border: none; color: white; padding: 0 0 0 5px; font-size: 14px;",
-            onclick = paste0("Shiny.setInputValue('", session$ns("remove_keyword_filter"), "', '", filter_key, "', {priority: 'event'});")
-          )
-        )
+      }, error = function(e) {
+        # Skip files that can't be read
       })
-      
-      do.call(tagList, filter_badges)
-    })
+    }
     
-    # Display column filters
-    output$column_filters_display <- renderUI({
-      filters <- explorer_state$column_filters
-      
-      if (length(filters) == 0) {
-        return(div(
-          style = "color: #6c757d; font-style: italic;",
-          "No column filters active"
-        ))
+    # Get unique sorted values - include blanks
+    unique_values <- unique(all_values)
+    # Separate blanks and non-blanks
+    blank_values <- unique_values[unique_values == "" | is.na(unique_values)]
+    non_blank_values <- unique_values[unique_values != "" & !is.na(unique_values)]
+    
+    # Sort non-blank values
+    non_blank_values <- sort(non_blank_values)
+    
+    # Combine with blanks at the top, using a display label
+    if (length(blank_values) > 0) {
+      # Add a labeled blank option
+      unique_values <- c("(blank)" = "", non_blank_values)
+    } else {
+      unique_values <- non_blank_values
+    }
+    
+    # Limit to reasonable number if there are too many
+    if (length(unique_values) > 500) {
+      unique_values <- unique_values[1:500]
+      showNotification("Showing first 500 unique values. Type to search for specific values.", 
+                      type = "info", duration = 5)
+    }
+    
+    # Update the selectize input
+    updateSelectizeInput(session, "column_value", 
+                        choices = unique_values,
+                        server = TRUE)
+  } else {
+    # Clear choices if no column selected
+    updateSelectizeInput(session, "column_value", choices = character(0))
+  }
+})
+
+# Initialize the search panel UI components even before dataset is loaded
+observe({
+  # Initialize keyword select with empty choices
+  if (length(explorer_state$available_keywords) == 0) {
+    updateSelectInput(session, "keyword_select", 
+                     choices = c("Select keyword..." = "", "(Load dataset first)" = ""))
+  }
+  
+  # Initialize column select with empty choices
+  if (length(explorer_state$available_columns) == 0) {
+    updateSelectInput(session, "column_select", 
+                     choices = c("Select column..." = "", "(Load dataset first)" = ""))
+    updateSelectInput(session, "stats_variable", 
+                     choices = c("Select variable..." = "", "(Load dataset first)" = ""))
+  }
+})
+
+# Extract keywords from filenames
+extractKeywordsFromFilenames <- function(filenames) {
+  all_keywords <- character(0)
+  
+  for (filename in filenames) {
+    # Remove file extension and split by underscore
+    base_name <- gsub("\\.[^.]*$", "", filename)
+    parts <- strsplit(base_name, "_")[[1]]
+    
+    # Extract keyword-value pairs
+    for (part in parts) {
+      if (grepl("-", part)) {
+        keyword <- strsplit(part, "-")[[1]][1]
+        all_keywords <- c(all_keywords, keyword)
       }
+    }
+  }
+  
+  return(unique(all_keywords))
+}
+
+# Load current file data
+loadCurrentFile <- function() {
+  if (!is.null(explorer_state$current_file) && file.exists(explorer_state$current_file)) {
+    tryCatch({
+      message("Loading file: ", explorer_state$current_file)
+      data <- read.csv(explorer_state$current_file, stringsAsFactors = FALSE)
+      explorer_state$current_data <- data
+      explorer_state$available_columns <- names(data)
       
-      filter_badges <- lapply(names(filters), function(filter_key) {
-        filter <- filters[[filter_key]]
-        span(
-          style = "display: inline-block; margin: 2px; padding: 4px 8px; background-color: #e74c3c; color: white; border-radius: 12px; font-size: 12px;",
-          paste0(filter$column, ': "', filter$value, '"'),
-          actionButton(
-            session$ns(paste0("remove_col_", gsub("[^A-Za-z0-9]", "_", filter_key))),
-            "×",
-            style = "background: none; border: none; color: white; padding: 0 0 0 5px; font-size: 14px;",
-            onclick = paste0("Shiny.setInputValue('", session$ns("remove_column_filter"), "', '", filter_key, "', {priority: 'event'});")
-          )
-        )
-      })
+      # Update column choices
+      updateSelectInput(session, "column_select", 
+                       choices = c("Select column..." = "", names(data)))
+      updateSelectInput(session, "stats_variable", 
+                       choices = c("Select variable..." = "", names(data)))
       
-      do.call(tagList, filter_badges)
+      message("File loaded successfully with ", nrow(data), " rows and ", ncol(data), " columns")
+      
+    }, error = function(e) {
+      message("Error reading file: ", e$message)
+      showNotification(paste("Error reading file:", e$message), type = "error")
     })
+  }
+}
+
+# Add keyword filter
+observeEvent(input$add_keyword_filter, {
+  if (!is.null(input$keyword_select) && input$keyword_select != "" && 
+      input$keyword_select != "(Load dataset first)" &&
+      !is.null(input$keyword_value) && input$keyword_value != "") {
     
-    # Remove filters
-    observeEvent(input$remove_keyword_filter, {
-      filter_key <- input$remove_keyword_filter
-      explorer_state$keyword_filters[[filter_key]] <- NULL
+    filter_key <- paste0(input$keyword_select, ":", input$keyword_value)
+    
+    # Check if filter already exists
+    if (!filter_key %in% names(explorer_state$keyword_filters)) {
+      explorer_state$keyword_filters[[filter_key]] <- list(
+        keyword = input$keyword_select,
+        value = input$keyword_value
+      )
+      
+      # Clear inputs
+      updateTextInput(session, "keyword_value", value = "")
+      
+      # Apply filters
       applyFilters()
-      showNotification("Keyword filter removed", type = "message")
-    })
+      
+      showNotification("Keyword filter added", type = "message")
+    } else {
+      showNotification("This filter already exists", type = "warning")
+    }
+  } else {
+    showNotification("Please select a keyword and enter a value", type = "warning")
+  }
+})
+
+# Add column filter
+observeEvent(input$add_column_filter, {
+  if (!is.null(input$column_select) && input$column_select != "" && 
+      input$column_select != "(Load dataset first)" &&
+      !is.null(input$column_value)) {  # Remove the check for input$column_value != ""
     
-    observeEvent(input$remove_column_filter, {
-      filter_key <- input$remove_column_filter
-      explorer_state$column_filters[[filter_key]] <- NULL
-      showNotification("Column filter removed", type = "message")
-    })
+    filter_key <- paste0(input$column_select, ":", input$column_value)
     
-    # File tabs
-    output$file_tabs <- renderUI({
-      if (length(explorer_state$csv_files) == 0) {
-        return(div(
-          style = "color: #6c757d; font-style: italic; padding: 10px;",
-          "No CSV files loaded. Select and load a dataset above."
-        ))
-      }
+    # Check if filter already exists
+    if (!filter_key %in% names(explorer_state$column_filters)) {
+      explorer_state$column_filters[[filter_key]] <- list(
+        column = input$column_select,
+        value = input$column_value
+      )
       
-      current_file <- explorer_state$current_file
+      # Clear inputs
+      updateSelectizeInput(session, "column_value", selected = character(0))
       
-      # Apply keyword filters to determine which files to show
-      files_to_show <- explorer_state$csv_files
-      for (filter in explorer_state$keyword_filters) {
-        pattern <- paste0(filter$keyword, "-", filter$value)
-        files_to_show <- files_to_show[grepl(pattern, basename(files_to_show))]
-      }
+      showNotification("Column filter added", type = "message")
+    } else {
+      showNotification("This filter already exists", type = "warning")
+    }
+  } else {
+    showNotification("Please select a column and enter a value", type = "warning")
+  }
+})
+
+# Apply filters to determine which files to show
+applyFilters <- function() {
+  if (length(explorer_state$keyword_filters) == 0) {
+    return()
+  }
+  
+  # Filter files based on keyword filters
+  matching_files <- explorer_state$csv_files
+  
+  for (filter in explorer_state$keyword_filters) {
+    pattern <- paste0(filter$keyword, "-", filter$value)
+    matching_files <- matching_files[grepl(pattern, basename(matching_files))]
+  }
+  
+  # Load first matching file if different from current
+  if (length(matching_files) > 0 && matching_files[1] != explorer_state$current_file) {
+    explorer_state$current_file <- matching_files[1]
+    loadCurrentFile()
+  } else if (length(matching_files) == 0) {
+    showNotification("No files match the current filters", type = "warning")
+  }
+}
+
+# Display keyword filters
+output$keyword_filters_display <- renderUI({
+  filters <- explorer_state$keyword_filters
+  
+  if (length(filters) == 0) {
+    return(div(
+      style = "color: #6c757d; font-style: italic;",
+      "No keyword filters active"
+    ))
+  }
+  
+  filter_badges <- lapply(names(filters), function(filter_key) {
+    filter <- filters[[filter_key]]
+    span(
+      style = "display: inline-block; margin: 2px; padding: 4px 8px; background-color: #3498db; color: white; border-radius: 12px; font-size: 12px;",
+      paste0(filter$keyword, ': "', filter$value, '"'),
+      actionButton(
+        session$ns(paste0("remove_kw_", gsub("[^A-Za-z0-9]", "_", filter_key))),
+        "×",
+        style = "background: none; border: none; color: white; padding: 0 0 0 5px; font-size: 14px;",
+        onclick = paste0("Shiny.setInputValue('", session$ns("remove_keyword_filter"), "', '", filter_key, "', {priority: 'event'});")
+      )
+    )
+  })
+  
+  do.call(tagList, filter_badges)
+})
+
+# Display column filters
+output$column_filters_display <- renderUI({
+  filters <- explorer_state$column_filters
+  
+  if (length(filters) == 0) {
+    return(div(
+      style = "color: #6c757d; font-style: italic;",
+      "No column filters active"
+    ))
+  }
+  
+  filter_badges <- lapply(names(filters), function(filter_key) {
+    filter <- filters[[filter_key]]
+    span(
+      style = "display: inline-block; margin: 2px; padding: 4px 8px; background-color: #e74c3c; color: white; border-radius: 12px; font-size: 12px;",
+      paste0(filter$column, ': "', filter$value, '"'),
+      actionButton(
+        session$ns(paste0("remove_col_", gsub("[^A-Za-z0-9]", "_", filter_key))),
+        "×",
+        style = "background: none; border: none; color: white; padding: 0 0 0 5px; font-size: 14px;",
+        onclick = paste0("Shiny.setInputValue('", session$ns("remove_column_filter"), "', '", filter_key, "', {priority: 'event'});")
+      )
+    )
+  })
+  
+  do.call(tagList, filter_badges)
+})
+
+# Remove filters
+observeEvent(input$remove_keyword_filter, {
+  filter_key <- input$remove_keyword_filter
+  explorer_state$keyword_filters[[filter_key]] <- NULL
+  applyFilters()
+  showNotification("Keyword filter removed", type = "message")
+})
+
+observeEvent(input$remove_column_filter, {
+  filter_key <- input$remove_column_filter
+  explorer_state$column_filters[[filter_key]] <- NULL
+  showNotification("Column filter removed", type = "message")
+})
+
+# File tabs
+output$file_tabs <- renderUI({
+  if (length(explorer_state$csv_files) == 0) {
+    return(div(
+      style = "color: #6c757d; font-style: italic; padding: 10px;",
+      "No CSV files loaded. Select and load a dataset above."
+    ))
+  }
+  
+  current_file <- explorer_state$current_file
+  
+  # Apply keyword filters to determine which files to show
+  files_to_show <- explorer_state$csv_files
+  for (filter in explorer_state$keyword_filters) {
+    pattern <- paste0(filter$keyword, "-", filter$value)
+    files_to_show <- files_to_show[grepl(pattern, basename(files_to_show))]
+  }
+  
+  if (length(files_to_show) == 0) {
+    return(div(
+      style = "color: #dc3545; font-style: italic; padding: 10px;",
+      "No files match current keyword filters"
+    ))
+  }
+  
+  tabs <- lapply(files_to_show, function(file) {
+    filename <- basename(file)
+    is_active <- identical(file, current_file)
+    
+    actionButton(
+      session$ns(paste0("select_file_", gsub("[^A-Za-z0-9]", "_", filename))),
+      filename,
+      class = if (is_active) "btn btn-primary" else "btn btn-outline-secondary",
+      style = "margin-right: 5px; margin-bottom: 5px;",
+      onclick = paste0("Shiny.setInputValue('", session$ns("select_file"), "', '", file, "', {priority: 'event'});")
+    )
+  })
+  
+  do.call(tagList, tabs)
+})
+
+# Handle file selection
+observeEvent(input$select_file, {
+  explorer_state$current_file <- input$select_file
+  loadCurrentFile()
+})
+
+
+# Render variable statistics based on type
+output$variable_statistics <- renderUI({
+  if (is.null(input$stats_variable) || 
+      input$stats_variable == "" ||
+      input$stats_variable == "(Load dataset first)") {
+    return(div(
+      style = "padding: 20px; text-align: center; color: #6c757d;",
+      "Select a variable to view statistics"
+    ))
+  }
+  
+  # Get all files that match current keyword filters
+  files_to_analyze <- explorer_state$csv_files
+  
+  # Apply keyword filters to determine which files to include
+  if (length(explorer_state$keyword_filters) > 0) {
+    for (filter in explorer_state$keyword_filters) {
+      pattern <- paste0(filter$keyword, "-", filter$value)
+      files_to_analyze <- files_to_analyze[grepl(pattern, basename(files_to_analyze))]
+    }
+  }
+  
+  if (length(files_to_analyze) == 0) {
+    return(div(
+      style = "padding: 20px; text-align: center; color: #dc3545;",
+      "No files match current filters"
+    ))
+  }
+  
+  # Aggregate data from all matching files
+  all_column_data <- list()
+  
+  for (file in files_to_analyze) {
+    tryCatch({
+      file_data <- read.csv(file, stringsAsFactors = FALSE)
       
-      if (length(files_to_show) == 0) {
-        return(div(
-          style = "color: #dc3545; font-style: italic; padding: 10px;",
-          "No files match current keyword filters"
-        ))
-      }
-      
-      tabs <- lapply(files_to_show, function(file) {
-        filename <- basename(file)
-        is_active <- identical(file, current_file)
+      if (input$stats_variable %in% names(file_data)) {
+        # Apply column filters to this file's data
+        filtered_data <- file_data
         
-        actionButton(
-          session$ns(paste0("select_file_", gsub("[^A-Za-z0-9]", "_", filename))),
-          filename,
-          class = if (is_active) "btn btn-primary" else "btn btn-outline-secondary",
-          style = "margin-right: 5px; margin-bottom: 5px;",
-          onclick = paste0("Shiny.setInputValue('", session$ns("select_file"), "', '", file, "', {priority: 'event'});")
-        )
+        for (col_filter in explorer_state$column_filters) {
+          col_name <- col_filter$column
+          filter_value <- col_filter$value
+          
+          if (col_name %in% names(filtered_data)) {
+            if (is.null(filter_value) || filter_value == "") {
+              # Filter for blank/empty values
+              filtered_data <- filtered_data[is.na(filtered_data[[col_name]]) | 
+                                            filtered_data[[col_name]] == "", , drop = FALSE]
+            } else {
+              # Filter for matching values
+              filtered_data <- filtered_data[grepl(filter_value, 
+                                                  as.character(filtered_data[[col_name]]), 
+                                                  ignore.case = TRUE), , drop = FALSE]
+            }
+          }
+        }
+        
+        # Add this file's filtered data to aggregation
+        all_column_data <- c(all_column_data, list(filtered_data[[input$stats_variable]]))
+      }
+    }, error = function(e) {
+      # Skip files that can't be read
+    })
+  }
+  
+  if (length(all_column_data) == 0) {
+    return(div(
+      style = "padding: 20px; text-align: center; color: #dc3545;",
+      "Selected variable not found in any matching files"
+    ))
+  }
+  
+  # Combine all data
+  column_data <- unlist(all_column_data)
+  
+  # Rest of the statistics calculation remains the same...
+  # FIXED: Better NA detection - treat empty strings as NA too
+  is_missing <- is.na(column_data) | column_data == "" | trimws(as.character(column_data)) == ""
+  non_na_data <- column_data[!is_missing]
+  na_count <- sum(is_missing)
+  total_count <- length(column_data)
+  
+  # Add check for empty data after removing NAs
+  if (length(non_na_data) == 0) {
+    return(div(
+      style = "padding: 20px; text-align: center; color: #856404; background-color: #fff3cd; border-radius: 4px;",
+      icon("exclamation-triangle", style = "margin-right: 8px;"),
+      "This variable has no non-missing values"
+    ))
+  }
+  
+  # Load metadata if available
+  metadata <- NULL
+  if (!is.null(explorer_state$dataset_path)) {
+    json_path <- file.path(explorer_state$dataset_path, "dataset_description.json")
+    if (file.exists(json_path)) {
+      tryCatch({
+        dataset_desc <- jsonlite::fromJSON(json_path, simplifyVector = FALSE)
+        if (!is.null(dataset_desc$variableMeasured)) {
+          # Find the matching variable - case-insensitive search as backup
+          for (var_meta in dataset_desc$variableMeasured) {
+            if (!is.null(var_meta$name) && var_meta$name == input$stats_variable) {
+              metadata <- var_meta
+              break
+            }
+          }
+        }
+      }, error = function(e) {
+        message("Error loading metadata: ", e$message)
       })
-      
-      do.call(tagList, tabs)
-    })
-    
-    # Handle file selection
-    observeEvent(input$select_file, {
-      explorer_state$current_file <- input$select_file
-      loadCurrentFile()
-    })
-    
+    }
+  }
 
-    # Render variable statistics based on type
-    output$variable_statistics <- renderUI({
-      if (is.null(input$stats_variable) || 
-          input$stats_variable == "" ||
-          input$stats_variable == "(Load dataset first)") {
-        return(div(
-          style = "padding: 20px; text-align: center; color: #6c757d;",
-          "Select a variable to view statistics"
-        ))
-      }
-      
-      # Get all files that match current keyword filters
-      files_to_analyze <- explorer_state$csv_files
-      
-      # Apply keyword filters to determine which files to include
-      if (length(explorer_state$keyword_filters) > 0) {
-        for (filter in explorer_state$keyword_filters) {
-          pattern <- paste0(filter$keyword, "-", filter$value)
-          files_to_analyze <- files_to_analyze[grepl(pattern, basename(files_to_analyze))]
-        }
-      }
-      
-      if (length(files_to_analyze) == 0) {
-        return(div(
-          style = "padding: 20px; text-align: center; color: #dc3545;",
-          "No files match current filters"
-        ))
-      }
-      
-      # Aggregate data from all matching files
-      all_column_data <- list()
-      
-      for (file in files_to_analyze) {
-        tryCatch({
-          file_data <- read.csv(file, stringsAsFactors = FALSE)
+  # Debug output
+  message("=== DEBUG: Variable '", input$stats_variable, "' ===\n", sep = "")
+  message("Metadata found:", !is.null(metadata), "\n")
+  if (!is.null(metadata)) {
+    message("valueType in metadata:", metadata$valueType, "\n")
+  }
+  message("is.numeric(column_data):", is.numeric(column_data), "\n")
+
+  # Detect variable type from metadata or data
+  var_type <- if (!is.null(metadata) && !is.null(metadata$valueType)) {
+    metadata$valueType
+  } else if (is.numeric(column_data)) {
+    "number"
+  } else {
+    "string"
+  }
+
+  message("Final var_type:", var_type, "\n")
+  message("================\n")
+  
+  # Base statistics (always shown)
+  base_stats <- div(
+    style = "display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;",
+    
+    div(
+      style = "padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; text-align: center;",
+      div("Total", style = "font-size: 12px; color: #6c757d;"),
+      div(as.character(total_count), style = "font-weight: bold; font-size: 18px;")
+    ),
+    
+    div(
+      style = "padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; text-align: center;",
+      div("Unique", style = "font-size: 12px; color: #6c757d;"),
+      div(as.character(length(unique(non_na_data))), style = "font-weight: bold; font-size: 18px;")
+    ),
+    
+    div(
+      style = "padding: 10px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; text-align: center;",
+      div("Missing", style = "font-size: 12px; color: #856404;"),
+      div(paste0(na_count, " (", round(100 * na_count / total_count, 1), "%)"), 
+          style = "font-weight: bold; font-size: 18px; color: #856404;")
+    ),
+    
+    div(
+      style = "padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; text-align: center;",
+      div("Valid", style = "font-size: 12px; color: #6c757d;"),
+      div(as.character(length(non_na_data)), style = "font-weight: bold; font-size: 18px;")
+    )
+  )
+  
+  # Type-specific statistics - add more safety checks
+  type_stats <- if (var_type %in% c("number", "integer") && is.numeric(column_data) && length(non_na_data) > 0) {
+    # Numeric statistics
+    tryCatch({
+      div(
+        tags$hr(style = "margin: 15px 0;"),
+        div(strong("Numeric Statistics"), style = "margin-bottom: 10px; color: #333;"),
+        div(
+          style = "display: grid; grid-template-columns: 1fr 1fr; gap: 10px;",
           
-          if (input$stats_variable %in% names(file_data)) {
-            # Apply column filters to this file's data
-            filtered_data <- file_data
-            
-            for (col_filter in explorer_state$column_filters) {
-              col_name <- col_filter$column
-              filter_value <- col_filter$value
-              
-              if (col_name %in% names(filtered_data)) {
-                if (is.null(filter_value) || filter_value == "") {
-                  # Filter for blank/empty values
-                  filtered_data <- filtered_data[is.na(filtered_data[[col_name]]) | 
-                                                filtered_data[[col_name]] == "", , drop = FALSE]
-                } else {
-                  # Filter for matching values
-                  filtered_data <- filtered_data[grepl(filter_value, 
-                                                      as.character(filtered_data[[col_name]]), 
-                                                      ignore.case = TRUE), , drop = FALSE]
-                }
-              }
-            }
-            
-            # Add this file's filtered data to aggregation
-            all_column_data <- c(all_column_data, list(filtered_data[[input$stats_variable]]))
-          }
-        }, error = function(e) {
-          # Skip files that can't be read
-        })
-      }
-      
-      if (length(all_column_data) == 0) {
-        return(div(
-          style = "padding: 20px; text-align: center; color: #dc3545;",
-          "Selected variable not found in any matching files"
-        ))
-      }
-      
-      # Combine all data
-      column_data <- unlist(all_column_data)
-      
-      # Rest of the statistics calculation remains the same...
-      # FIXED: Better NA detection - treat empty strings as NA too
-      is_missing <- is.na(column_data) | column_data == "" | trimws(as.character(column_data)) == ""
-      non_na_data <- column_data[!is_missing]
-      na_count <- sum(is_missing)
-      total_count <- length(column_data)
-      
-      # Add check for empty data after removing NAs
-      if (length(non_na_data) == 0) {
-        return(div(
-          style = "padding: 20px; text-align: center; color: #856404; background-color: #fff3cd; border-radius: 4px;",
-          icon("exclamation-triangle", style = "margin-right: 8px;"),
-          "This variable has no non-missing values"
-        ))
-      }
-      
-      # Load metadata if available
-      metadata <- NULL
-      if (!is.null(explorer_state$dataset_path)) {
-        json_path <- file.path(explorer_state$dataset_path, "dataset_description.json")
-        if (file.exists(json_path)) {
-          tryCatch({
-            dataset_desc <- jsonlite::fromJSON(json_path, simplifyVector = FALSE)
-            if (!is.null(dataset_desc$variableMeasured)) {
-              # Find the matching variable - case-insensitive search as backup
-              for (var_meta in dataset_desc$variableMeasured) {
-                if (!is.null(var_meta$name) && var_meta$name == input$stats_variable) {
-                  metadata <- var_meta
-                  break
-                }
-              }
-            }
-          }, error = function(e) {
-            message("Error loading metadata: ", e$message)
-          })
-        }
-      }
-
-      # Debug output
-      message("=== DEBUG: Variable '", input$stats_variable, "' ===\n", sep = "")
-      message("Metadata found:", !is.null(metadata), "\n")
-      if (!is.null(metadata)) {
-        message("valueType in metadata:", metadata$valueType, "\n")
-      }
-      message("is.numeric(column_data):", is.numeric(column_data), "\n")
-
-      # Detect variable type from metadata or data
-      var_type <- if (!is.null(metadata) && !is.null(metadata$valueType)) {
-        metadata$valueType
-      } else if (is.numeric(column_data)) {
-        "number"
-      } else {
-        "string"
-      }
-
-      message("Final var_type:", var_type, "\n")
-      message("================\n")
-      
-      # Base statistics (always shown)
-      base_stats <- div(
-        style = "display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;",
-        
-        div(
-          style = "padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; text-align: center;",
-          div("Total", style = "font-size: 12px; color: #6c757d;"),
-          div(as.character(total_count), style = "font-weight: bold; font-size: 18px;")
-        ),
-        
-        div(
-          style = "padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; text-align: center;",
-          div("Unique", style = "font-size: 12px; color: #6c757d;"),
-          div(as.character(length(unique(non_na_data))), style = "font-weight: bold; font-size: 18px;")
-        ),
-        
-        div(
-          style = "padding: 10px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px; text-align: center;",
-          div("Missing", style = "font-size: 12px; color: #856404;"),
-          div(paste0(na_count, " (", round(100 * na_count / total_count, 1), "%)"), 
-              style = "font-weight: bold; font-size: 18px; color: #856404;")
-        ),
-        
-        div(
-          style = "padding: 10px; background-color: #f8f9fa; border: 1px solid #ced4da; border-radius: 4px; text-align: center;",
-          div("Valid", style = "font-size: 12px; color: #6c757d;"),
-          div(as.character(length(non_na_data)), style = "font-weight: bold; font-size: 18px;")
+          div(
+            style = "padding: 8px; background-color: #e3f2fd; border-radius: 4px;",
+            div("Mean", style = "font-size: 11px; color: #1565c0;"),
+            div(round(mean(non_na_data, na.rm = TRUE), 3), style = "font-weight: bold; color: #1565c0;")
+          ),
+          
+          div(
+            style = "padding: 8px; background-color: #e3f2fd; border-radius: 4px;",
+            div("Median", style = "font-size: 11px; color: #1565c0;"),
+            div(round(median(non_na_data, na.rm = TRUE), 3), style = "font-weight: bold; color: #1565c0;")
+          ),
+          
+          div(
+            style = "padding: 8px; background-color: #e3f2fd; border-radius: 4px;",
+            div("Std Dev", style = "font-size: 11px; color: #1565c0;"),
+            div(if(length(non_na_data) > 1) round(sd(non_na_data, na.rm = TRUE), 3) else "N/A", 
+                style = "font-weight: bold; color: #1565c0;")
+          ),
+          
+          div(
+            style = "padding: 8px; background-color: #e3f2fd; border-radius: 4px;",
+            div("Range", style = "font-size: 11px; color: #1565c0;"),
+            div(paste(round(min(non_na_data, na.rm = TRUE), 2), "to", 
+                      round(max(non_na_data, na.rm = TRUE), 2)), 
+                style = "font-weight: bold; color: #1565c0; font-size: 11px;")
+          )
         )
       )
-      
-      # Type-specific statistics - add more safety checks
-      type_stats <- if (var_type %in% c("number", "integer") && is.numeric(column_data) && length(non_na_data) > 0) {
-        # Numeric statistics
-        tryCatch({
-          div(
-            tags$hr(style = "margin: 15px 0;"),
-            div(strong("Numeric Statistics"), style = "margin-bottom: 10px; color: #333;"),
-            div(
-              style = "display: grid; grid-template-columns: 1fr 1fr; gap: 10px;",
-              
-              div(
-                style = "padding: 8px; background-color: #e3f2fd; border-radius: 4px;",
-                div("Mean", style = "font-size: 11px; color: #1565c0;"),
-                div(round(mean(non_na_data, na.rm = TRUE), 3), style = "font-weight: bold; color: #1565c0;")
-              ),
-              
-              div(
-                style = "padding: 8px; background-color: #e3f2fd; border-radius: 4px;",
-                div("Median", style = "font-size: 11px; color: #1565c0;"),
-                div(round(median(non_na_data, na.rm = TRUE), 3), style = "font-weight: bold; color: #1565c0;")
-              ),
-              
-              div(
-                style = "padding: 8px; background-color: #e3f2fd; border-radius: 4px;",
-                div("Std Dev", style = "font-size: 11px; color: #1565c0;"),
-                div(if(length(non_na_data) > 1) round(sd(non_na_data, na.rm = TRUE), 3) else "N/A", 
-                    style = "font-weight: bold; color: #1565c0;")
-              ),
-              
-              div(
-                style = "padding: 8px; background-color: #e3f2fd; border-radius: 4px;",
-                div("Range", style = "font-size: 11px; color: #1565c0;"),
-                div(paste(round(min(non_na_data, na.rm = TRUE), 2), "to", 
-                          round(max(non_na_data, na.rm = TRUE), 2)), 
-                    style = "font-weight: bold; color: #1565c0; font-size: 11px;")
-              )
-            )
-          )
-        }, error = function(e) {
-          div(
-            tags$hr(style = "margin: 15px 0;"),
-            div(
-              style = "padding: 10px; background-color: #ffebee; border-radius: 4px; color: #c62828;",
-              "Error calculating numeric statistics: ", e$message
-            )
-          )
-        })
-      } else if ((var_type == "categorical" || length(unique(non_na_data)) <= 20) && length(non_na_data) > 0) {
-        # Categorical statistics - FIXED: Better handling of sparse data
-        tryCatch({
-          # Convert to character first to avoid factor issues
-          char_data <- as.character(non_na_data)
-          # Remove any remaining empty strings
-          char_data <- char_data[char_data != "" & !is.na(char_data)]
-          
-          if (length(char_data) == 0) {
-            return(div(
-              tags$hr(style = "margin: 15px 0;"),
-              div(
-                style = "padding: 10px; background-color: #fff3cd; border-radius: 4px; color: #856404;",
-                "No valid categorical values to display"
-              )
-            ))
-          }
-          
-          value_counts <- table(char_data)
-          value_counts <- sort(value_counts, decreasing = TRUE)
-          
-          div(
-            tags$hr(style = "margin: 15px 0;"),
-            div(strong("Value Counts"), style = "margin-bottom: 10px; color: #333;"),
-            div(
-              style = "max-height: 200px; overflow-y: auto; background-color: white; border: 1px solid #dee2e6; border-radius: 4px; padding: 5px;",
-              lapply(names(value_counts), function(val) {
-                count <- value_counts[[val]]
-                pct <- round(100 * count / length(char_data), 1)
-                
-                div(
-                  style = "padding: 5px 8px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;",
-                  span(val, style = "font-family: monospace; font-size: 13px;"),
-                  span(
-                    paste0(count, " (", pct, "%)"),
-                    style = "font-size: 12px; color: #6c757d; font-weight: 500;"
-                  )
-                )
-              })
-            )
-          )
-        }, error = function(e) {
-          div(
-            tags$hr(style = "margin: 15px 0;"),
-            div(
-              style = "padding: 10px; background-color: #ffebee; border-radius: 4px; color: #c62828;",
-              "Error calculating categorical statistics: ", e$message
-            )
-          )
-        })
-      } else {
-        # String/other types - show sample values
-        tryCatch({
-          # Get sample values (up to 20 unique examples)
-          char_data <- as.character(non_na_data)
-          char_data <- char_data[char_data != "" & !is.na(char_data)]
-          
-          if (length(char_data) > 0) {
-            # Get up to 20 unique samples
-            unique_samples <- unique(char_data)
-            samples_to_show <- head(unique_samples, 20)
-            
-            div(
-              tags$hr(style = "margin: 15px 0;"),
-              div(strong("Sample Values"), style = "margin-bottom: 10px; color: #333;"),
-              div(
-                style = "max-height: 200px; overflow-y: auto; background-color: white; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px;",
-                lapply(samples_to_show, function(val) {
-                  div(
-                    style = "padding: 6px 8px; margin-bottom: 4px; background-color: #f8f9fa; border-radius: 3px; font-family: monospace; font-size: 13px; word-wrap: break-word;",
-                    val
-                  )
-                }),
-                if (length(unique_samples) > 20) {
-                  div(
-                    style = "padding: 8px; margin-top: 8px; text-align: center; color: #6c757d; font-size: 12px; border-top: 1px solid #dee2e6;",
-                    paste("Showing 20 of", length(unique_samples), "unique values")
-                  )
-                }
-              )
-            )
-          } else {
-            div(
-              tags$hr(style = "margin: 15px 0;"),
-              div(
-                style = "padding: 10px; background-color: #f8f9fa; border-radius: 4px; text-align: center; color: #6c757d;",
-                "No valid text values to display"
-              )
-            )
-          }
-        }, error = function(e) {
-          div(
-            tags$hr(style = "margin: 15px 0;"),
-            div(
-              style = "padding: 10px; background-color: #ffebee; border-radius: 4px; color: #c62828;",
-              "Error displaying sample values: ", e$message
-            )
-          )
-        })
-      }
-      
-      tagList(
-        base_stats,
-        type_stats
+    }, error = function(e) {
+      div(
+        tags$hr(style = "margin: 15px 0;"),
+        div(
+          style = "padding: 10px; background-color: #ffebee; border-radius: 4px; color: #c62828;",
+          "Error calculating numeric statistics: ", e$message
+        )
       )
     })
-    
-    # Data table
-    output$data_table <- DT::renderDataTable({
-      if (is.null(explorer_state$current_data)) {
-        return(DT::datatable(
-          data.frame(Message = "No data loaded. Select a dataset and load it using the button above."), 
-          options = list(dom = 't', searching = FALSE, paging = FALSE)
+  } else if ((var_type == "categorical" || length(unique(non_na_data)) <= 20) && length(non_na_data) > 0) {
+    # Categorical statistics - FIXED: Better handling of sparse data
+    tryCatch({
+      # Convert to character first to avoid factor issues
+      char_data <- as.character(non_na_data)
+      # Remove any remaining empty strings
+      char_data <- char_data[char_data != "" & !is.na(char_data)]
+      
+      if (length(char_data) == 0) {
+        return(div(
+          tags$hr(style = "margin: 15px 0;"),
+          div(
+            style = "padding: 10px; background-color: #fff3cd; border-radius: 4px; color: #856404;",
+            "No valid categorical values to display"
+          )
         ))
       }
       
-      data <- explorer_state$current_data
+      value_counts <- table(char_data)
+      value_counts <- sort(value_counts, decreasing = TRUE)
       
-      # Apply column filters
-      for (filter in explorer_state$column_filters) {
-        column_name <- filter$column
-        filter_value <- filter$value
-        
-        if (column_name %in% names(data)) {
-          # Handle blank/empty string filters specially
-          if (is.null(filter_value) || filter_value == "") {
-            # Filter for blank/empty values
-            data <- data[is.na(data[[column_name]]) | data[[column_name]] == "", , drop = FALSE]
-          } else {
-            # Use grepl for partial matching on non-blank values
-            data <- data[grepl(filter_value, as.character(data[[column_name]]), ignore.case = TRUE), , drop = FALSE]
-          }
-        }
-      }
-      
-      DT::datatable(
-        data,
-        options = list(
-          pageLength = 10,
-          scrollX = TRUE,
-          dom = "ftip"
-        ),
-        rownames = FALSE
+      div(
+        tags$hr(style = "margin: 15px 0;"),
+        div(strong("Value Counts"), style = "margin-bottom: 10px; color: #333;"),
+        div(
+          style = "max-height: 200px; overflow-y: auto; background-color: white; border: 1px solid #dee2e6; border-radius: 4px; padding: 5px;",
+          lapply(names(value_counts), function(val) {
+            count <- value_counts[[val]]
+            pct <- round(100 * count / length(char_data), 1)
+            
+            div(
+              style = "padding: 5px 8px; border-bottom: 1px solid #f0f0f0; display: flex; justify-content: space-between; align-items: center;",
+              span(val, style = "font-family: monospace; font-size: 13px;"),
+              span(
+                paste0(count, " (", pct, "%)"),
+                style = "font-size: 12px; color: #6c757d; font-weight: 500;"
+              )
+            )
+          })
+        )
       )
-    }, server = TRUE)
+    }, error = function(e) {
+      div(
+        tags$hr(style = "margin: 15px 0;"),
+        div(
+          style = "padding: 10px; background-color: #ffebee; border-radius: 4px; color: #c62828;",
+          "Error calculating categorical statistics: ", e$message
+        )
+      )
+    })
+  } else {
+    # String/other types - show sample values
+    tryCatch({
+      # Get sample values (up to 20 unique examples)
+      char_data <- as.character(non_na_data)
+      char_data <- char_data[char_data != "" & !is.na(char_data)]
+      
+      if (length(char_data) > 0) {
+        # Get up to 20 unique samples
+        unique_samples <- unique(char_data)
+        samples_to_show <- head(unique_samples, 20)
+        
+        div(
+          tags$hr(style = "margin: 15px 0;"),
+          div(strong("Sample Values"), style = "margin-bottom: 10px; color: #333;"),
+          div(
+            style = "max-height: 200px; overflow-y: auto; background-color: white; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px;",
+            lapply(samples_to_show, function(val) {
+              div(
+                style = "padding: 6px 8px; margin-bottom: 4px; background-color: #f8f9fa; border-radius: 3px; font-family: monospace; font-size: 13px; word-wrap: break-word;",
+                val
+              )
+            }),
+            if (length(unique_samples) > 20) {
+              div(
+                style = "padding: 8px; margin-top: 8px; text-align: center; color: #6c757d; font-size: 12px; border-top: 1px solid #dee2e6;",
+                paste("Showing 20 of", length(unique_samples), "unique values")
+              )
+            }
+          )
+        )
+      } else {
+        div(
+          tags$hr(style = "margin: 15px 0;"),
+          div(
+            style = "padding: 10px; background-color: #f8f9fa; border-radius: 4px; text-align: center; color: #6c757d;",
+            "No valid text values to display"
+          )
+        )
+      }
+    }, error = function(e) {
+      div(
+        tags$hr(style = "margin: 15px 0;"),
+        div(
+          style = "padding: 10px; background-color: #ffebee; border-radius: 4px; color: #c62828;",
+          "Error displaying sample values: ", e$message
+        )
+      )
+    })
+  }
+  
+  tagList(
+    base_stats,
+    type_stats
+  )
+})
+
+# Data table
+output$data_table <- DT::renderDataTable({
+  if (is.null(explorer_state$current_data)) {
+    return(DT::datatable(
+      data.frame(Message = "No data loaded. Select a dataset and load it using the button above."), 
+      options = list(dom = 't', searching = FALSE, paging = FALSE)
+    ))
+  }
+  
+  data <- explorer_state$current_data
+  
+  # Apply column filters
+  for (filter in explorer_state$column_filters) {
+    column_name <- filter$column
+    filter_value <- filter$value
     
-    # Return reactive containing explorer state
-    return(reactive({ explorer_state }))
+    if (column_name %in% names(data)) {
+      # Handle blank/empty string filters specially
+      if (is.null(filter_value) || filter_value == "") {
+        # Filter for blank/empty values
+        data <- data[is.na(data[[column_name]]) | data[[column_name]] == "", , drop = FALSE]
+      } else {
+        # Use grepl for partial matching on non-blank values
+        data <- data[grepl(filter_value, as.character(data[[column_name]]), ignore.case = TRUE), , drop = FALSE]
+      }
+    }
+  }
+  
+  DT::datatable(
+    data,
+    options = list(
+      pageLength = 10,
+      scrollX = TRUE,
+      dom = "ftip"
+    ),
+    rownames = FALSE
+  )
+}, server = TRUE)
+
+# Return reactive containing explorer state
+return(reactive({ explorer_state }))
   })
 }
 
@@ -7198,1136 +7557,1143 @@ datasetExplorerServer <- function(id, state, session) {
 #' @param session The current session object
 osfUploadServer <- function(id, state, session) {
   moduleServer(id, function(input, output, session) {
+
+# Reactive values
+osf_state <- reactiveValues(
+  authenticated = FALSE,
+  user_info = NULL,
+  projects = list(),
+  dataset_valid = FALSE,
+  dataset_info = NULL,
+  upload_status = NULL,
+  validation_triggered_here = FALSE  # Track if we triggered validation
+)
+
+# Output flags for conditional panels
+output$authenticated <- reactive({ osf_state$authenticated })
+outputOptions(output, "authenticated", suspendWhenHidden = FALSE)
+
+output$dataset_valid <- reactive({ osf_state$dataset_valid })
+outputOptions(output, "dataset_valid", suspendWhenHidden = FALSE)
+
+output$ready_to_upload <- reactive({ 
+  osf_state$authenticated && osf_state$dataset_valid && 
+  ((!is.null(input$project_select) && input$project_select != "") ||
+   (!is.null(input$project_id_manual) && input$project_id_manual != "") ||
+   (input$project_option == "new" && !is.null(input$new_project_title) && input$new_project_title != ""))
+})
+outputOptions(output, "ready_to_upload", suspendWhenHidden = FALSE)
+
+# Directory selection
+volumes <- c(Home = "~")
+if (.Platform$OS.type == "windows") {
+  volumes <- c(volumes, getVolumes()())
+}
+
+shinyDirChoose(
+  input,
+  "dataset_dir_select",
+  roots = volumes,
+  session = session
+)
+
+observeEvent(input$dataset_dir_select, {
+  if (!is.null(input$dataset_dir_select)) {
+    selected_dir <- parseDirPath(volumes, input$dataset_dir_select)
+    if (length(selected_dir) > 0 && selected_dir != "") {
+      updateTextInput(session, "dataset_dir", value = selected_dir)
+    }
+  }
+})
+
+# Auto-populate from validation module if a validated dataset is available
+observe({
+  if (!is.null(state$validated_dataset_dir) && 
+      dir.exists(state$validated_dataset_dir) &&
+      (is.null(input$dataset_dir) || input$dataset_dir == "")) {
     
-    # Reactive values
-    osf_state <- reactiveValues(
-      authenticated = FALSE,
-      user_info = NULL,
-      projects = list(),
-      dataset_valid = FALSE,
-      dataset_info = NULL,
-      upload_status = NULL
+    updateTextInput(session, "dataset_dir", value = state$validated_dataset_dir)
+    
+    showNotification(
+      "Dataset path loaded from validation. Click 'Check Dataset Validity' to verify.", 
+      type = "message", 
+      duration = 5
     )
     
-    # Output flags for conditional panels
-    output$authenticated <- reactive({ osf_state$authenticated })
-    outputOptions(output, "authenticated", suspendWhenHidden = FALSE)
+    # Don't auto-trigger validation - let user click the button
+    # This prevents multiple validations and unexpected popups
+  }
+})
+
+# Test authentication - Use direct HTTP since token works
+observeEvent(input$test_auth, {
+  req(input$osf_token)
+  
+  showNotification("Testing OSF connection...", id = "auth_test", duration = NULL)
+  
+  # Test token with direct HTTP call
+  if (!requireNamespace("httr", quietly = TRUE)) {
+    install.packages("httr")
+  }
+  
+  library(httr)
+  
+  response <- tryCatch({
+    GET(
+      "https://api.osf.io/v2/users/me/",
+      add_headers(Authorization = paste("Bearer", input$osf_token))
+    )
+  }, error = function(e) {
+    NULL
+  })
+  
+  if (!is.null(response) && status_code(response) == 200) {
+    # Token is valid!
+    # Set it for osfr to use
+    Sys.setenv(OSF_PAT = input$osf_token)
+    Sys.setenv(OSF_TOKEN = input$osf_token)  # Try both env vars
     
-    output$dataset_valid <- reactive({ osf_state$dataset_valid })
-    outputOptions(output, "dataset_valid", suspendWhenHidden = FALSE)
-    
-    output$ready_to_upload <- reactive({ 
-      osf_state$authenticated && osf_state$dataset_valid && 
-      ((!is.null(input$project_select) && input$project_select != "") ||
-       (!is.null(input$project_id_manual) && input$project_id_manual != "") ||
-       (input$project_option == "new" && !is.null(input$new_project_title) && input$new_project_title != ""))
+    # Parse user info - need to handle the JSON properly
+    user_data <- tryCatch({
+      content(response, "parsed", encoding = "UTF-8")
+    }, error = function(e) {
+      list(data = list(attributes = list(full_name = "OSF User")))
     })
-    outputOptions(output, "ready_to_upload", suspendWhenHidden = FALSE)
     
-    # Directory selection
-    volumes <- c(Home = "~")
-    if (.Platform$OS.type == "windows") {
-      volumes <- c(volumes, getVolumes()())
+    # Extract name safely
+    user_name <- "OSF User"
+    if (!is.null(user_data) && !is.null(user_data$data)) {
+      if (!is.null(user_data$data$attributes)) {
+        if (!is.null(user_data$data$attributes$full_name)) {
+          user_name <- user_data$data$attributes$full_name
+        }
+      }
     }
     
-    shinyDirChoose(
-      input,
-      "dataset_dir_select",
-      roots = volumes,
-      session = session
+    osf_state$authenticated <- TRUE
+    osf_state$user_info <- list(
+      authenticated = TRUE,
+      name = user_name
     )
     
-    observeEvent(input$dataset_dir_select, {
-      if (!is.null(input$dataset_dir_select)) {
-        selected_dir <- parseDirPath(volumes, input$dataset_dir_select)
-        if (length(selected_dir) > 0 && selected_dir != "") {
-          updateTextInput(session, "dataset_dir", value = selected_dir)
-        }
-      }
-    })
+    removeNotification(id = "auth_test")
+    showNotification(
+      paste("Connected as", user_name), 
+      type = "message", 
+      duration = 5
+    )
     
-    # Auto-populate from validation module if a validated dataset is available
-    observe({
-      if (!is.null(state$validated_dataset_dir) && 
-          dir.exists(state$validated_dataset_dir) &&
-          (is.null(input$dataset_dir) || input$dataset_dir == "")) {
-        
-        updateTextInput(session, "dataset_dir", value = state$validated_dataset_dir)
-        
-        showNotification("Using validated dataset from previous step", type = "message", duration = 3)
-        
-        # Auto-trigger validation check
-        # Build the file tree and run validation
-        tryCatch({
-          file_tree <- build_file_tree(state$validated_dataset_dir, state$validated_dataset_dir)
-          session$sendCustomMessage("run_validation", file_tree)
-        }, error = function(e) {
-          showNotification(paste("Error validating dataset:", e$message), type = "error")
-        })
-      }
-    })
+    updateSelectInput(
+      session,
+      "project_select", 
+      choices = c("Enter project ID manually below" = "")
+    )
     
-    # Test authentication - Use direct HTTP since token works
-    observeEvent(input$test_auth, {
-      req(input$osf_token)
-      
-      showNotification("Testing OSF connection...", id = "auth_test", duration = NULL)
-      
-      # Test token with direct HTTP call
-      if (!requireNamespace("httr", quietly = TRUE)) {
-        install.packages("httr")
-      }
-      
-      library(httr)
-      
-      response <- tryCatch({
-        GET(
-          "https://api.osf.io/v2/users/me/",
-          add_headers(Authorization = paste("Bearer", input$osf_token))
-        )
-      }, error = function(e) {
-        NULL
-      })
-      
-      if (!is.null(response) && status_code(response) == 200) {
-        # Token is valid!
-        # Set it for osfr to use
-        Sys.setenv(OSF_PAT = input$osf_token)
-        Sys.setenv(OSF_TOKEN = input$osf_token)  # Try both env vars
-        
-        # Parse user info - need to handle the JSON properly
-        user_data <- tryCatch({
-          content(response, "parsed", encoding = "UTF-8")
-        }, error = function(e) {
-          list(data = list(attributes = list(full_name = "OSF User")))
-        })
-        
-        # Extract name safely
-        user_name <- "OSF User"
-        if (!is.null(user_data) && !is.null(user_data$data)) {
-          if (!is.null(user_data$data$attributes)) {
-            if (!is.null(user_data$data$attributes$full_name)) {
-              user_name <- user_data$data$attributes$full_name
-            }
-          }
-        }
-        
-        osf_state$authenticated <- TRUE
-        osf_state$user_info <- list(
-          authenticated = TRUE,
-          name = user_name
-        )
-        
-        removeNotification(id = "auth_test")
-        showNotification(
-          paste("Connected as", user_name), 
-          type = "message", 
-          duration = 5
-        )
-        
-        updateSelectInput(
-          session,
-          "project_select", 
-          choices = c("Enter project ID manually below" = "")
-        )
-        
-      } else {
-        removeNotification(id = "auth_test")
-        
-        status <- if (!is.null(response)) status_code(response) else "Network error"
-        showNotification(
-          paste("Authentication failed. Status:", status), 
-          type = "error",
-          duration = 10
-        )
-        
-        osf_state$authenticated <- FALSE
-      }
-    })
+  } else {
+    removeNotification(id = "auth_test")
     
-    # Display auth status
-    output$auth_status_display <- renderUI({
-      if (osf_state$authenticated) {
-        div(
-          class = "alert",
-          style = "background-color: #d4edda; border-color: #c3e6cb; color: #155724; padding: 10px; border-radius: 4px;",
-          icon("check-circle", style = "margin-right: 8px;"),
-          strong("Connected to OSF successfully")
-        )
-      } else if (!is.null(input$osf_token) && input$osf_token != "") {
-        div(
-          class = "alert",
-          style = "background-color: #fff3cd; border-color: #ffeaa7; color: #856404; padding: 10px; border-radius: 4px;",
-          "Click 'Test Connection' to authenticate"
-        )
-      } else {
-        div(
-          class = "alert", 
-          style = "background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; padding: 10px; border-radius: 4px;",
-          icon("info-circle", style = "margin-right: 8px;"),
-          "Enter your OSF Personal Access Token to continue. ",
-          tags$a(href = "https://osf.io/settings/tokens", target = "_blank", "Generate token here")
-        )
-      }
-    })
+    status <- if (!is.null(response)) status_code(response) else "Network error"
+    showNotification(
+      paste("Authentication failed. Status:", status), 
+      type = "error",
+      duration = 10
+    )
     
-    # Check dataset validity using the existing validator
-    observeEvent(input$check_dataset, {
-      req(input$dataset_dir)
-      
-      message("DEBUG: check_dataset triggered with dir: ", input$dataset_dir)
-      
-      dataset_path <- input$dataset_dir
-      
-      if (!dir.exists(dataset_path)) {
-        showNotification("Directory does not exist", type = "error")
-        osf_state$dataset_valid <- FALSE
-        return()
-      }
-      
-      showNotification("Building file tree for validation...", id = "validate_progress", duration = NULL)
-      
-      # Build the file tree just like the validation module does
-      tryCatch({
-        # Build file tree for the validator
-        file_tree <- build_file_tree(dataset_path, dataset_path)
-        message("DEBUG: File tree built successfully")
-        
-        removeNotification(id = "validate_progress")
-        showNotification("Running validation...", id = "validate_progress2", duration = NULL)
-        
-        # Send to JavaScript validator
-        message("DEBUG: Sending file tree to JavaScript validator")
-        session$sendCustomMessage("run_validation", file_tree)
-        message("DEBUG: Custom message sent to JS")
-        
-      }, error = function(e) {
-        message("DEBUG: Error building file tree: ", e$message)
-        removeNotification(id = "validate_progress")
-        removeNotification(id = "validate_progress2")
-        showNotification(paste("Error building file tree:", e$message), type = "error")
-        osf_state$dataset_valid <- FALSE
-      })
-    })
+    osf_state$authenticated <- FALSE
+  }
+})
+
+# Display auth status
+output$auth_status_display <- renderUI({
+  if (osf_state$authenticated) {
+    div(
+      class = "alert",
+      style = "background-color: #d4edda; border-color: #c3e6cb; color: #155724; padding: 10px; border-radius: 4px;",
+      icon("check-circle", style = "margin-right: 8px;"),
+      strong("Connected to OSF successfully")
+    )
+  } else if (!is.null(input$osf_token) && input$osf_token != "") {
+    div(
+      class = "alert",
+      style = "background-color: #fff3cd; border-color: #ffeaa7; color: #856404; padding: 10px; border-radius: 4px;",
+      "Click 'Test Connection' to authenticate"
+    )
+  } else {
+    div(
+      class = "alert", 
+      style = "background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; padding: 10px; border-radius: 4px;",
+      icon("info-circle", style = "margin-right: 8px;"),
+      "Enter your OSF Personal Access Token to continue. ",
+      tags$a(href = "https://osf.io/settings/tokens", target = "_blank", "Generate token here")
+    )
+  }
+})
+
+# Check dataset validity using the existing validator
+observeEvent(input$check_dataset, {
+  req(input$dataset_dir)
+  
+  message("DEBUG: check_dataset triggered with dir: ", input$dataset_dir)
+  
+  # Mark that we triggered this validation
+  osf_state$validation_triggered_here <- TRUE
+  
+  dataset_path <- input$dataset_dir
+  
+  if (!dir.exists(dataset_path)) {
+    showNotification("Directory does not exist", type = "error")
+    osf_state$dataset_valid <- FALSE
+    return()
+  }
+  
+  showNotification("Building file tree for validation...", id = "validate_progress", duration = NULL)
+  
+  # Build the file tree just like the validation module does
+  tryCatch({
+    # Build file tree for the validator
+    file_tree <- build_file_tree(dataset_path, dataset_path)
+    message("DEBUG: File tree built successfully")
     
-    # The validation module uses a global input, not namespaced
-    # Create a reactive that polls for validation results from parent session
-    validation_check <- reactiveTimer(500)  # Check every 500ms
+    removeNotification(id = "validate_progress")
+    showNotification("Running validation...", id = "validate_progress2", duration = NULL)
     
-    observe({
-      validation_check()  # Trigger on timer
-      
-      # Try to access parent session's validation results
-      parent_session <- session$rootScope()
-      
-      if (!is.null(parent_session) && !is.null(parent_session$input$validation_results)) {
-        validation_result <- isolate(parent_session$input$validation_results)
-        
-        # Create a unique identifier for this validation result to avoid re-processing
-        validation_id <- paste(validation_result$valid, 
-                              validation_result$summary$totalFiles, 
-                              collapse = "-")
-        
-        # Only process if we have a dataset directory set and haven't processed this result yet
-        if (!is.null(validation_result) && !is.null(input$dataset_dir) && input$dataset_dir != "" && 
-            !isTRUE(osf_state$last_processed_validation_id == validation_id)) {
-          
-          # Mark this validation as processed to avoid re-processing
-          osf_state$last_processed_validation_id <- validation_id
-          
-          message("DEBUG: validation_results found in parent session, valid = ", validation_result$valid)
-          
-          removeNotification(id = "validate_progress")
-          removeNotification(id = "validate_progress2")
-          
-          if (validation_result$valid == TRUE) {
-            message("DEBUG: Dataset is valid, proceeding...")
-            
-            # Dataset is valid - extract info from the validation results
-            tryCatch({
-              # Read the dataset description to get name and description
-              desc_path <- file.path(input$dataset_dir, "dataset_description.json")
-              desc_json <- jsonlite::fromJSON(desc_path)
-              
-              osf_state$dataset_info <- list(
-                name = desc_json$name,
-                description = desc_json$description,
-                path = input$dataset_dir,
-                file_count = validation_result$summary$totalFiles
-              )
-              
-              osf_state$dataset_valid <- TRUE
-              message("DEBUG: osf_state$dataset_valid set to TRUE")
-              
-              showNotification(
-                paste("Dataset is valid! Found", validation_result$summary$totalFiles, "files."), 
-                type = "message",
-                duration = 5
-              )
-              
-              # Debug: Check what elements exist in the DOM
-              shinyjs::runjs(paste0(
-                "console.log('Looking for element: ", session$ns("osf_project_section"), "');",
-                "console.log('Element found: ', $('#", session$ns("osf_project_section"), "').length);",
-                "console.log('Element visible: ', $('#", session$ns("osf_project_section"), "').is(':visible'));"
-              ))
-              
-              # Force show the element multiple ways
-              section_id <- session$ns("osf_project_section")
-              message("DEBUG: Attempting to show section with ID: ", section_id)
-              
-              # Method 1: shinyjs show
-              shinyjs::show(section_id)
-              
-              # Method 2: Direct jQuery
-              shinyjs::runjs(paste0("$('#", section_id, "').show();"))
-              
-              # Method 3: Remove display:none style
-              shinyjs::runjs(paste0("$('#", section_id, "').css('display', 'block');"))
-              
-              # Method 4: Remove the style attribute entirely
-              shinyjs::runjs(paste0("$('#", section_id, "').removeAttr('style');"))
-              
-              message("DEBUG: Tried multiple show methods")
-              
-            }, error = function(e) {
-              message("DEBUG: Error reading dataset description: ", e$message)
-              
-              # Validation passed but couldn't read details - still allow upload
-              osf_state$dataset_info <- list(
-                name = "Validated Dataset",
-                description = "Psych-DS compliant dataset",
-                path = input$dataset_dir,
-                file_count = validation_result$summary$totalFiles
-              )
-              osf_state$dataset_valid <- TRUE
-              showNotification("Dataset is valid!", type = "message", duration = 5)
-              
-              # Use multiple approaches to show the section
-              section_id <- "osf_project_section"
-              shinyjs::show(section_id)
-              shinyjs::show(session$ns(section_id))
-              shinyjs::runjs(paste0("$('#", session$ns(section_id), "').show();"))
-            })
-            
-          } else {
-            message("DEBUG: Dataset is invalid")
-            
-            # Dataset is invalid
-            osf_state$dataset_valid <- FALSE
-            
-            # Use shinyjs to hide the next section with namespaced ID
-            shinyjs::hide(session$ns("osf_project_section"))
-            
-            # Extract error information
-            error_count <- 0
-            if (!is.null(validation_result$issues$errors)) {
-              error_count <- length(validation_result$issues$errors)
-            }
-            
-            showModal(modalDialog(
-              title = "Dataset Validation Failed",
-              size = "m",
-              div(
-                p("This dataset does not pass Psych-DS validation."),
-                p("Please use the ", strong("Validate Dataset"), " module to see detailed errors and fix them."),
-                if (error_count > 0) {
-                  div(
-                    hr(),
-                    p(strong(paste("Found", error_count, "validation error(s):")))
-                  )
-                }
-              ),
-              footer = tagList(
-                modalButton("OK"),
-                actionButton(session$ns("go_to_validate"), "Go to Validation Module", class = "btn-primary")
-              ),
-              easyClose = TRUE
-            ))
-          }
-        }
-      }
-    })
+    # Send to JavaScript validator
+    message("DEBUG: Sending file tree to JavaScript validator")
+    session$sendCustomMessage("run_validation", file_tree)
+    message("DEBUG: Custom message sent to JS")
     
-    # Handle validation errors
-    observeEvent(input$validation_error, {
+  }, error = function(e) {
+    message("DEBUG: Error building file tree: ", e$message)
+    removeNotification(id = "validate_progress")
+    removeNotification(id = "validate_progress2")
+    showNotification(paste("Error building file tree:", e$message), type = "error")
+    osf_state$dataset_valid <- FALSE
+  })
+})
+
+# The validation module uses a global input, not namespaced
+# Create a reactive that polls for validation results from parent session
+validation_check <- reactiveTimer(500)  # Check every 500ms
+
+observe({
+  validation_check()  # Trigger on timer
+  
+  # Try to access parent session's validation results
+  parent_session <- session$rootScope()
+  
+  if (!is.null(parent_session) && !is.null(parent_session$input$validation_results)) {
+    validation_result <- isolate(parent_session$input$validation_results)
+    
+    # Create a unique identifier for this validation result to avoid re-processing
+    validation_id <- paste(validation_result$valid, 
+                          validation_result$summary$totalFiles, 
+                          collapse = "-")
+    
+    # Only process if we have a dataset directory set and haven't processed this result yet
+    # AND if validation was triggered from this module
+    if (!is.null(validation_result) && !is.null(input$dataset_dir) && input$dataset_dir != "" && 
+        !isTRUE(osf_state$last_processed_validation_id == validation_id) &&
+        isTRUE(osf_state$validation_triggered_here)) {
+      
+      # Mark this validation as processed to avoid re-processing
+      osf_state$last_processed_validation_id <- validation_id
+      
+      # Reset the flag since we've now processed this validation
+      osf_state$validation_triggered_here <- FALSE
+      
+      message("DEBUG: validation_results found in parent session, valid = ", validation_result$valid)
+      
       removeNotification(id = "validate_progress")
       removeNotification(id = "validate_progress2")
       
-      showNotification(
-        paste("Validation error:", input$validation_error), 
-        type = "error",
-        duration = 10
-      )
-      
-      osf_state$dataset_valid <- FALSE
-      shinyjs::hide(session$ns("osf_project_section"))
-    })
-    
-    # Navigate to validation module if requested
-    observeEvent(input$go_to_validate, {
-      removeModal()
-      # Pass the directory to the validation module via state
-      state$pending_validation_dir <- input$dataset_dir
-      # Switch to validate tab - use parent session for navigation
-      updateTabItems(session = session$parent, inputId = "sidebar", selected = "validate")
-    })
-    
-    # Helper function to build file tree (same as used in validation module)
-    build_file_tree <- function(path, root_path, level = 0) {
-      if (level > 10) {  # Prevent infinite recursion
-        return(list())
-      }
-      
-      items <- list.files(path, all.files = FALSE, full.names = FALSE)
-      tree <- list()
-      
-      for (item in items) {
-        # Skip hidden files and common non-data directories
-        if (substr(item, 1, 1) == ".") next
-        if (item %in% c("node_modules", "__pycache__", ".git")) next
+      if (validation_result$valid == TRUE) {
+        message("DEBUG: Dataset is valid, proceeding...")
         
-        item_path <- file.path(path, item)
+        # Dataset is valid - extract info from the validation results
+        tryCatch({
+          # Read the dataset description to get name and description
+          desc_path <- file.path(input$dataset_dir, "dataset_description.json")
+          desc_json <- jsonlite::fromJSON(desc_path)
+          
+          osf_state$dataset_info <- list(
+            name = desc_json$name,
+            description = desc_json$description,
+            path = input$dataset_dir,
+            file_count = validation_result$summary$totalFiles
+          )
+          
+          osf_state$dataset_valid <- TRUE
+          message("DEBUG: osf_state$dataset_valid set to TRUE")
+          
+          showNotification(
+            paste("Dataset is valid! Found", validation_result$summary$totalFiles, "files."), 
+            type = "message",
+            duration = 5
+          )
+          
+          # Debug: Check what elements exist in the DOM
+          shinyjs::runjs(paste0(
+            "console.log('Looking for element: ", session$ns("osf_project_section"), "');",
+            "console.log('Element found: ', $('#", session$ns("osf_project_section"), "').length);",
+            "console.log('Element visible: ', $('#", session$ns("osf_project_section"), "').is(':visible'));"
+          ))
+          
+          # Force show the element multiple ways
+          section_id <- session$ns("osf_project_section")
+          message("DEBUG: Attempting to show section with ID: ", section_id)
+          
+          # Method 1: shinyjs show
+          shinyjs::show(section_id)
+          
+          # Method 2: Direct jQuery
+          shinyjs::runjs(paste0("$('#", section_id, "').show();"))
+          
+          # Method 3: Remove display:none style
+          shinyjs::runjs(paste0("$('#", section_id, "').css('display', 'block');"))
+          
+          # Method 4: Remove the style attribute entirely
+          shinyjs::runjs(paste0("$('#", section_id, "').removeAttr('style');"))
+          
+          message("DEBUG: Tried multiple show methods")
+          
+        }, error = function(e) {
+          message("DEBUG: Error reading dataset description: ", e$message)
+          
+          # Validation passed but couldn't read details - still allow upload
+          osf_state$dataset_info <- list(
+            name = "Validated Dataset",
+            description = "Psych-DS compliant dataset",
+            path = input$dataset_dir,
+            file_count = validation_result$summary$totalFiles
+          )
+          osf_state$dataset_valid <- TRUE
+          showNotification("Dataset is valid!", type = "message", duration = 5)
+          
+          # Use multiple approaches to show the section
+          section_id <- "osf_project_section"
+          shinyjs::show(section_id)
+          shinyjs::show(session$ns(section_id))
+          shinyjs::runjs(paste0("$('#", session$ns(section_id), "').show();"))
+        })
         
-        if (dir.exists(item_path)) {
-          # Directory
-          tree[[item]] <- list(
-            type = "directory",
-            contents = build_file_tree(item_path, root_path, level + 1)
-          )
-        } else {
-          # File
-          rel_path <- gsub(paste0("^", normalizePath(root_path), .Platform$file.sep), "", 
-                          normalizePath(item_path))
-          rel_path <- gsub("\\\\", "/", rel_path)  # Normalize path separators
-          
-          # Read file content for text files
-          file_text <- NULL
-          if (grepl("\\.(json|csv|tsv|txt|md)$", item, ignore.case = TRUE)) {
-            tryCatch({
-              file_text <- readLines(item_path, warn = FALSE, encoding = "UTF-8")
-              file_text <- paste(file_text, collapse = "\n")
-            }, error = function(e) {
-              file_text <- NULL
-            })
-          }
-          
-          tree[[item]] <- list(
-            type = "file",
-            file = list(
-              name = item,
-              path = rel_path,
-              text = file_text
-            )
-          )
+      } else {
+        message("DEBUG: Dataset is invalid")
+        
+        # Dataset is invalid
+        osf_state$dataset_valid <- FALSE
+        
+        # Use shinyjs to hide the next section with namespaced ID
+        shinyjs::hide(session$ns("osf_project_section"))
+        
+        # Extract error information
+        error_count <- 0
+        if (!is.null(validation_result$issues$errors)) {
+          error_count <- length(validation_result$issues$errors)
         }
+        
+        showModal(modalDialog(
+          title = "Dataset Validation Failed",
+          size = "m",
+          div(
+            p("This dataset does not pass Psych-DS validation."),
+            p("Please use the ", strong("Validate Dataset"), " module to see detailed errors and fix them."),
+            if (error_count > 0) {
+              div(
+                hr(),
+                p(strong(paste("Found", error_count, "validation error(s):")))
+              )
+            }
+          ),
+          footer = tagList(
+            modalButton("OK"),
+            actionButton(session$ns("go_to_validate"), "Go to Validation Module", class = "btn-primary")
+          ),
+          easyClose = TRUE
+        ))
+      }
+    }
+  }
+})
+
+# Handle validation errors
+observeEvent(input$validation_error, {
+  removeNotification(id = "validate_progress")
+  removeNotification(id = "validate_progress2")
+  
+  showNotification(
+    paste("Validation error:", input$validation_error), 
+    type = "error",
+    duration = 10
+  )
+  
+  osf_state$dataset_valid <- FALSE
+  shinyjs::hide(session$ns("osf_project_section"))
+})
+
+# Navigate to validation module if requested
+observeEvent(input$go_to_validate, {
+  removeModal()
+  # Pass the directory to the validation module via state
+  state$pending_validation_dir <- input$dataset_dir
+  # Switch to validate tab - use parent session for navigation
+  updateTabItems(session = session$parent, inputId = "sidebar", selected = "validate")
+})
+
+# Helper function to build file tree (same as used in validation module)
+build_file_tree <- function(path, root_path, level = 0) {
+  if (level > 10) {  # Prevent infinite recursion
+    return(list())
+  }
+  
+  items <- list.files(path, all.files = FALSE, full.names = FALSE)
+  tree <- list()
+  
+  for (item in items) {
+    # Skip hidden files and common non-data directories
+    if (substr(item, 1, 1) == ".") next
+    if (item %in% c("node_modules", "__pycache__", ".git")) next
+    
+    item_path <- file.path(path, item)
+    
+    if (dir.exists(item_path)) {
+      # Directory
+      tree[[item]] <- list(
+        type = "directory",
+        contents = build_file_tree(item_path, root_path, level + 1)
+      )
+    } else {
+      # File
+      rel_path <- gsub(paste0("^", normalizePath(root_path), .Platform$file.sep), "", 
+                      normalizePath(item_path))
+      rel_path <- gsub("\\\\", "/", rel_path)  # Normalize path separators
+      
+      # Read file content for text files
+      file_text <- NULL
+      if (grepl("\\.(json|csv|tsv|txt|md)$", item, ignore.case = TRUE)) {
+        tryCatch({
+          file_text <- readLines(item_path, warn = FALSE, encoding = "UTF-8")
+          file_text <- paste(file_text, collapse = "\n")
+        }, error = function(e) {
+          file_text <- NULL
+        })
       }
       
-      return(tree)
+      tree[[item]] <- list(
+        type = "file",
+        file = list(
+          name = item,
+          path = rel_path,
+          text = file_text
+        )
+      )
+    }
+  }
+  
+  return(tree)
+}
+
+# Display dataset status
+output$dataset_status_display <- renderUI({
+  if (osf_state$dataset_valid && !is.null(osf_state$dataset_info)) {
+    div(
+      class = "alert",
+      style = "background-color: #d4edda; border-color: #c3e6cb; color: #155724; padding: 10px; border-radius: 4px;",
+      icon("check-circle", style = "margin-right: 8px;"),
+      strong("Dataset: "), osf_state$dataset_info$name,
+      tags$br(),
+      tags$small(osf_state$dataset_info$description),
+      tags$br(),
+      tags$small(
+        style = "color: #28a745; margin-top: 5px;",
+        icon("check"), " Psych-DS validation passed"
+      )
+    )
+  }
+})
+
+# Load user's OSF projects
+# Simplified loadProjects that doesn't rely on osf_ls_nodes
+loadProjects <- function() {
+  # Since osf_ls_nodes is problematic, we'll just allow manual entry
+  updateSelectInput(
+    session,
+    "project_select", 
+    choices = c("Enter project ID manually below" = "")
+  )
+  
+  showNotification("Please enter your OSF project ID manually or create a new project", 
+                  type = "message", duration = 5)
+}
+
+# Control upload summary visibility based on readiness
+observe({
+  message("DEBUG: Upload summary observer triggered")
+  message("  authenticated: ", osf_state$authenticated)
+  message("  dataset_valid: ", osf_state$dataset_valid)
+  message("  project_select: ", input$project_select)
+  message("  project_id_manual: ", input$project_id_manual)
+  message("  project_option: ", input$project_option)
+  message("  new_project_title: ", input$new_project_title)
+  
+  # Check each condition separately for debugging
+  cond1 <- osf_state$authenticated
+  cond2 <- osf_state$dataset_valid
+  cond3a <- (!is.null(input$project_select) && input$project_select != "")
+  cond3b <- (!is.null(input$project_id_manual) && input$project_id_manual != "")
+  cond3c <- (input$project_option == "new" && !is.null(input$new_project_title) && input$new_project_title != "")
+  cond3 <- (cond3a || cond3b || cond3c)
+  
+  message("  Condition breakdown:")
+  message("    authenticated: ", cond1)
+  message("    dataset_valid: ", cond2)
+  message("    project selected: ", cond3a)
+  message("    manual ID entered: ", cond3b)
+  message("    new project with title: ", cond3c)
+  message("    any project condition: ", cond3)
+  message("  SHOULD SHOW: ", cond1 && cond2 && cond3)
+  
+  if (cond1 && cond2 && cond3) {
+    summary_id <- session$ns("upload_summary_section")
+    message("DEBUG: Showing upload summary section with ID: ", summary_id)
+    
+    # Try multiple methods to show it
+    shinyjs::show(summary_id)
+    shinyjs::runjs(paste0("$('#", summary_id, "').show();"))
+    shinyjs::runjs(paste0("$('#", summary_id, "').css('display', 'block');"))
+    shinyjs::runjs(paste0(
+      "console.log('Trying to show upload summary');",
+      "console.log('Element exists: ', $('#", summary_id, "').length);",
+      "console.log('Element visible after show: ', $('#", summary_id, "').is(':visible'));"
+    ))
+  } else {
+    summary_id <- session$ns("upload_summary_section")
+    message("DEBUG: Hiding upload summary section with ID: ", summary_id)
+    shinyjs::hide(summary_id)
+  }
+})
+
+# Upload summary
+output$upload_summary_display <- renderUI({
+  summary_items <- list()
+  
+  # Dataset info
+  if (!is.null(osf_state$dataset_info)) {
+    summary_items <- append(summary_items, list(
+      p(strong("Dataset: "), osf_state$dataset_info$name)
+    ))
+  }
+  
+  # Project info
+  if (input$project_option == "new") {
+    summary_items <- append(summary_items, list(
+      p(strong("New project: "), input$new_project_title),
+      p(strong("Public: "), ifelse(input$make_public, "Yes", "No"))
+    ))
+  } else {
+    project_id <- if (input$project_id_manual != "") {
+      input$project_id_manual
+    } else {
+      input$project_select
     }
     
-    # Display dataset status
-    output$dataset_status_display <- renderUI({
-      if (osf_state$dataset_valid && !is.null(osf_state$dataset_info)) {
-        div(
-          class = "alert",
-          style = "background-color: #d4edda; border-color: #c3e6cb; color: #155724; padding: 10px; border-radius: 4px;",
-          icon("check-circle", style = "margin-right: 8px;"),
-          strong("Dataset: "), osf_state$dataset_info$name,
-          tags$br(),
-          tags$small(osf_state$dataset_info$description),
-          tags$br(),
-          tags$small(
-            style = "color: #28a745; margin-top: 5px;",
-            icon("check"), " Psych-DS validation passed"
+    if (!is.null(project_id) && project_id != "") {
+      project_name <- names(osf_state$projects)[osf_state$projects == project_id]
+      summary_items <- append(summary_items, list(
+        p(strong("Project: "), ifelse(length(project_name) > 0, project_name, project_id))
+      ))
+    }
+  }
+  
+  # Upload path
+  if (!is.null(input$upload_path) && input$upload_path != "") {
+    summary_items <- append(summary_items, list(
+      p(strong("Upload to: "), "/", input$upload_path)
+    ))
+  }
+  
+  # File count
+  data_files <- list.files(
+    file.path(osf_state$dataset_info$path, "data"),
+    recursive = TRUE,
+    full.names = FALSE
+  )
+  
+  summary_items <- append(summary_items, list(
+    p(strong("Files to upload: "), length(data_files) + 1, " (including dataset_description.json)")
+  ))
+  
+  div(
+    class = "well",
+    summary_items
+  )
+})
+
+# Main upload function - using direct API calls instead of osfr
+observeEvent(input$start_upload, {
+  showNotification("Starting upload...", id = "upload_start", duration = NULL)
+  
+  # Show progress div
+  shinyjs::show("upload_progress")
+  
+  library(httr)
+  library(jsonlite)
+  
+  tryCatch({
+    token <- input$osf_token
+    
+    # Get or create project using direct API
+    if (input$project_option == "new") {
+      # Create new project via API
+      body_json <- jsonlite::toJSON(list(
+        data = list(
+          type = "nodes",
+          attributes = list(
+            title = input$new_project_title,
+            description = if(is.null(input$new_project_description) || input$new_project_description == "") "" else input$new_project_description,
+            category = "project",
+            public = input$make_public
           )
         )
-      }
-    })
-    
-    # Load user's OSF projects
-    # Simplified loadProjects that doesn't rely on osf_ls_nodes
-    loadProjects <- function() {
-      # Since osf_ls_nodes is problematic, we'll just allow manual entry
-      updateSelectInput(
-        session,
-        "project_select", 
-        choices = c("Enter project ID manually below" = "")
+      ), auto_unbox = TRUE)
+      
+      response <- POST(
+        "https://api.osf.io/v2/nodes/",
+        add_headers(
+          Authorization = paste("Bearer", token),
+          `Content-Type` = "application/vnd.api+json"
+        ),
+        body = body_json,
+        encode = "raw"
       )
       
-      showNotification("Please enter your OSF project ID manually or create a new project", 
-                      type = "message", duration = 5)
+      if (status_code(response) != 201) {
+        error_msg <- tryCatch({
+          err_content <- content(response, "text", encoding = "UTF-8")
+          err_content
+        }, error = function(e) {
+          paste("Status code:", status_code(response))
+        })
+        stop(paste("Failed to create project.", error_msg))
+      }
+      
+      project_data <- content(response, "text", encoding = "UTF-8")
+      project_json <- fromJSON(project_data)
+      project_id <- project_json$data$id
+      
+      showNotification("Created new OSF project", type = "message")
+      
+    } else {
+      # Use existing project
+      project_id <- if (input$project_id_manual != "") {
+        input$project_id_manual  
+      } else {
+        input$project_select
+      }
     }
     
-    # Control upload summary visibility based on readiness
-    observe({
-      message("DEBUG: Upload summary observer triggered")
-      message("  authenticated: ", osf_state$authenticated)
-      message("  dataset_valid: ", osf_state$dataset_valid)
-      message("  project_select: ", input$project_select)
-      message("  project_id_manual: ", input$project_id_manual)
-      message("  project_option: ", input$project_option)
-      message("  new_project_title: ", input$new_project_title)
-      
-      # Check each condition separately for debugging
-      cond1 <- osf_state$authenticated
-      cond2 <- osf_state$dataset_valid
-      cond3a <- (!is.null(input$project_select) && input$project_select != "")
-      cond3b <- (!is.null(input$project_id_manual) && input$project_id_manual != "")
-      cond3c <- (input$project_option == "new" && !is.null(input$new_project_title) && input$new_project_title != "")
-      cond3 <- (cond3a || cond3b || cond3c)
-      
-      message("  Condition breakdown:")
-      message("    authenticated: ", cond1)
-      message("    dataset_valid: ", cond2)
-      message("    project selected: ", cond3a)
-      message("    manual ID entered: ", cond3b)
-      message("    new project with title: ", cond3c)
-      message("    any project condition: ", cond3)
-      message("  SHOULD SHOW: ", cond1 && cond2 && cond3)
-      
-      if (cond1 && cond2 && cond3) {
-        summary_id <- session$ns("upload_summary_section")
-        message("DEBUG: Showing upload summary section with ID: ", summary_id)
-        
-        # Try multiple methods to show it
-        shinyjs::show(summary_id)
-        shinyjs::runjs(paste0("$('#", summary_id, "').show();"))
-        shinyjs::runjs(paste0("$('#", summary_id, "').css('display', 'block');"))
-        shinyjs::runjs(paste0(
-          "console.log('Trying to show upload summary');",
-          "console.log('Element exists: ', $('#", summary_id, "').length);",
-          "console.log('Element visible after show: ', $('#", summary_id, "').is(':visible'));"
-        ))
-      } else {
-        summary_id <- session$ns("upload_summary_section")
-        message("DEBUG: Hiding upload summary section with ID: ", summary_id)
-        shinyjs::hide(summary_id)
-      }
-    })
+    # For file upload, we need to use OSF's waterbutler API
+    # First, get the upload URL for the project
+    storage_response <- GET(
+      paste0("https://api.osf.io/v2/nodes/", project_id, "/files/"),
+      add_headers(Authorization = paste("Bearer", token))
+    )
     
-    # Upload summary
-    output$upload_summary_display <- renderUI({
-      summary_items <- list()
-      
-      # Dataset info
-      if (!is.null(osf_state$dataset_info)) {
-        summary_items <- append(summary_items, list(
-          p(strong("Dataset: "), osf_state$dataset_info$name)
-        ))
-      }
-      
-      # Project info
-      if (input$project_option == "new") {
-        summary_items <- append(summary_items, list(
-          p(strong("New project: "), input$new_project_title),
-          p(strong("Public: "), ifelse(input$make_public, "Yes", "No"))
-        ))
-      } else {
-        project_id <- if (input$project_id_manual != "") {
-          input$project_id_manual
-        } else {
-          input$project_select
-        }
-        
-        if (!is.null(project_id) && project_id != "") {
-          project_name <- names(osf_state$projects)[osf_state$projects == project_id]
-          summary_items <- append(summary_items, list(
-            p(strong("Project: "), ifelse(length(project_name) > 0, project_name, project_id))
-          ))
-        }
-      }
-      
-      # Upload path
-      if (!is.null(input$upload_path) && input$upload_path != "") {
-        summary_items <- append(summary_items, list(
-          p(strong("Upload to: "), "/", input$upload_path)
-        ))
-      }
-      
-      # File count
-      data_files <- list.files(
-        file.path(osf_state$dataset_info$path, "data"),
-        recursive = TRUE,
-        full.names = FALSE
-      )
-      
-      summary_items <- append(summary_items, list(
-        p(strong("Files to upload: "), length(data_files) + 1, " (including dataset_description.json)")
-      ))
-      
-      div(
-        class = "well",
-        summary_items
-      )
-    })
+    if (status_code(storage_response) != 200) {
+      stop(paste("Failed to get storage info. Status:", status_code(storage_response)))
+    }
     
-    # Main upload function - using direct API calls instead of osfr
-    observeEvent(input$start_upload, {
-      showNotification("Starting upload...", id = "upload_start", duration = NULL)
-      
-      # Show progress div
-      shinyjs::show("upload_progress")
-      
-      library(httr)
-      library(jsonlite)
-      
-      tryCatch({
-        token <- input$osf_token
+    storage_text <- content(storage_response, "text", encoding = "UTF-8")
+    storage_data <- fromJSON(storage_text)
+    
+    # Find the osfstorage provider
+    osfstorage <- NULL
+    for (i in seq_len(nrow(storage_data$data))) {
+      if (storage_data$data$attributes$name[i] == "osfstorage") {
+        osfstorage <- storage_data$data[i,]
+        break
+      }
+    }
+    
+    if (is.null(osfstorage)) {
+      stop("Could not find OSF storage for this project")
+    }
+    
+    # Get the upload URL - this is typically the waterbutler URL
+    # The URL format should be like: https://files.osf.io/v1/resources/PROJECT_ID/providers/osfstorage/
+    upload_base_url <- paste0("https://files.osf.io/v1/resources/", project_id, "/providers/osfstorage/")
+    
+    # Get all files and folders in the dataset
+    dataset_path <- osf_state$dataset_info$path
+    all_files <- list.files(dataset_path, recursive = TRUE, full.names = TRUE, all.files = FALSE)
+    
+    # Filter out hidden files and common non-data directories
+    all_files <- all_files[!grepl("^\\.|/\\.", all_files)]  # No hidden files
+    all_files <- all_files[!grepl("(__pycache__|node_modules|\\.git)", all_files)]  # No cache/git
+    
+    showNotification(paste("Uploading", length(all_files), "files..."), id = "upload_files", duration = NULL)
+    
+    # First, create all necessary folders
+    all_dirs <- unique(dirname(gsub(paste0("^", normalizePath(dataset_path), "/"), "", 
+                                    sapply(all_files, normalizePath))))
+    all_dirs <- all_dirs[all_dirs != "."]
+    all_dirs <- sort(all_dirs)  # Sort to ensure parent dirs are created first
+    
+    created_folders <- list()
+    
+    for (dir_path in all_dirs) {
+      if (dir_path != "" && dir_path != ".") {
+        # Split path and create folders hierarchically
+        path_parts <- strsplit(gsub("\\\\", "/", dir_path), "/")[[1]]
+        current_path <- ""
+        parent_folder_id <- NULL
         
-        # Get or create project using direct API
-        if (input$project_option == "new") {
-          # Create new project via API
-          body_json <- jsonlite::toJSON(list(
-            data = list(
-              type = "nodes",
-              attributes = list(
-                title = input$new_project_title,
-                description = if(is.null(input$new_project_description) || input$new_project_description == "") "" else input$new_project_description,
-                category = "project",
-                public = input$make_public
-              )
-            )
-          ), auto_unbox = TRUE)
+        for (folder in path_parts) {
+          full_path <- if (current_path == "") folder else paste0(current_path, "/", folder)
           
-          response <- POST(
-            "https://api.osf.io/v2/nodes/",
-            add_headers(
-              Authorization = paste("Bearer", token),
-              `Content-Type` = "application/vnd.api+json"
-            ),
-            body = body_json,
+          # Only create if we haven't already
+          if (!(full_path %in% names(created_folders))) {
+            # Build folder URL using parent folder ID if available
+            if (is.null(parent_folder_id)) {
+              # Creating at root
+              folder_url <- paste0(upload_base_url, "?kind=folder&name=", 
+                                 URLencode(folder, reserved = TRUE))
+            } else {
+              # Creating inside parent folder - clean the parent ID
+              clean_parent_id <- gsub("^osfstorage/", "", parent_folder_id)
+              clean_parent_id <- gsub("/$", "", clean_parent_id)
+              folder_url <- paste0("https://files.osf.io/v1/resources/", project_id,
+                                 "/providers/osfstorage/", clean_parent_id, "/",
+                                 "?kind=folder&name=", 
+                                 URLencode(folder, reserved = TRUE))
+            }
+            
+            message("DEBUG: Creating folder: ", full_path)
+            if (!is.null(parent_folder_id)) {
+              message("DEBUG: Parent folder ID: ", parent_folder_id)
+            }
+            
+            folder_response <- PUT(
+              folder_url,
+              add_headers(Authorization = paste("Bearer", token))
+            )
+            
+            status <- status_code(folder_response)
+            if (status %in% c(200, 201)) {
+              # Parse response to get folder ID
+              folder_content <- content(folder_response)
+              if (!is.null(folder_content$data$id)) {
+                folder_id <- folder_content$data$id
+                created_folders[[full_path]] <- folder_id
+                parent_folder_id <- folder_id  # This becomes parent for next level
+                message("DEBUG: Folder created: ", full_path, " with ID: ", folder_id)
+              } else {
+                created_folders[[full_path]] <- TRUE
+                message("DEBUG: Folder created but no ID found: ", full_path)
+              }
+            } else if (status == 409) {
+              # Folder exists - need to get its ID
+              message("DEBUG: Folder already exists: ", full_path)
+              
+              # List the parent directory to find this folder
+              list_url <- if (is.null(parent_folder_id)) {
+                upload_base_url
+              } else {
+                # Use the parent folder ID we're tracking
+                clean_parent_id <- gsub("^osfstorage/", "", parent_folder_id)
+                clean_parent_id <- gsub("/$", "", clean_parent_id)
+                paste0("https://files.osf.io/v1/resources/", project_id, 
+                       "/providers/osfstorage/", clean_parent_id, "/")
+              }
+              
+              list_response <- GET(
+                list_url,
+                add_headers(Authorization = paste("Bearer", token))
+              )
+              
+              if (status_code(list_response) == 200) {
+                list_content <- content(list_response)
+                # Find our folder in the listing
+                if (!is.null(list_content$data)) {
+                  for (item in list_content$data) {
+                    if (!is.null(item$attributes$name) && 
+                        item$attributes$name == folder && 
+                        item$attributes$kind == "folder") {
+                      folder_id <- item$id
+                      created_folders[[full_path]] <- folder_id
+                      parent_folder_id <- folder_id  # Set as parent for next level
+                      message("DEBUG: Found existing folder: ", full_path, " with ID: ", folder_id)
+                      break
+                    }
+                  }
+                }
+              }
+              
+              if (!(full_path %in% names(created_folders)) || is.null(created_folders[[full_path]])) {
+                created_folders[[full_path]] <- TRUE
+                message("DEBUG: Folder exists but couldn't get ID: ", full_path)
+              }
+            } else {
+              warning("Failed to create folder: ", full_path, " (status: ", status, ")")
+              
+              # Log error response for debugging
+              error_content <- tryCatch({
+                content(folder_response, "text", encoding = "UTF-8")
+              }, error = function(e) "")
+              if (nchar(error_content) > 0) {
+                message("DEBUG: Folder creation error: ", error_content)
+              }
+            }
+          } else {
+            # Folder already created, use its ID as parent for next level
+            parent_folder_id <- created_folders[[full_path]]
+            message("DEBUG: Using existing folder: ", full_path, " with ID: ", parent_folder_id)
+          }
+          
+          current_path <- full_path
+        }
+      }
+    }
+    
+    # Now upload files
+    withProgress(message = "Uploading dataset...", value = 0, {
+      success_count <- 0
+      failed_files <- character()
+      
+      for (i in seq_along(all_files)) {
+        file_path <- all_files[i]
+        
+        # Get relative path from dataset root
+        rel_path <- gsub(paste0("^", normalizePath(dataset_path), "/"), "", normalizePath(file_path))
+        rel_path <- gsub("\\\\", "/", rel_path)  # Windows path fix
+        
+        file_name <- basename(file_path)
+        file_dir <- dirname(rel_path)
+        
+        tryCatch({
+          # Read file content
+          file_content <- readBin(file_path, "raw", file.info(file_path)$size)
+          
+          # Build the upload URL - put file in its directory
+          if (file_dir != "." && file_dir != "") {
+            # Check if we have a folder ID for this directory
+            folder_id <- if (file_dir %in% names(created_folders)) {
+              created_folders[[file_dir]]
+            } else {
+              NULL
+            }
+            
+            if (!is.null(folder_id) && folder_id != TRUE) {
+              # Upload to the specific folder using its ID
+              # Clean the folder ID - remove "osfstorage/" prefix if present
+              clean_folder_id <- gsub("^osfstorage/", "", folder_id)
+              clean_folder_id <- gsub("/$", "", clean_folder_id)  # Remove trailing slash
+              
+              file_upload_url <- paste0("https://files.osf.io/v1/resources/", project_id, 
+                                      "/providers/osfstorage/", clean_folder_id, "/",
+                                      "?kind=file&name=", 
+                                      URLencode(file_name, reserved = TRUE))
+              message("DEBUG: Uploading to folder ID ", clean_folder_id, ": ", rel_path)
+            } else {
+              # Fallback: try uploading with path in name (though this may fail)
+              message("DEBUG: Warning - no folder ID found for ", file_dir, ", trying path-based upload")
+              full_file_path <- paste0(file_dir, "/", file_name)
+              file_upload_url <- paste0(upload_base_url, 
+                                      "?kind=file&name=", 
+                                      URLencode(full_file_path, reserved = TRUE))
+            }
+          } else {
+            # File is in root
+            file_upload_url <- paste0(upload_base_url, 
+                                    "?kind=file&name=", 
+                                    URLencode(file_name, reserved = TRUE))
+          }
+          
+          message("DEBUG: Uploading ", rel_path, " to ", file_upload_url)
+          
+          # Try to upload file
+          file_response <- PUT(
+            file_upload_url,
+            add_headers(Authorization = paste("Bearer", token)),
+            body = file_content,
             encode = "raw"
           )
           
-          if (status_code(response) != 201) {
-            error_msg <- tryCatch({
-              err_content <- content(response, "text", encoding = "UTF-8")
-              err_content
-            }, error = function(e) {
-              paste("Status code:", status_code(response))
-            })
-            stop(paste("Failed to create project.", error_msg))
-          }
+          status <- status_code(file_response)
+          message("DEBUG: Upload response status for ", rel_path, ": ", status)
           
-          project_data <- content(response, "text", encoding = "UTF-8")
-          project_json <- fromJSON(project_data)
-          project_id <- project_json$data$id
-          
-          showNotification("Created new OSF project", type = "message")
-          
-        } else {
-          # Use existing project
-          project_id <- if (input$project_id_manual != "") {
-            input$project_id_manual  
-          } else {
-            input$project_select
-          }
-        }
-        
-        # For file upload, we need to use OSF's waterbutler API
-        # First, get the upload URL for the project
-        storage_response <- GET(
-          paste0("https://api.osf.io/v2/nodes/", project_id, "/files/"),
-          add_headers(Authorization = paste("Bearer", token))
-        )
-        
-        if (status_code(storage_response) != 200) {
-          stop(paste("Failed to get storage info. Status:", status_code(storage_response)))
-        }
-        
-        storage_text <- content(storage_response, "text", encoding = "UTF-8")
-        storage_data <- fromJSON(storage_text)
-        
-        # Find the osfstorage provider
-        osfstorage <- NULL
-        for (i in seq_len(nrow(storage_data$data))) {
-          if (storage_data$data$attributes$name[i] == "osfstorage") {
-            osfstorage <- storage_data$data[i,]
-            break
-          }
-        }
-        
-        if (is.null(osfstorage)) {
-          stop("Could not find OSF storage for this project")
-        }
-        
-        # Get the upload URL - this is typically the waterbutler URL
-        # The URL format should be like: https://files.osf.io/v1/resources/PROJECT_ID/providers/osfstorage/
-        upload_base_url <- paste0("https://files.osf.io/v1/resources/", project_id, "/providers/osfstorage/")
-        
-        # Get all files and folders in the dataset
-        dataset_path <- osf_state$dataset_info$path
-        all_files <- list.files(dataset_path, recursive = TRUE, full.names = TRUE, all.files = FALSE)
-        
-        # Filter out hidden files and common non-data directories
-        all_files <- all_files[!grepl("^\\.|/\\.", all_files)]  # No hidden files
-        all_files <- all_files[!grepl("(__pycache__|node_modules|\\.git)", all_files)]  # No cache/git
-        
-        showNotification(paste("Uploading", length(all_files), "files..."), id = "upload_files", duration = NULL)
-        
-        # First, create all necessary folders
-        all_dirs <- unique(dirname(gsub(paste0("^", normalizePath(dataset_path), "/"), "", 
-                                        sapply(all_files, normalizePath))))
-        all_dirs <- all_dirs[all_dirs != "."]
-        all_dirs <- sort(all_dirs)  # Sort to ensure parent dirs are created first
-        
-        created_folders <- list()
-        
-        for (dir_path in all_dirs) {
-          if (dir_path != "" && dir_path != ".") {
-            # Split path and create folders hierarchically
-            path_parts <- strsplit(gsub("\\\\", "/", dir_path), "/")[[1]]
-            current_path <- ""
-            parent_folder_id <- NULL
+          if (status %in% c(200, 201)) {
+            success_count <- success_count + 1
+            message("DEBUG: Successfully uploaded ", rel_path)
+          } else if (status == 409) {
+            # File exists - extract the upload URL from the error response
+            message("DEBUG: File exists, attempting to update: ", rel_path)
             
-            for (folder in path_parts) {
-              full_path <- if (current_path == "") folder else paste0(current_path, "/", folder)
-              
-              # Only create if we haven't already
-              if (!(full_path %in% names(created_folders))) {
-                # Build folder URL using parent folder ID if available
-                if (is.null(parent_folder_id)) {
-                  # Creating at root
-                  folder_url <- paste0(upload_base_url, "?kind=folder&name=", 
-                                     URLencode(folder, reserved = TRUE))
-                } else {
-                  # Creating inside parent folder - clean the parent ID
-                  clean_parent_id <- gsub("^osfstorage/", "", parent_folder_id)
-                  clean_parent_id <- gsub("/$", "", clean_parent_id)
-                  folder_url <- paste0("https://files.osf.io/v1/resources/", project_id,
-                                     "/providers/osfstorage/", clean_parent_id, "/",
-                                     "?kind=folder&name=", 
-                                     URLencode(folder, reserved = TRUE))
-                }
-                
-                message("DEBUG: Creating folder: ", full_path)
-                if (!is.null(parent_folder_id)) {
-                  message("DEBUG: Parent folder ID: ", parent_folder_id)
-                }
-                
-                folder_response <- PUT(
-                  folder_url,
-                  add_headers(Authorization = paste("Bearer", token))
-                )
-                
-                status <- status_code(folder_response)
-                if (status %in% c(200, 201)) {
-                  # Parse response to get folder ID
-                  folder_content <- content(folder_response)
-                  if (!is.null(folder_content$data$id)) {
-                    folder_id <- folder_content$data$id
-                    created_folders[[full_path]] <- folder_id
-                    parent_folder_id <- folder_id  # This becomes parent for next level
-                    message("DEBUG: Folder created: ", full_path, " with ID: ", folder_id)
-                  } else {
-                    created_folders[[full_path]] <- TRUE
-                    message("DEBUG: Folder created but no ID found: ", full_path)
-                  }
-                } else if (status == 409) {
-                  # Folder exists - need to get its ID
-                  message("DEBUG: Folder already exists: ", full_path)
-                  
-                  # List the parent directory to find this folder
-                  list_url <- if (is.null(parent_folder_id)) {
-                    upload_base_url
-                  } else {
-                    # Use the parent folder ID we're tracking
-                    clean_parent_id <- gsub("^osfstorage/", "", parent_folder_id)
-                    clean_parent_id <- gsub("/$", "", clean_parent_id)
-                    paste0("https://files.osf.io/v1/resources/", project_id, 
-                           "/providers/osfstorage/", clean_parent_id, "/")
-                  }
-                  
-                  list_response <- GET(
-                    list_url,
-                    add_headers(Authorization = paste("Bearer", token))
-                  )
-                  
-                  if (status_code(list_response) == 200) {
-                    list_content <- content(list_response)
-                    # Find our folder in the listing
-                    if (!is.null(list_content$data)) {
-                      for (item in list_content$data) {
-                        if (!is.null(item$attributes$name) && 
-                            item$attributes$name == folder && 
-                            item$attributes$kind == "folder") {
-                          folder_id <- item$id
-                          created_folders[[full_path]] <- folder_id
-                          parent_folder_id <- folder_id  # Set as parent for next level
-                          message("DEBUG: Found existing folder: ", full_path, " with ID: ", folder_id)
-                          break
-                        }
-                      }
-                    }
-                  }
-                  
-                  if (!(full_path %in% names(created_folders)) || is.null(created_folders[[full_path]])) {
-                    created_folders[[full_path]] <- TRUE
-                    message("DEBUG: Folder exists but couldn't get ID: ", full_path)
-                  }
-                } else {
-                  warning("Failed to create folder: ", full_path, " (status: ", status, ")")
-                  
-                  # Log error response for debugging
-                  error_content <- tryCatch({
-                    content(folder_response, "text", encoding = "UTF-8")
-                  }, error = function(e) "")
-                  if (nchar(error_content) > 0) {
-                    message("DEBUG: Folder creation error: ", error_content)
-                  }
-                }
-              } else {
-                # Folder already created, use its ID as parent for next level
-                parent_folder_id <- created_folders[[full_path]]
-                message("DEBUG: Using existing folder: ", full_path, " with ID: ", parent_folder_id)
-              }
-              
-              current_path <- full_path
+            error_content <- content(file_response)
+            
+            # Extract the upload URL from the error response
+            update_url <- NULL
+            if (!is.null(error_content$data$links$upload)) {
+              update_url <- error_content$data$links$upload
+              message("DEBUG: Found update URL: ", update_url)
             }
-          }
-        }
-        
-        # Now upload files
-        withProgress(message = "Uploading dataset...", value = 0, {
-          success_count <- 0
-          failed_files <- character()
-          
-          for (i in seq_along(all_files)) {
-            file_path <- all_files[i]
             
-            # Get relative path from dataset root
-            rel_path <- gsub(paste0("^", normalizePath(dataset_path), "/"), "", normalizePath(file_path))
-            rel_path <- gsub("\\\\", "/", rel_path)  # Windows path fix
-            
-            file_name <- basename(file_path)
-            file_dir <- dirname(rel_path)
-            
-            tryCatch({
-              # Read file content
-              file_content <- readBin(file_path, "raw", file.info(file_path)$size)
-              
-              # Build the upload URL - put file in its directory
-              if (file_dir != "." && file_dir != "") {
-                # Check if we have a folder ID for this directory
-                folder_id <- if (file_dir %in% names(created_folders)) {
-                  created_folders[[file_dir]]
-                } else {
-                  NULL
-                }
-                
-                if (!is.null(folder_id) && folder_id != TRUE) {
-                  # Upload to the specific folder using its ID
-                  # Clean the folder ID - remove "osfstorage/" prefix if present
-                  clean_folder_id <- gsub("^osfstorage/", "", folder_id)
-                  clean_folder_id <- gsub("/$", "", clean_folder_id)  # Remove trailing slash
-                  
-                  file_upload_url <- paste0("https://files.osf.io/v1/resources/", project_id, 
-                                          "/providers/osfstorage/", clean_folder_id, "/",
-                                          "?kind=file&name=", 
-                                          URLencode(file_name, reserved = TRUE))
-                  message("DEBUG: Uploading to folder ID ", clean_folder_id, ": ", rel_path)
-                } else {
-                  # Fallback: try uploading with path in name (though this may fail)
-                  message("DEBUG: Warning - no folder ID found for ", file_dir, ", trying path-based upload")
-                  full_file_path <- paste0(file_dir, "/", file_name)
-                  file_upload_url <- paste0(upload_base_url, 
-                                          "?kind=file&name=", 
-                                          URLencode(full_file_path, reserved = TRUE))
-                }
-              } else {
-                # File is in root
-                file_upload_url <- paste0(upload_base_url, 
-                                        "?kind=file&name=", 
-                                        URLencode(file_name, reserved = TRUE))
-              }
-              
-              message("DEBUG: Uploading ", rel_path, " to ", file_upload_url)
-              
-              # Try to upload file
-              file_response <- PUT(
-                file_upload_url,
+            if (!is.null(update_url)) {
+              # Use the file's specific upload endpoint to update it
+              update_response <- PUT(
+                update_url,
                 add_headers(Authorization = paste("Bearer", token)),
                 body = file_content,
                 encode = "raw"
               )
               
-              status <- status_code(file_response)
-              message("DEBUG: Upload response status for ", rel_path, ": ", status)
+              update_status <- status_code(update_response)
+              message("DEBUG: Update response status for ", rel_path, ": ", update_status)
               
-              if (status %in% c(200, 201)) {
+              if (update_status %in% c(200, 201)) {
                 success_count <- success_count + 1
-                message("DEBUG: Successfully uploaded ", rel_path)
-              } else if (status == 409) {
-                # File exists - extract the upload URL from the error response
-                message("DEBUG: File exists, attempting to update: ", rel_path)
-                
-                error_content <- content(file_response)
-                
-                # Extract the upload URL from the error response
-                update_url <- NULL
-                if (!is.null(error_content$data$links$upload)) {
-                  update_url <- error_content$data$links$upload
-                  message("DEBUG: Found update URL: ", update_url)
-                }
-                
-                if (!is.null(update_url)) {
-                  # Use the file's specific upload endpoint to update it
-                  update_response <- PUT(
-                    update_url,
-                    add_headers(Authorization = paste("Bearer", token)),
-                    body = file_content,
-                    encode = "raw"
-                  )
-                  
-                  update_status <- status_code(update_response)
-                  message("DEBUG: Update response status for ", rel_path, ": ", update_status)
-                  
-                  if (update_status %in% c(200, 201)) {
-                    success_count <- success_count + 1
-                    message("DEBUG: Successfully updated ", rel_path)
-                  } else {
-                    failed_files <- c(failed_files, rel_path)
-                    warning("Failed to update ", rel_path, ", status: ", update_status)
-                    
-                    # Get error details
-                    update_error <- tryCatch({
-                      content(update_response, "text", encoding = "UTF-8")
-                    }, error = function(e) "")
-                    message("DEBUG: Update error: ", update_error)
-                  }
-                } else {
-                  # Couldn't find update URL in error response
-                  failed_files <- c(failed_files, rel_path)
-                  warning("File exists but no update URL found for ", rel_path)
-                }
+                message("DEBUG: Successfully updated ", rel_path)
               } else {
                 failed_files <- c(failed_files, rel_path)
-                warning("Failed to upload ", rel_path, ", status: ", status)
+                warning("Failed to update ", rel_path, ", status: ", update_status)
                 
-                # Try to get error message
-                error_content <- tryCatch({
-                  content(file_response, "text", encoding = "UTF-8")
+                # Get error details
+                update_error <- tryCatch({
+                  content(update_response, "text", encoding = "UTF-8")
                 }, error = function(e) "")
-                
-                if (nchar(error_content) > 0) {
-                  message("DEBUG: Error response: ", substr(error_content, 1, 500))
-                }
+                message("DEBUG: Update error: ", update_error)
               }
-              
-            }, error = function(e) {
+            } else {
+              # Couldn't find update URL in error response
               failed_files <- c(failed_files, rel_path)
-              warning("Exception uploading ", rel_path, ": ", e$message)
-            })
+              warning("File exists but no update URL found for ", rel_path)
+            }
+          } else {
+            failed_files <- c(failed_files, rel_path)
+            warning("Failed to upload ", rel_path, ", status: ", status)
             
-            setProgress(i / length(all_files), 
-                       detail = paste(success_count, "of", i, "files uploaded"))
+            # Try to get error message
+            error_content <- tryCatch({
+              content(file_response, "text", encoding = "UTF-8")
+            }, error = function(e) "")
+            
+            if (nchar(error_content) > 0) {
+              message("DEBUG: Error response: ", substr(error_content, 1, 500))
+            }
           }
           
-          # Generate and upload README if requested
-          if (input$create_readme) {
-            message("DEBUG: Checking for README generation")
+        }, error = function(e) {
+          failed_files <- c(failed_files, rel_path)
+          warning("Exception uploading ", rel_path, ": ", e$message)
+        })
+        
+        setProgress(i / length(all_files), 
+                   detail = paste(success_count, "of", i, "files uploaded"))
+      }
+      
+      # Generate and upload README if requested
+      if (input$create_readme) {
+        message("DEBUG: Checking for README generation")
+        
+        # First check if README already exists in the dataset
+        existing_readme <- FALSE
+        readme_files <- c("README.md", "readme.md", "README.MD", "Readme.md", "README.txt", "readme.txt")
+        
+        for (readme_name in readme_files) {
+          if (file.exists(file.path(dataset_path, readme_name))) {
+            existing_readme <- TRUE
+            message("DEBUG: Found existing README: ", readme_name)
+            break
+          }
+        }
+        
+        if (!existing_readme) {
+          # Generate README content
+          readme_content <- generateReadme(osf_state$dataset_info)
+          
+          # Upload README.md to OSF
+          readme_upload_url <- paste0(upload_base_url, 
+                                     "?kind=file&name=README.md")
+          
+          message("DEBUG: Uploading generated README.md")
+          
+          readme_response <- PUT(
+            readme_upload_url,
+            add_headers(Authorization = paste("Bearer", token)),
+            body = charToRaw(readme_content),
+            encode = "raw"
+          )
+          
+          readme_status <- status_code(readme_response)
+          
+          if (readme_status %in% c(200, 201)) {
+            showNotification("README.md generated and uploaded successfully", type = "message")
+            message("DEBUG: README uploaded successfully")
+          } else if (readme_status == 409) {
+            # README exists in OSF, try to update it
+            message("DEBUG: README exists in OSF, attempting update")
             
-            # First check if README already exists in the dataset
-            existing_readme <- FALSE
-            readme_files <- c("README.md", "readme.md", "README.MD", "Readme.md", "README.txt", "readme.txt")
-            
-            for (readme_name in readme_files) {
-              if (file.exists(file.path(dataset_path, readme_name))) {
-                existing_readme <- TRUE
-                message("DEBUG: Found existing README: ", readme_name)
-                break
-              }
+            error_content <- content(readme_response)
+            update_url <- NULL
+            if (!is.null(error_content$data$links$upload)) {
+              update_url <- error_content$data$links$upload
             }
             
-            if (!existing_readme) {
-              # Generate README content
-              readme_content <- generateReadme(osf_state$dataset_info)
-              
-              # Upload README.md to OSF
-              readme_upload_url <- paste0(upload_base_url, 
-                                         "?kind=file&name=README.md")
-              
-              message("DEBUG: Uploading generated README.md")
-              
-              readme_response <- PUT(
-                readme_upload_url,
+            if (!is.null(update_url)) {
+              update_response <- PUT(
+                update_url,
                 add_headers(Authorization = paste("Bearer", token)),
                 body = charToRaw(readme_content),
                 encode = "raw"
               )
               
-              readme_status <- status_code(readme_response)
-              
-              if (readme_status %in% c(200, 201)) {
-                showNotification("README.md generated and uploaded successfully", type = "message")
-                message("DEBUG: README uploaded successfully")
-              } else if (readme_status == 409) {
-                # README exists in OSF, try to update it
-                message("DEBUG: README exists in OSF, attempting update")
-                
-                error_content <- content(readme_response)
-                update_url <- NULL
-                if (!is.null(error_content$data$links$upload)) {
-                  update_url <- error_content$data$links$upload
-                }
-                
-                if (!is.null(update_url)) {
-                  update_response <- PUT(
-                    update_url,
-                    add_headers(Authorization = paste("Bearer", token)),
-                    body = charToRaw(readme_content),
-                    encode = "raw"
-                  )
-                  
-                  if (status_code(update_response) %in% c(200, 201)) {
-                    showNotification("README.md updated successfully", type = "message")
-                    message("DEBUG: README updated successfully")
-                  } else {
-                    showNotification("Could not update README.md", type = "warning")
-                    message("DEBUG: Failed to update README, status: ", status_code(update_response))
-                  }
-                }
+              if (status_code(update_response) %in% c(200, 201)) {
+                showNotification("README.md updated successfully", type = "message")
+                message("DEBUG: README updated successfully")
               } else {
-                showNotification("Failed to upload README.md", type = "warning")
-                message("DEBUG: Failed to upload README, status: ", readme_status)
+                showNotification("Could not update README.md", type = "warning")
+                message("DEBUG: Failed to update README, status: ", status_code(update_response))
               }
-            } else {
-              showNotification("Existing README found - preserving original", type = "message")
-              message("DEBUG: Skipping README generation - existing README found")
-            }
-          }
-          
-          removeNotification(id = "upload_files")
-          
-          # Report results
-          if (success_count == length(all_files)) {
-            showNotification(paste("Successfully uploaded all", success_count, "files!"), type = "message")
-          } else if (success_count > 0) {
-            showNotification(paste("Uploaded", success_count, "of", length(all_files), "files.",
-                                 length(failed_files), "failed."), type = "warning")
-            if (length(failed_files) > 0 && length(failed_files) <= 5) {
-              showNotification(paste("Failed files:", paste(failed_files, collapse = ", ")), 
-                             type = "warning", duration = 10)
             }
           } else {
-            showNotification("Upload failed - no files were uploaded", type = "error")
+            showNotification("Failed to upload README.md", type = "warning")
+            message("DEBUG: Failed to upload README, status: ", readme_status)
           }
-        })
-        
-        removeNotification(id = "upload_start")
-        
-        # Success message with link
-        project_url <- paste0("https://osf.io/", project_id)
-        
-        # Store the URL in a reactive value so we can access it from button click
-        osf_state$last_project_url <- project_url
-        
-        showModal(modalDialog(
-          title = "Upload Successful!",
-          size = "m",
-          div(
-            icon("check-circle", style = "font-size: 24px; margin-right: 10px; color: #4caf50;"),
-            h4("Your dataset has been uploaded to OSF"),
-            hr(),
-            p("Project URL:"),
-            div(
-              style = "background-color: #f6f8fa; padding: 10px; border-radius: 4px; margin: 10px 0;",
-              code(project_url)
-            ),
-            div(
-              style = "margin-top: 10px;",
-              actionButton(
-                session$ns("open_osf_link"),
-                "Open in Browser",
-                icon = icon("external-link-alt"),
-                class = "btn-primary"
-              ),
-              tags$button(
-                class = "btn btn-default",
-                style = "margin-left: 10px;",
-                onclick = paste0("navigator.clipboard.writeText('", project_url, "'); $(this).text('Copied!'); setTimeout(() => $(this).text('Copy Link'), 2000);"),
-                "Copy Link"
-              )
-            ),
-            if (input$project_option == "new" && !input$make_public) {
-              p(
-                style = "color: #856404; background-color: #fff3cd; padding: 10px; border-radius: 4px; margin-top: 10px;",
-                icon("info-circle"),
-                "Note: Your project is currently private. You can make it public from the OSF website."
-              )
-            }
-          ),
-          footer = modalButton("Close"),
-          easyClose = TRUE
-        ))
-        
-        # Hide progress
-        shinyjs::hide("upload_progress")
-        
-      }, error = function(e) {
-        removeNotification(id = "upload_start")
-        showNotification(paste("Upload failed:", e$message), type = "error")
-        shinyjs::hide("upload_progress")
-      })
-    })
-    
-    # Helper function to generate README
-    generateReadme <- function(dataset_info) {
-      # Count data files
-      data_path <- file.path(dataset_info$path, "data")
-      data_files <- list()
-      if (dir.exists(data_path)) {
-        data_files <- list.files(data_path, recursive = TRUE, pattern = "\\.(csv|tsv|txt|json)$", ignore.case = TRUE)
+        } else {
+          showNotification("Existing README found - preserving original", type = "message")
+          message("DEBUG: Skipping README generation - existing README found")
+        }
       }
       
-      # Get subdirectories in data folder
-      data_dirs <- list.dirs(data_path, recursive = TRUE, full.names = FALSE)
-      data_dirs <- data_dirs[data_dirs != ""]
+      removeNotification(id = "upload_files")
       
-      readme <- paste(
-        "# ", dataset_info$name, "\n\n",
-        dataset_info$description, "\n\n",
-        "## Dataset Structure\n\n",
-        "This is a Psych-DS compliant dataset containing:\n",
-        "- `dataset_description.json`: Metadata about the dataset\n",
-        "- `data/`: Directory containing ", length(data_files), " data file(s)\n",
-        if (length(data_dirs) > 0) paste0("  - Subdirectories: ", paste(data_dirs, collapse = ", "), "\n") else "",
-        "\n",
-        "## Files\n\n",
-        if (length(data_files) > 0) {
-          paste("### Data Files\n",
-                paste("- `", data_files, "`", sep = "", collapse = "\n"),
-                "\n\n", sep = "")
-        } else "",
-        "## Psych-DS Standard\n\n",
-        "This dataset follows the Psych-DS (Psychological Dataset) standard for organizing behavioral datasets.\n",
-        "Learn more at: https://psych-ds.github.io/\n\n",
-        "## Citation\n\n",
-        "Please cite this dataset as specified in the dataset_description.json file.\n\n",
-        "---\n",
-        "*Generated on ", format(Sys.Date(), "%B %d, %Y"), " using the Psych-DS Uploader*",
-        sep = ""
-      )
-      
-      return(readme)
-    }
-    
-    # Handle opening the OSF link in browser
-    observeEvent(input$open_osf_link, {
-      if (!is.null(osf_state$last_project_url)) {
-        utils::browseURL(osf_state$last_project_url)
+      # Report results
+      if (success_count == length(all_files)) {
+        showNotification(paste("Successfully uploaded all", success_count, "files!"), type = "message")
+      } else if (success_count > 0) {
+        showNotification(paste("Uploaded", success_count, "of", length(all_files), "files.",
+                             length(failed_files), "failed."), type = "warning")
+        if (length(failed_files) > 0 && length(failed_files) <= 5) {
+          showNotification(paste("Failed files:", paste(failed_files, collapse = ", ")), 
+                         type = "warning", duration = 10)
+        }
+      } else {
+        showNotification("Upload failed - no files were uploaded", type = "error")
       }
     })
     
-    # Progress display
-    output$upload_progress_display <- renderUI({
+    removeNotification(id = "upload_start")
+    
+    # Success message with link
+    project_url <- paste0("https://osf.io/", project_id)
+    
+    # Store the URL in a reactive value so we can access it from button click
+    osf_state$last_project_url <- project_url
+    
+    showModal(modalDialog(
+      title = "Upload Successful!",
+      size = "m",
       div(
-        class = "alert",
-        style = "background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; padding: 10px; border-radius: 4px;",
-        icon("spinner", class = "fa-spin", style = "margin-right: 8px;"),
-        "Upload in progress. Please do not close this window..."
-      )
-    })
+        icon("check-circle", style = "font-size: 24px; margin-right: 10px; color: #4caf50;"),
+        h4("Your dataset has been uploaded to OSF"),
+        hr(),
+        p("Project URL:"),
+        div(
+          style = "background-color: #f6f8fa; padding: 10px; border-radius: 4px; margin: 10px 0;",
+          code(project_url)
+        ),
+        div(
+          style = "margin-top: 10px;",
+          actionButton(
+            session$ns("open_osf_link"),
+            "Open in Browser",
+            icon = icon("external-link-alt"),
+            class = "btn-primary"
+          ),
+          tags$button(
+            class = "btn btn-default",
+            style = "margin-left: 10px;",
+            onclick = paste0("navigator.clipboard.writeText('", project_url, "'); $(this).text('Copied!'); setTimeout(() => $(this).text('Copy Link'), 2000);"),
+            "Copy Link"
+          )
+        ),
+        if (input$project_option == "new" && !input$make_public) {
+          p(
+            style = "color: #856404; background-color: #fff3cd; padding: 10px; border-radius: 4px; margin-top: 10px;",
+            icon("info-circle"),
+            "Note: Your project is currently private. You can make it public from the OSF website."
+          )
+        }
+      ),
+      footer = modalButton("Close"),
+      easyClose = TRUE
+    ))
+    
+    # Hide progress
+    shinyjs::hide("upload_progress")
+    
+  }, error = function(e) {
+    removeNotification(id = "upload_start")
+    showNotification(paste("Upload failed:", e$message), type = "error")
+    shinyjs::hide("upload_progress")
+  })
+})
+
+# Helper function to generate README
+generateReadme <- function(dataset_info) {
+  # Count data files
+  data_path <- file.path(dataset_info$path, "data")
+  data_files <- list()
+  if (dir.exists(data_path)) {
+    data_files <- list.files(data_path, recursive = TRUE, pattern = "\\.(csv|tsv|txt|json)$", ignore.case = TRUE)
+  }
+  
+  # Get subdirectories in data folder
+  data_dirs <- list.dirs(data_path, recursive = TRUE, full.names = FALSE)
+  data_dirs <- data_dirs[data_dirs != ""]
+  
+  readme <- paste(
+    "# ", dataset_info$name, "\n\n",
+    dataset_info$description, "\n\n",
+    "## Dataset Structure\n\n",
+    "This is a Psych-DS compliant dataset containing:\n",
+    "- `dataset_description.json`: Metadata about the dataset\n",
+    "- `data/`: Directory containing ", length(data_files), " data file(s)\n",
+    if (length(data_dirs) > 0) paste0("  - Subdirectories: ", paste(data_dirs, collapse = ", "), "\n") else "",
+    "\n",
+    "## Files\n\n",
+    if (length(data_files) > 0) {
+      paste("### Data Files\n",
+            paste("- `", data_files, "`", sep = "", collapse = "\n"),
+            "\n\n", sep = "")
+    } else "",
+    "## Psych-DS Standard\n\n",
+    "This dataset follows the Psych-DS (Psychological Dataset) standard for organizing behavioral datasets.\n",
+    "Learn more at: https://psych-ds.github.io/\n\n",
+    "## Citation\n\n",
+    "Please cite this dataset as specified in the dataset_description.json file.\n\n",
+    "---\n",
+    "*Generated on ", format(Sys.Date(), "%B %d, %Y"), " using the Psych-DS Uploader*",
+    sep = ""
+  )
+  
+  return(readme)
+}
+
+# Handle opening the OSF link in browser
+observeEvent(input$open_osf_link, {
+  if (!is.null(osf_state$last_project_url)) {
+    utils::browseURL(osf_state$last_project_url)
+  }
+})
+
+# Progress display
+output$upload_progress_display <- renderUI({
+  div(
+    class = "alert",
+    style = "background-color: #d1ecf1; border-color: #bee5eb; color: #0c5460; padding: 10px; border-radius: 4px;",
+    icon("spinner", class = "fa-spin", style = "margin-right: 8px;"),
+    "Upload in progress. Please do not close this window..."
+  )
+})
   })
 }
