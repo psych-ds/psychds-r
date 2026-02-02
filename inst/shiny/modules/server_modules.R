@@ -159,7 +159,7 @@ generate_html_content <- function(dictionary_data, dataset_info, include_stats) 
     html_parts <- c(html_parts, generate_missing_values_html(dictionary_data$missing_values))
   }
   
-  html_parts <- c(html_parts, generate_variables_html(dictionary_data$variables, include_stats))
+  html_parts <- c(html_parts, generate_variables_html(dictionary_data$variables, include_stats, dictionary_data$missing_values))
   
   html_parts <- c(html_parts, '
   </main>
@@ -183,25 +183,29 @@ get_dictionary_css <- function() {
   --primary: #2c3e50;
   --secondary: #3498db;
   --accent: #1abc9c;
-  --text: #333;
+  --text: #2d2d2d;
   --muted: #6c757d;
   --surface: #f8f9fa;
-  --border: #e9ecef;
+  --border: #dee2e6;
+  --light-blue: #e8f4f8;
+  --success: #28a745;
+  --warning: #ffc107;
+  --danger: #dc3545;
 }
 
 *, *::before, *::after { box-sizing: border-box; }
 
 body {
-  font-family: "Segoe UI", -apple-system, BlinkMacSystemFont, Arial, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.7;
   color: var(--text);
   background: #fff;
   margin: 0;
   padding: 0;
 }
 
-h1, h2, h3, h4 {
+h1, h2, h3, h4, h5 {
   font-weight: 600;
   line-height: 1.3;
   margin-top: 0;
@@ -209,18 +213,34 @@ h1, h2, h3, h4 {
 }
 
 h2 {
-  font-size: 1.4rem;
-  border-bottom: 2px solid var(--secondary);
-  padding-bottom: 0.5rem;
+  font-size: 1.5rem;
+  border-bottom: 3px solid var(--secondary);
+  padding-bottom: 0.6rem;
   margin-bottom: 1.5rem;
+  margin-top: 2rem;
 }
 
-code {
-  font-family: "SF Mono", Consolas, monospace;
+h3 {
+  font-size: 1.15rem;
+  color: var(--primary);
+  margin-bottom: 0.75rem;
+}
+
+h4 {
+  font-size: 0.95rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.75rem;
+  margin-top: 1.25rem;
+}
+
+code, .monospace {
+  font-family: "SF Mono", "Monaco", "Inconsolata", "Fira Code", Consolas, monospace;
   font-size: 0.9em;
-  background: var(--surface);
-  padding: 0.2em 0.4em;
-  border-radius: 4px;
+  background: #f5f7fa;
+  padding: 0.2em 0.5em;
+  border-radius: 3px;
   color: #c7254e;
 }
 
@@ -228,10 +248,11 @@ a { color: var(--secondary); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 .document-header {
-  background: linear-gradient(135deg, var(--primary) 0%, #34495e 100%);
+  background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
   color: white;
-  padding: 2.5rem 2rem;
+  padding: 3rem 2rem;
   text-align: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 .document-header h1, .document-header h2 {
@@ -240,65 +261,69 @@ a:hover { text-decoration: underline; }
 }
 
 .document-title {
-  font-size: 2.2rem;
+  font-size: 2.4rem;
   font-weight: 300;
   margin-bottom: 0.5rem;
+  letter-spacing: -0.5px;
 }
 
 .dataset-name {
-  font-size: 1.3rem;
+  font-size: 1.4rem;
   font-weight: 400;
   opacity: 0.95;
   margin-bottom: 0.75rem;
 }
 
 .generation-date {
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   opacity: 0.8;
   margin: 0;
+  font-weight: 300;
 }
 
 .container {
-  max-width: 900px;
+  max-width: 1000px;
   margin: 0 auto;
-  padding: 2rem;
+  padding: 2.5rem 2rem;
 }
 
 .section {
-  margin-bottom: 2.5rem;
+  margin-bottom: 3rem;
 }
 
 .section-header {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
+  gap: 0.875rem;
+  margin-bottom: 1.5rem;
 }
 
 .section-icon {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   background: var(--secondary);
-  border-radius: 50%;
+  border-radius: 8px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: white;
-  font-size: 1rem;
+  font-size: 1.1rem;
 }
 
 .toc {
-  background: var(--surface);
+  background: var(--light-blue);
   border-radius: 8px;
-  padding: 1.25rem 1.5rem;
-  margin-bottom: 2rem;
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 2.5rem;
+  border-left: 4px solid var(--secondary);
 }
 
 .toc h2 {
-  font-size: 1rem;
-  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
   border: none;
   padding: 0;
+  color: var(--primary);
 }
 
 .toc-list {
@@ -306,55 +331,83 @@ a:hover { text-decoration: underline; }
   padding: 0;
   margin: 0;
   columns: 2;
-  column-gap: 2rem;
+  column-gap: 2.5rem;
 }
 
 .toc-list li {
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
   break-inside: avoid;
+  padding-left: 0;
+}
+
+.toc-list a {
+  color: var(--text);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.toc-list a:hover {
+  color: var(--secondary);
 }
 
 .toc-number {
   color: var(--secondary);
-  font-weight: 600;
-  margin-right: 0.5rem;
+  font-weight: 700;
+  font-size: 0.9em;
+  min-width: 1.5em;
 }
 
 .overview-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 1rem;
-  margin-bottom: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1.25rem;
+  margin-bottom: 2rem;
 }
 
 .stat-card {
-  background: var(--surface);
+  background: white;
   border-radius: 8px;
-  padding: 1.25rem;
+  padding: 1.5rem;
   text-align: center;
-  border-left: 4px solid var(--secondary);
+  border: 2px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .stat-value {
-  font-size: 1.8rem;
+  font-size: 2rem;
   font-weight: 700;
   color: var(--secondary);
   line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
   font-size: 0.8rem;
   color: var(--muted);
-  margin-top: 0.4rem;
+  margin-top: 0.5rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  font-weight: 600;
 }
 
 .description-box {
   background: var(--surface);
   border-radius: 8px;
-  padding: 1.25rem;
-  margin-bottom: 1rem;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border-left: 4px solid var(--accent);
+}
+
+.description-box p {
+  margin: 0;
+  line-height: 1.7;
 }
 
 .info-list {
@@ -364,245 +417,451 @@ a:hover { text-decoration: underline; }
 }
 
 .info-list li {
-  padding: 0.6rem 0;
+  padding: 0.75rem 0;
   border-bottom: 1px solid var(--border);
-  display: flex;
-  gap: 1rem;
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 1.5rem;
+  align-items: start;
 }
 
 .info-list li:last-child { border-bottom: none; }
 
 .info-label {
   font-weight: 600;
-  min-width: 110px;
   color: var(--muted);
+  font-size: 0.9em;
+}
+
+.info-value {
+  color: var(--text);
 }
 
 .missing-values-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.5rem;
-  margin-top: 0.75rem;
+  gap: 0.625rem;
+  margin-top: 1rem;
 }
 
 .missing-value-badge {
-  background: #fff3cd;
-  border: 1px solid #ffc107;
+  background: #fff9e6;
+  border: 1.5px solid #ffc107;
   color: #856404;
-  padding: 0.3rem 0.7rem;
-  border-radius: 20px;
+  padding: 0.4rem 0.875rem;
+  border-radius: 24px;
   font-family: monospace;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
+  font-weight: 600;
 }
 
 .variable-card {
   background: white;
   border: 1px solid var(--border);
   border-radius: 8px;
-  margin-bottom: 1.25rem;
+  margin-bottom: 2rem;
   overflow: hidden;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
   page-break-inside: avoid;
+  transition: box-shadow 0.2s;
+}
+
+.variable-card:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
 
 .variable-header {
-  background: linear-gradient(to right, var(--surface), white);
-  padding: 0.9rem 1.25rem;
-  border-bottom: 1px solid var(--border);
+  background: linear-gradient(to right, #f8f9fa, #ffffff);
+  padding: 1.125rem 1.5rem;
+  border-bottom: 2px solid var(--border);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.variable-name-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .variable-name {
   font-family: "SF Mono", Consolas, monospace;
-  font-size: 1.05rem;
-  font-weight: 600;
+  font-size: 1.125rem;
+  font-weight: 700;
   color: var(--primary);
+  letter-spacing: -0.3px;
+}
+
+.variable-display-name {
+  font-size: 0.85rem;
+  color: var(--muted);
+  font-weight: 400;
+  font-style: italic;
 }
 
 .variable-type-badge {
   background: var(--secondary);
   color: white;
-  padding: 0.2rem 0.65rem;
-  border-radius: 20px;
+  padding: 0.3rem 0.875rem;
+  border-radius: 24px;
   font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.75px;
+  font-weight: 700;
 }
 
 .variable-body {
-  padding: 1.25rem;
+  padding: 1.5rem;
 }
 
 .variable-description {
   font-size: 0.95rem;
-  margin-bottom: 1.25rem;
-  padding-bottom: 0.9rem;
-  border-bottom: 1px dashed var(--border);
+  line-height: 1.7;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.125rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
 }
 
 .badge-container {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.5rem;
   flex-wrap: wrap;
-  margin-bottom: 0.9rem;
+  margin-bottom: 1.125rem;
 }
 
 .badge {
-  font-size: 0.65rem;
-  padding: 0.2rem 0.45rem;
+  font-size: 0.7rem;
+  padding: 0.3rem 0.625rem;
   border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
-.badge-required { background: #dc3545; color: white; }
+.badge-required { background: var(--danger); color: white; }
 .badge-unique { background: #6f42c1; color: white; }
+.badge-identifier { background: #17a2b8; color: white; }
+
+.properties-section {
+  margin-bottom: 1.5rem;
+}
+
+.properties-section h4 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+}
 
 .property-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
 }
 
 .property-item {
   background: var(--surface);
-  padding: 0.6rem 0.9rem;
+  padding: 0.875rem 1.125rem;
   border-radius: 6px;
+  border-left: 3px solid var(--secondary);
 }
 
 .property-label {
   font-size: 0.7rem;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
   color: var(--muted);
-  margin-bottom: 0.2rem;
+  margin-bottom: 0.375rem;
+  font-weight: 600;
 }
 
 .property-value {
   font-weight: 600;
   color: var(--primary);
+  font-size: 0.95rem;
+  word-break: break-word;
 }
 
 .property-value.monospace {
   font-family: "SF Mono", Consolas, monospace;
-  font-size: 0.85em;
+  font-size: 0.875em;
+  background: white;
+  padding: 0.25rem 0.5rem;
+  border-radius: 3px;
+  display: inline-block;
 }
 
-.categorical-section { margin-top: 0.9rem; }
+.file-sources {
+  margin-top: 1.25rem;
+}
+
+.file-sources h4 {
+  margin-bottom: 0.75rem;
+}
+
+.file-badge-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.file-badge {
+  background: #e8f4f8;
+  border: 1px solid #3498db;
+  color: #2c3e50;
+  padding: 0.3rem 0.75rem;
+  border-radius: 16px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.file-badge-more {
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  color: #856404;
+  font-weight: 600;
+}
+
+.file-list-details summary {
+  padding: 6px 0;
+  font-weight: 500;
+  transition: color 0.2s;
+}
+
+.file-list-details summary:hover {
+  color: var(--secondary) !important;
+}
+
+.file-list-details[open] summary span {
+  transform: rotate(90deg);
+  display: inline-block;
+  transition: transform 0.2s;
+}
+
+.file-list-details summary::-webkit-details-marker {
+  display: none;
+}
+
+
+.categorical-section {
+  margin-top: 1.5rem;
+}
 
 .categorical-section h4 {
-  font-size: 0.85rem;
-  color: var(--muted);
-  margin-bottom: 0.6rem;
+  margin-bottom: 1rem;
 }
 
 .categorical-table {
   width: 100%;
-  border-collapse: collapse;
-  font-size: 0.85rem;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
 }
 
-.categorical-table th,
-.categorical-table td {
-  padding: 0.6rem 0.9rem;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
+.categorical-table thead tr {
+  background: var(--surface);
 }
 
 .categorical-table th {
-  background: var(--surface);
-  font-weight: 600;
+  padding: 0.875rem 1.125rem;
+  text-align: left;
+  font-weight: 700;
   color: var(--muted);
   text-transform: uppercase;
   font-size: 0.7rem;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.6px;
+  border-bottom: 2px solid var(--border);
+}
+
+.categorical-table tbody tr {
+  border-bottom: 1px solid var(--border);
+  transition: background-color 0.15s;
+}
+
+.categorical-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.categorical-table tbody tr:hover {
+  background-color: #f8f9fa;
+}
+
+.categorical-table td {
+  padding: 0.875rem 1.125rem;
+  vertical-align: top;
 }
 
 .categorical-table td:first-child {
   font-family: monospace;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--secondary);
+  background: #f8f9fa;
+  white-space: nowrap;
 }
 
-.categorical-table tr:last-child td { border-bottom: none; }
+.categorical-table td:nth-child(2) {
+  font-weight: 600;
+}
+
+.categorical-table td:nth-child(3) {
+  color: var(--muted);
+}
 
 .stats-section {
-  margin-top: 0.9rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid var(--border);
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid var(--border);
+}
+
+.stats-section h4 {
+  margin-top: 0;
+  margin-bottom: 1rem;
 }
 
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
-  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+  gap: 0.875rem;
 }
 
 .stats-item {
   text-align: center;
-  padding: 0.5rem;
+  padding: 0.875rem;
   background: var(--surface);
   border-radius: 6px;
+  border: 1px solid var(--border);
 }
 
 .stats-item .stats-value {
-  font-size: 1rem;
+  font-size: 1.25rem;
   font-weight: 700;
   color: var(--primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .stats-item .stats-label {
-  font-size: 0.65rem;
+  font-size: 0.7rem;
   color: var(--muted);
   text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 0.375rem;
+  font-weight: 600;
+}
+
+.notes-section {
+  margin-top: 1.5rem;
+  padding: 1.125rem 1.5rem;
+  background: #fffbf0;
+  border-radius: 6px;
+  border-left: 4px solid #ffc107;
+}
+
+.notes-section h4 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  color: #856404;
+}
+
+.notes-section p {
+  margin: 0;
+  color: #856404;
+  line-height: 1.7;
 }
 
 .document-footer {
   background: var(--surface);
-  padding: 1.5rem;
+  padding: 2rem;
   text-align: center;
-  margin-top: 2rem;
-  border-top: 1px solid var(--border);
+  margin-top: 3rem;
+  border-top: 2px solid var(--border);
 }
 
 .document-footer p {
-  margin: 0.4rem 0;
+  margin: 0.5rem 0;
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.875rem;
 }
 
-.generator-info { font-size: 0.75rem !important; opacity: 0.7; }
+.generator-info {
+  font-size: 0.75rem !important;
+  opacity: 0.7;
+}
 
 @media print {
-  body { font-size: 11pt; }
+  body {
+    font-size: 11pt;
+    line-height: 1.6;
+  }
+  
   .document-header {
     background: var(--primary) !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
-    padding: 1.25rem;
+    padding: 1.5rem;
   }
-  .container { max-width: none; padding: 0; }
-  .toc { page-break-after: always; }
-  .variable-card { box-shadow: none; border: 1px solid #ddd; }
+  
+  .container {
+    max-width: none;
+    padding: 0;
+  }
+  
+  .toc {
+    page-break-after: always;
+  }
+  
+  .variable-card {
+    box-shadow: none;
+    border: 1px solid #333;
+    page-break-inside: avoid;
+    margin-bottom: 1.5rem;
+  }
+  
   .stat-card {
-    border-left-color: var(--secondary) !important;
+    border: 1px solid #333 !important;
+    box-shadow: none;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
-  a[href]::after { content: none; }
+  
+  a[href]::after {
+    content: none;
+  }
+  
+  .variable-card:hover,
+  .stat-card:hover {
+    transform: none;
+    box-shadow: none;
+  }
+  
+  h2 {
+    page-break-after: avoid;
+  }
+  
+  .categorical-table {
+    page-break-inside: avoid;
+  }
 }
 
 @media (max-width: 768px) {
-  .document-header { padding: 1.5rem 1rem; }
-  .document-title { font-size: 1.6rem; }
-  .container { padding: 1rem; }
+  .document-header { padding: 2rem 1rem; }
+  .container { padding: 1.5rem 1rem; }
   .toc-list { columns: 1; }
-  .overview-grid { grid-template-columns: 1fr 1fr; }
+  .overview-grid { grid-template-columns: 1fr; }
   .property-grid { grid-template-columns: 1fr; }
+  .info-list li { grid-template-columns: 1fr; gap: 0.5rem; }
+  .stats-grid { grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); }
+}
+
+@media (max-width: 480px) {
+  .document-title { font-size: 1.8rem; }
+  .dataset-name { font-size: 1.1rem; }
+  .variable-name { font-size: 1rem; }
 }
 '
 }
@@ -729,7 +988,7 @@ generate_missing_values_html <- function(missing_values) {
 
 #' Generate Variables Section
 #' @noRd
-generate_variables_html <- function(variables, include_stats) {
+generate_variables_html <- function(variables, include_stats, missing_values = NULL) {
   if (is.null(variables) || length(variables) == 0) {
     return('<section class="section" id="variables">
       <h2>Variable Definitions</h2>
@@ -746,7 +1005,7 @@ generate_variables_html <- function(variables, include_stats) {
   var_names <- names(variables)
   for (i in seq_along(var_names)) {
     html <- paste0(html, generate_variable_card_html(var_names[i], variables[[var_names[i]]], 
-                                                     i, make_id(var_names[i]), include_stats))
+                                                     i, make_id(var_names[i]), include_stats, missing_values))
   }
   
   html <- paste0(html, '</section>')
@@ -755,41 +1014,111 @@ generate_variables_html <- function(variables, include_stats) {
 
 #' Generate Single Variable Card
 #' @noRd
-generate_variable_card_html <- function(var_name, var_info, index, var_id, include_stats) {
+generate_variable_card_html <- function(var_name, var_info, index, var_id, include_stats, missing_values = NULL) {
   var_type <- var_info$type %||% "string"
   
   html <- paste0('<article class="variable-card" id="var-', var_id, '">
       <div class="variable-header">
-        <span class="variable-name">', escape_html(var_name), '</span>
+        <div class="variable-name-section">
+          <span class="variable-name">', escape_html(var_name), '</span>')
+  
+  # Display name if available
+  if (!is.null(var_info$display_name) && var_info$display_name != "" && var_info$display_name != var_name) {
+    html <- paste0(html, '<span class="variable-display-name">', 
+                   escape_html(var_info$display_name), '</span>')
+  }
+  
+  html <- paste0(html, '</div>
         <span class="variable-type-badge">', escape_html(var_type), '</span>
       </div>
       <div class="variable-body">')
   
   # Badges
   badges <- character()
-  if (isTRUE(var_info$required)) badges <- c(badges, '<span class="badge badge-required">Required</span>')
-  if (isTRUE(var_info$unique)) badges <- c(badges, '<span class="badge badge-unique">Unique</span>')
+  if (isTRUE(var_info$required)) {
+    badges <- c(badges, '<span class="badge badge-required">Required</span>')
+  }
+  if (isTRUE(var_info$unique)) {
+    badges <- c(badges, '<span class="badge badge-unique">Unique Values</span>')
+  }
+  # Check if it's likely an identifier
+  if (grepl("\\b(id|identifier|subject|participant|session)\\b", tolower(var_name))) {
+    badges <- c(badges, '<span class="badge badge-identifier">Identifier</span>')
+  }
+  
   if (length(badges) > 0) {
     html <- paste0(html, '<div class="badge-container">', paste(badges, collapse = ""), '</div>')
   }
   
   # Description
   if (!is.null(var_info$description) && var_info$description != "") {
-    html <- paste0(html, '<p class="variable-description">', escape_html(var_info$description), '</p>')
+    html <- paste0(html, '<p class="variable-description">', 
+                   escape_html(var_info$description), '</p>')
   }
   
-  # Properties
+  # File sources (if available)
+  if (!is.null(var_info$files) && length(var_info$files) > 0) {
+    n_files <- length(var_info$files)
+    
+    html <- paste0(html, '<div class="file-sources">
+          <h4>Appears in Files</h4>')
+    
+    # If 5 or fewer files, show all as badges
+    if (n_files <= 5) {
+      html <- paste0(html, '<div class="file-badge-container">')
+      for (f in var_info$files) {
+        html <- paste0(html, '<span class="file-badge">', escape_html(basename(f)), '</span>')
+      }
+      html <- paste0(html, '</div>')
+    } else {
+      # If more than 5 files, show first 3 as badges plus count, then compact list
+      html <- paste0(html, '<div class="file-badge-container">')
+      for (i in 1:3) {
+        html <- paste0(html, '<span class="file-badge">', escape_html(basename(var_info$files[i])), '</span>')
+      }
+      html <- paste0(html, '<span class="file-badge file-badge-more">+ ', (n_files - 3), ' more</span>')
+      html <- paste0(html, '</div>')
+      
+      # Show complete list in compact format
+      html <- paste0(html, '<details class="file-list-details" style="margin-top: 8px;">
+            <summary style="cursor: pointer; color: #6c757d; font-size: 0.85rem; user-select: none;">
+              <span style="color: #3498db;">▸</span> Show all ', n_files, ' files
+            </summary>
+            <div style="margin-top: 8px; padding: 10px; background-color: #f8f9fa; border-radius: 4px; font-size: 0.85rem; max-height: 200px; overflow-y: auto;">
+              ', paste(sapply(var_info$files, function(f) paste0('<span style="display: block; padding: 2px 0;">', escape_html(basename(f)), '</span>')), collapse = ''), '
+            </div>
+          </details>')
+    }
+    
+    html <- paste0(html, '</div>')
+  }
+  
+  # Properties section
   props <- list()
-  if (!is.null(var_info$display_name) && var_info$display_name != "") props[["Display Name"]] <- var_info$display_name
-  if (!is.null(var_info$unit) && var_info$unit != "") props[["Unit"]] <- var_info$unit
-  if (!is.null(var_info$min_value) && var_info$min_value != "") props[["Minimum"]] <- list(v = var_info$min_value, mono = TRUE)
-  if (!is.null(var_info$max_value) && var_info$max_value != "") props[["Maximum"]] <- list(v = var_info$max_value, mono = TRUE)
-  if (!is.null(var_info$pattern) && var_info$pattern != "") props[["Pattern"]] <- list(v = var_info$pattern, mono = TRUE)
-  if (!is.null(var_info$default_value) && var_info$default_value != "") props[["Default"]] <- list(v = var_info$default_value, mono = TRUE)
-  if (!is.null(var_info$source) && var_info$source != "") props[["Source"]] <- var_info$source
+  if (!is.null(var_info$unit) && var_info$unit != "") {
+    props[["Unit of Measurement"]] <- var_info$unit
+  }
+  if (!is.null(var_info$source) && var_info$source != "") {
+    props[["Data Source/Instrument"]] <- var_info$source
+  }
+  if (!is.null(var_info$min_value) && var_info$min_value != "") {
+    props[["Minimum Value"]] <- list(v = var_info$min_value, mono = TRUE)
+  }
+  if (!is.null(var_info$max_value) && var_info$max_value != "") {
+    props[["Maximum Value"]] <- list(v = var_info$max_value, mono = TRUE)
+  }
+  if (!is.null(var_info$pattern) && var_info$pattern != "") {
+    props[["Required Pattern"]] <- list(v = var_info$pattern, mono = TRUE)
+  }
+  if (!is.null(var_info$default_value) && var_info$default_value != "") {
+    props[["Default Value"]] <- list(v = var_info$default_value, mono = TRUE)
+  }
   
   if (length(props) > 0) {
-    html <- paste0(html, '<div class="property-grid">')
+    html <- paste0(html, '<div class="properties-section">
+          <h4>Properties & Constraints</h4>
+          <div class="property-grid">')
+    
     for (pn in names(props)) {
       pv <- props[[pn]]
       if (is.list(pv)) {
@@ -804,42 +1133,112 @@ generate_variable_card_html <- function(var_name, var_info, index, var_id, inclu
             <div class="property-value', cls, '">', val, '</div>
           </div>')
     }
-    html <- paste0(html, '</div>')
+    html <- paste0(html, '</div></div>')
   }
   
-  # Categorical values
-  if (!is.null(var_info$categorical_values) && length(var_info$categorical_values) > 0) {
-    html <- paste0(html, '<div class="categorical-section">
+  # Categorical values (skip for boolean - true/false is implied by the type)
+  # Also filter out any values that are defined as missing values
+  if (!is.null(var_info$categorical_values) && 
+      length(var_info$categorical_values) > 0 && 
+      var_type != "boolean") {
+    
+    # Filter out categorical values that match missing value codes
+    filtered_values <- var_info$categorical_values
+    if (!is.null(missing_values) && length(missing_values) > 0) {
+      filtered_values <- Filter(function(cv) {
+        val <- as.character(cv$value %||% "")
+        # Check if this value is NOT in the missing values list
+        !(val %in% missing_values)
+      }, var_info$categorical_values)
+    }
+    
+    # Only show categorical values section if there are non-missing values
+    if (length(filtered_values) > 0) {
+      html <- paste0(html, '<div class="categorical-section">
           <h4>Allowed Values</h4>
           <table class="categorical-table">
-            <thead><tr><th>Value</th><th>Label</th><th>Description</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Value</th>
+                <th>Label</th>
+                <th>Description</th>
+              </tr>
+            </thead>
             <tbody>')
-    for (cv in var_info$categorical_values) {
-      v <- cv$value %||% ""
-      l <- cv$label %||% v
-      d <- cv$description %||% ""
-      html <- paste0(html, '<tr><td>', escape_html(as.character(v)), '</td><td>', 
-                     escape_html(as.character(l)), '</td><td>', escape_html(as.character(d)), '</td></tr>')
+      
+      for (cv in filtered_values) {
+        v <- cv$value %||% ""
+        l <- cv$label %||% v
+        d <- cv$description %||% ""
+        html <- paste0(html, '<tr>
+              <td>', escape_html(as.character(v)), '</td>
+              <td>', escape_html(as.character(l)), '</td>
+              <td>', escape_html(as.character(d)), '</td>
+            </tr>')
+      }
+      html <- paste0(html, '</tbody></table></div>')
     }
-    html <- paste0(html, '</tbody></table></div>')
   }
   
   # Statistics
   if (include_stats && !is.null(var_info$statistics)) {
     s <- var_info$statistics
-    html <- paste0(html, '<div class="stats-section"><h4>Statistics</h4><div class="stats-grid">')
-    if (!is.null(s$n)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', s$n, '</div><div class="stats-label">N</div></div>')
-    if (!is.null(s$missing)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', s$missing, '</div><div class="stats-label">Missing</div></div>')
-    if (!is.null(s$mean)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', round(s$mean, 2), '</div><div class="stats-label">Mean</div></div>')
-    if (!is.null(s$sd)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', round(s$sd, 2), '</div><div class="stats-label">SD</div></div>')
-    if (!is.null(s$min)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', s$min, '</div><div class="stats-label">Min</div></div>')
-    if (!is.null(s$max)) html <- paste0(html, '<div class="stats-item"><div class="stats-value">', s$max, '</div><div class="stats-label">Max</div></div>')
+    html <- paste0(html, '<div class="stats-section">
+          <h4>Summary Statistics</h4>
+          <div class="stats-grid">')
+    
+    if (!is.null(s$n)) {
+      html <- paste0(html, '<div class="stats-item">
+            <div class="stats-value">', s$n, '</div>
+            <div class="stats-label">N</div>
+          </div>')
+    }
+    if (!is.null(s$missing)) {
+      html <- paste0(html, '<div class="stats-item">
+            <div class="stats-value">', s$missing, '</div>
+            <div class="stats-label">Missing</div>
+          </div>')
+    }
+    if (!is.null(s$mean)) {
+      html <- paste0(html, '<div class="stats-item">
+            <div class="stats-value">', round(s$mean, 2), '</div>
+            <div class="stats-label">Mean</div>
+          </div>')
+    }
+    if (!is.null(s$sd)) {
+      html <- paste0(html, '<div class="stats-item">
+            <div class="stats-value">', round(s$sd, 2), '</div>
+            <div class="stats-label">SD</div>
+          </div>')
+    }
+    if (!is.null(s$median)) {
+      html <- paste0(html, '<div class="stats-item">
+            <div class="stats-value">', round(s$median, 2), '</div>
+            <div class="stats-label">Median</div>
+          </div>')
+    }
+    if (!is.null(s$min)) {
+      html <- paste0(html, '<div class="stats-item">
+            <div class="stats-value">', s$min, '</div>
+            <div class="stats-label">Min</div>
+          </div>')
+    }
+    if (!is.null(s$max)) {
+      html <- paste0(html, '<div class="stats-item">
+            <div class="stats-value">', s$max, '</div>
+            <div class="stats-label">Max</div>
+          </div>')
+    }
+    
     html <- paste0(html, '</div></div>')
   }
   
   # Notes
   if (!is.null(var_info$notes) && var_info$notes != "") {
-    html <- paste0(html, '<div class="notes-section"><h4>Notes</h4><p>', escape_html(var_info$notes), '</p></div>')
+    html <- paste0(html, '<div class="notes-section">
+          <h4>Additional Notes</h4>
+          <p>', escape_html(var_info$notes), '</p>
+        </div>')
   }
   
   html <- paste0(html, '</div></article>')
@@ -5168,6 +5567,12 @@ observeEvent(input$generate_dictionary, {
       value = TRUE
     ),
     
+    checkboxInput(
+      inputId = ns("auto_open_browser"),
+      label = "Automatically open in browser",
+      value = TRUE
+    ),
+    
     footer = tagList(
       modalButton("Cancel"),
       actionButton(
@@ -5249,6 +5654,11 @@ include_stats = input$include_stats
   removeNotification(prog_id)
   
   if (result$success) {
+    # Automatically open the dictionary in browser if user requested it
+    if (isTRUE(input$auto_open_browser)) {
+      browseURL(result$file)
+    }
+    
 showModal(modalDialog(
   title = "Success!",
   size = "m",
@@ -5266,13 +5676,24 @@ showModal(modalDialog(
                margin: 15px 0; word-break: break-all;",
       tags$code(style = "font-size: 12px;", result$file)
     ),
-    tags$div(
-      class = "alert alert-info",
-      style = "margin-top: 15px;",
-      icon("lightbulb", style = "margin-right: 8px;"),
-      "Open in browser, then press ", tags$kbd("Ctrl+P"), " / ", 
-      tags$kbd("Cmd+P"), " to save as PDF."
-    )
+    if (isTRUE(input$auto_open_browser)) {
+      tags$div(
+        class = "alert alert-success",
+        style = "margin-top: 15px;",
+        icon("external-link-alt", style = "margin-right: 8px;"),
+        tags$strong("Opened in browser!"), 
+        tags$br(),
+        "Press ", tags$kbd("Ctrl+P"), " / ", tags$kbd("Cmd+P"), " to save as PDF."
+      )
+    } else {
+      tags$div(
+        class = "alert alert-info",
+        style = "margin-top: 15px;",
+        icon("lightbulb", style = "margin-right: 8px;"),
+        "Open the file above in your browser, then press ", tags$kbd("Ctrl+P"), " / ", 
+        tags$kbd("Cmd+P"), " to save as PDF."
+      )
+    }
   ),
   
   footer = modalButton("Close"),
@@ -5594,13 +6015,14 @@ observeEvent(input$load_dataset_btn, {
     # Run validation using JavaScript validator
     dict_validation$is_validating <- TRUE
     dict_validation$is_complete <- FALSE
-    dict_validation$validation_start_time <- Sys.time()  # Track when we started
+    dict_validation$validation_start_time <- Sys.time()
     cat("  Set dict_validation$is_validating to TRUE\n")
     cat("  Dataset path:", dataset_path, "\n")
     
     tryCatch({
-      # Build file tree for validation - use the SAME format as validateServer
-      file_tree <- buildFileTreeForValidation(dataset_path)
+      # Use the GLOBAL buildFileTree function (not buildFileTreeForValidation)
+      # This function has progress bars and event processing to prevent crashes
+      file_tree <- buildFileTree(dataset_path)
       
       # Send to JavaScript validator using the SAME handler as Validate tab
       session$sendCustomMessage("run_validation", file_tree)
@@ -5609,8 +6031,8 @@ observeEvent(input$load_dataset_btn, {
       cat("Error building file tree for validation:", e$message, "\n")
       dict_validation$is_validating <- FALSE
       showNotification(
-        "Dataset loaded but validation failed. Please check dataset structure.", 
-        type = "warning"
+        paste("Validation failed:", e$message), 
+        type = "error"
       )
     })
     
@@ -5618,69 +6040,6 @@ observeEvent(input$load_dataset_btn, {
     showNotification(paste("Error loading dataset:", e$message), type = "error")
   })
 })
-
-# Function to build file tree for validation
-buildFileTreeForValidation <- function(dataset_path) {
-  # Helper function to read file as text
-  readFileText <- function(file_path) {
-    tryCatch({
-      # Try to read as UTF-8
-      text <- paste(readLines(file_path, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
-      return(text)
-    }, error = function(e) {
-      # If that fails, try with different encoding detection
-      tryCatch({
-        text <- paste(readLines(file_path, warn = FALSE), collapse = "\n")
-        # Check if it's valid UTF-8
-        if (validUTF8(text)) {
-          return(text)
-        } else {
-          return("ERROR_ENCODING")
-        }
-      }, error = function(e2) {
-        return("ERROR_READ_FAILED")
-      })
-    })
-  }
-  
-  # Recursive function to build tree
-  buildTree <- function(path, base_path) {
-    items <- list.files(path, all.files = FALSE, full.names = FALSE)
-    tree <- list()
-    
-    for (item in items) {
-      full_path <- file.path(path, item)
-      rel_path <- sub(paste0("^", base_path, "/?"), "", full_path)
-      
-      if (dir.exists(full_path)) {
-        # Directory entry
-        tree[[item]] <- list(
-          type = "directory",
-          contents = buildTree(full_path, base_path)
-        )
-      } else {
-        # File entry
-        file_text <- readFileText(full_path)
-        
-        tree[[item]] <- list(
-          type = "file",
-          file = list(
-            path = paste0("/", rel_path),
-            name = item,
-            text = file_text,
-            size = file.info(full_path)$size
-          )
-        )
-      }
-    }
-    
-    return(tree)
-  }
-  
-  # Build tree starting from dataset root
-  file_tree <- buildTree(dataset_path, dataset_path)
-  return(file_tree)
-}
 
 # Track validation results for data dictionary
 dict_validation <- reactiveValues(
@@ -5944,9 +6303,14 @@ output$validation_status <- renderUI({
           icon("exclamation-triangle", style = "margin-right: 5px;"),
           tags$strong("Important: "),
           "The data dictionary editing features may not work properly with an invalid dataset. ",
-          "Please return to the ",
+          "Please go to the ",
           tags$strong("Validate Dataset"),
-          " page to see detailed validation errors and fix them before proceeding."
+          " tab to see detailed validation errors and fix them before proceeding."
+        ),
+        tags$p(
+          style = "margin: 5px 0 0 0; color: #856404; font-size: 0.9em;",
+          icon("info-circle", style = "margin-right: 3px;"),
+          "Validation results are automatically shared across tabs"
         )
       )
     )
@@ -5957,11 +6321,19 @@ output$validation_status <- renderUI({
       icon("exclamation-triangle", style = "margin-right: 8px;"),
       tags$strong("Dataset Valid with Warnings"),
       tags$ul(
-        style = "margin-top: 10px; margin-bottom: 0;",
+        style = "margin-top: 10px; margin-bottom: 5px;",
         lapply(dict_validation$warnings, function(warn) {
           warn_text <- if (!is.null(warn$reason)) warn$reason else if (!is.null(warn$message)) warn$message else warn
           tags$li(warn_text)
         })
+      ),
+      tags$small(
+        class = "text-muted",
+        style = "margin-top: 5px; display: block;",
+        icon("info-circle", style = "margin-right: 3px; font-size: 0.9em;"),
+        "Full validation details are available in the ",
+        tags$strong("Validate Dataset"),
+        " tab"
       )
     )
   } else {
@@ -5970,7 +6342,16 @@ output$validation_status <- renderUI({
       style = "margin-bottom: 20px;",
       icon("check-circle", style = "margin-right: 8px;"),
       tags$strong("Dataset Valid"),
-      " - Passes Psych-DS validation"
+      " - Passes Psych-DS validation",
+      tags$br(),
+      tags$small(
+        class = "text-muted",
+        style = "margin-top: 5px; display: block;",
+        icon("info-circle", style = "margin-right: 3px; font-size: 0.9em;"),
+        "Validation results are available in the ",
+        tags$strong("Validate Dataset"),
+        " tab for detailed information"
+      )
     )
   }
 })

@@ -1472,7 +1472,7 @@ div(
             textInput(
               ns("new_missing_value"),
               label = NULL,
-              placeholder = "e.g., NA, -999, NULL, missing"
+              placeholder = "e.g., NA, -999, NULL, missing, None"
             )
           ),
           column(
