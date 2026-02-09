@@ -172,6 +172,14 @@
                                 "type": "string"
                             }
                         }
+                    },
+                    "troubleshooting": {
+                        "description": "Specific troubleshooting instructions to display for a given error/warning",
+                        "type": "string"
+                    },
+                    "noRepeatColumns": {
+                        "type": "boolean",
+                        "description": "A datafile cannot have duplicate header names."
                     }
                 }
             }
@@ -315,6 +323,11 @@
                 "file_type": "regular",
                 "description": "Human-readable file describing the project and dataset in detail. This is an OPTIONAL file, and only one README file should appear in dataset."
             },
+            "psychds-ignore": {
+                "display_name": "psychds-ignore",
+                "file_type": "regular",
+                "description": "List of files and gitignore expressions describing which files in the directory should be ignored by the Psych-DS validator."
+            },
             "dataset_description": {
                 "display_name": "Dataset Description",
                 "file_type": "regular",
@@ -385,17 +398,20 @@
                         "requires": "data",
                         "suffix": "data",
                         "extensions": [
-                            ".csv"
+                            ".csv",
+                            ".tsv"
                         ],
                         "baseDir": "data",
                         "arbitraryNesting": true,
                         "columnsMatchMetadata": true,
                         "usesKeywords": true,
                         "nonCanonicalKeywordsAllowed": true,
-                        "fileRegex": "([a-z]+-[a-zA-Z0-9]+)(_[a-z]+-[a-zA-Z0-9]+)*_data\\.csv",
+                        "fileRegex": "([a-z]+-[a-zA-Z0-9]+)(_[a-z]+-[a-zA-Z0-9]+)*_data\\.(csv|tsv)",
                         "code": "MISSING_DATAFILE",
                         "level": "error",
-                        "reason": "No CSV files were found in the data subdirectory (or all of the CSV files found there had a problem - see other error messages.) There must be at least one valid csv datafile under the data/ subdirectory."
+                        "reason": "No CSV or TSV files were found in the data subdirectory (or all of the CSV/TSV files found there had a problem - see other error messages.) There must be at least one valid csv or tsv datafile under the data/ subdirectory.",
+                        "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/files/tabular_data/data/Datafile/",
+                        "troubleshooting": "To resolve this error, make sure that your \"data\" directory contains at least one file that conforms to the proper naming conventions for Psych-DS datafiles. This means that the filename is composed of a sequence of key-value pairs called \"keywords\", separated by underscores, and ends with the sequence \"_data.csv\" or \"_data.tsv\". Psych-DS provides a set of standard [keyword keys](../schema/meta/defs/keywords/) to use, such as \"**subject**\" and \"**session**\", but custom keys are allowed, as long as they don't contain any numbers or special characters and provided that they are clearly defined and used in a consistent manner. \n\n  For reference, here are some valid datafile names:\n\n  \n  subject-XYZ_session-2_data.csv\n  subject-XYZ_session-2_data.tsv\n  study-ExampleStudy_data.csv\n  study-ExampleStudy_data.tsv\n  study-ExampleStudy_condition-2_data.csv\n  study-ExampleStudy_condition-2_data.tsv\n\n  and here are some invalid names:\n\n  data.csv\n  data.tsv\n  subject-XYZ_data2.csv\n  subject-XYZ_data2.tsv\n  condition1-A_condition2-C_data.csv\n  subject-XYZ.csv\n  subject-XYZ.tsv"
                     }
                 }
             },
@@ -411,7 +427,7 @@
                         ],
                         "code": "MISSING_DATASET_DESCRIPTION",
                         "reason": "It is required to include a 'dataset_description.json' in the base directory",
-                        "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/Schema%20Reference/objects/files/dataset_description/"
+                        "helpUrl": "https://psychds-docs.readthedocs.io/en/docs_mods/reference/schema/rules/files/common/core/dataset_description/"
                     },
                     "README": {
                         "level": "warning",
@@ -423,7 +439,8 @@
                             ".txt"
                         ],
                         "code": "MISSING_README_DOC",
-                        "reason": "It is recommended to include a 'README.md' or 'README.txt' file in the base directory"
+                        "reason": "It is recommended to include a 'README.md' or 'README.txt' file in the base directory",
+                        "helpUrl": "https://psychds-docs.readthedocs.io/en/docs_mods/reference/schema/rules/files/common/core/README/"
                     },
                     "CHANGES": {
                         "level": "warning",
@@ -435,7 +452,8 @@
                             ".txt"
                         ],
                         "code": "MISSING_CHANGES_DOC",
-                        "reason": "It is recommended to include a 'CHANGES.md' or 'CHANGES.txt' file in the base directory"
+                        "reason": "It is recommended to include a 'CHANGES.md' or 'CHANGES.txt' file in the base directory",
+                        "helpUrl": "https://psychds-docs.readthedocs.io/en/docs_mods/reference/schema/rules/files/common/core/CHANGES/"
                     },
                     "data": {
                         "level": "error",
@@ -443,41 +461,47 @@
                         "directory": true,
                         "requires": "dataset_description",
                         "code": "MISSING_DATA_DIRECTORY",
-                        "reason": "It is required to include a subdirectory named 'data' in the base directory"
+                        "reason": "It is required to include a subdirectory named 'data' in the base directory",
+                        "helpUrl": "https://psychds-docs.readthedocs.io/en/docs_mods/reference/schema/rules/files/common/core/data/"
                     },
                     "analysis": {
                         "level": "warning",
                         "path": "/analysis",
                         "directory": true,
                         "code": "MISSING_ANALYSIS_DIRECTORY",
-                        "reason": "It is recommended to include subdirectory named 'analysis' in the base directory"
+                        "reason": "It is recommended to include subdirectory named 'analysis' in the base directory",
+                        "helpUrl": "https://psychds-docs.readthedocs.io/en/docs_mods/reference/schema/rules/files/common/core/analysis/"
                     },
                     "results": {
                         "level": "warning",
                         "path": "/results",
                         "directory": true,
                         "code": "MISSING_RESULTS_DIRECTORY",
-                        "reason": "It is recommended to include subdirectory named 'results' in the base directory"
+                        "reason": "It is recommended to include subdirectory named 'results' in the base directory",
+                        "helpUrl": "https://psychds-docs.readthedocs.io/en/docs_mods/reference/schema/rules/files/common/core/results/"
                     },
                     "materials": {
                         "level": "warning",
                         "path": "/materials",
                         "directory": true,
                         "code": "MISSING_MATERIALS_DIRECTORY",
-                        "reason": "It is recommended to include subdirectory named 'materials' in the base directory"
+                        "reason": "It is recommended to include subdirectory named 'materials' in the base directory",
+                        "helpUrl": "https://psychds-docs.readthedocs.io/en/docs_mods/reference/schema/rules/files/common/core/materials/"
                     },
                     "documentation": {
                         "level": "warning",
                         "path": "/documentation",
                         "directory": true,
                         "code": "MISSING_DOCUMENTATION_DIRECTORY",
-                        "reason": "It is recommended to include subdirectory named 'documentation' in the base directory"
+                        "reason": "It is recommended to include subdirectory named 'documentation' in the base directory",
+                        "helpUrl": "https://psychds-docs.readthedocs.io/en/docs_mods/reference/schema/rules/files/common/core/documentation/"
                     },
-                    "psychdsignore": {
+                    "psychds-ignore": {
                         "level": "warning",
-                        "path": "/.psychdsignore",
+                        "path": "/.psychds-ignore",
                         "code": "MISSING_PSYCHDSIGNORE",
-                        "reason": "It is recommended to include a file called '.psychdsignore' in the base directory to indicate files/directories that the validator process should ignore."
+                        "reason": "It is recommended to include a file called '.psychds-ignore' in the base directory to indicate files/directories that the validator process should ignore.",
+                        "helpUrl": "https://psychds-docs.readthedocs.io/en/docs_mods/reference/schema/rules/files/common/core/psychds-ignore/"
                     }
                 }
             },
@@ -491,7 +515,8 @@
                     "arbitraryNesting": true,
                     "level": "warning",
                     "code": "MISSING_DIRECTORY_METADATA",
-                    "reason": "Optionally, you can provide an additional metadata file that is named file_metadata.json and overrides dataset_description.json for an entire directory. It will apply to all files within that directory and its subdirectories. For more information on how this \"override\" works, visit https://psychds-docs.readthedocs.io/en/latest/Schema%20Reference/objects/common_principles/inheritance/\n"
+                    "reason": "Optionally, you can provide an additional metadata file that is named file_metadata.json and overrides dataset_description.json for an entire directory. It will apply to all files within that directory and its subdirectories. For more information on how this \"override\" works, visit https://psychds-docs.readthedocs.io/en/latest/Schema%20Reference/objects/common_principles/inheritance/\n",
+                    "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/files/metadata/DirectoryMetadata/"
                 },
                 "SidecarMetadata": {
                     "baseDir": "data",
@@ -502,7 +527,8 @@
                         ".json"
                     ],
                     "code": "MISSING_SIDECAR_METADATA",
-                    "reason": "Optionally, you can provide an additional 'sidecar' metadata file that has the same name as a data file in the same directory (e.g. 'trial-5_data.csv' and 'trial-5_data.json'). It will override dataset_description.json for that specific csv datafile only. For more information on how this \"override\" works, visit https://psychds-docs.readthedocs.io/en/latest/Schema%20Reference/objects/common_principles/inheritance/"
+                    "reason": "Optionally, you can provide an additional 'sidecar' metadata file that has the same name as a data file in the same directory (e.g. 'trial-5_data.csv' and 'trial-5_data.json'). It will override dataset_description.json for that specific csv datafile only. For more information on how this \"override\" works, visit https://psychds-docs.readthedocs.io/en/latest/reference/schema/objects/common_principles/inheritance/\n",
+                    "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/files/metadata/SidecarMetadata/"
                 }
             }
         },
@@ -514,19 +540,22 @@
                 "selectors": [
                     "extension == \".json\""
                 ],
-                "requires": []
+                "requires": [],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/JsonInvalid/"
             },
             "FileNotRead": {
                 "code": "FILE_NOT_READ",
                 "reason": "We were unable to read this file. Make sure it contains data (file size > 0 kB) and is not corrupted, incorrectly named, or incorrectly symlinked.\n",
                 "level": "error",
-                "requires": []
+                "requires": [],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/FileNotRead/"
             },
             "FileEmpty": {
                 "code": "FILE_EMPTY",
                 "reason": "Empty files are not allowed. This typically occurs due to a problem creating or downloading a file.\n",
                 "level": "warning",
-                "requires": []
+                "requires": [],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/FileEmpty/"
             },
             "JsonEncodingError": {
                 "code": "JSON_ENCODING_ERROR",
@@ -537,7 +566,8 @@
                 ],
                 "requires": [
                     "rules.files.common.core.dataset_description"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/JsonEncodingError/"
             },
             "JsonKeyRequired": {
                 "code": "JSON_KEY_REQUIRED",
@@ -546,7 +576,9 @@
                 "requires": [
                     "rules.files.common.core.dataset_description",
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/JsonKeyRequired/",
+                "troubleshooting": "If you look at your metadata file and can see that any of the required fields are missing, make sure to add them and provide appropriate, informative values for them. If you do seem to have these fields already, then there may be an issue with your `@context` field, which should contain the standard namespace for Psych-DS metadata, `https://schema.org/`. We include this value because rich metadata objects should have fields that are not just arbitrary strings, but publicly available terms with conventional definitions. In the process of loading a JSON-LD object, every field is attached to the end of the namespace, so the full name for `description` is `https://schema.org/description`, which is a real webpage that you can visit, where you'll see a description of what a `description` is!\n"
             },
             "JsonKeyRecommended": {
                 "code": "JSON_KEY_RECOMMENDED",
@@ -555,7 +587,8 @@
                 "requires": [
                     "rules.files.common.core.dataset_description",
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/JsonKeyRecommended/"
             },
             "CsvColumnMissingFromMetadata": {
                 "code": "CSV_COLUMN_MISSING_FROM_METADATA",
@@ -564,19 +597,34 @@
                 "requires": [
                     "rules.files.common.core.dataset_description",
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/CsvColumnMissingFromMetadata/",
+                "troubleshooting": "The simplest way to solve this error is to replace your `variableMeasured` field with the suggested one that the validator generates when this error occurs. If you want to create a rich, informative dataset, though, the best way to solve this issue is to take some time to create a full data dictionary for your dataset. This involves taking a look through all of your data files and compiling detailed definitions of every column that you collect data for, and compiling those definitions into rich `PropertyValue` objects. For instance, here's a `PropertyValue` object for a column header like `Response Time`.\n\n{\n    \"@type\": \"PropertyValue\",\n    \"name\": \"Response Time\",\n    \"description\": \"The time (in ms) that elapses between the onset of the stimulus and the participant response\",\n    \"unitText\": \"ms\",\n}\n"
+            },
+            "VariableMissingFromCsvColumns": {
+                "code": "VARIABLE_MISSING_FROM_CSV_COLUMNS",
+                "level": "error",
+                "reason": "There is a variable name in your variableMeasured field that does not appear in any CSV file. The missing column names are shown below.",
+                "requires": [
+                    "rules.files.common.core.dataset_description",
+                    "rules.files.tabular_data.data.Datafile"
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/VariableMissingFromCsvColumns/",
+                "troubleshooting": "You can fix this error by either removing the unnecessary variable from your variableMeasured list or by adding in a CSV that contains the unaccounted for variable as a column header.\n"
             },
             "FileNotChecked": {
                 "code": "FILE_NOT_CHECKED",
                 "level": "warning",
                 "reason": "The files listed below are not covered by the psych-DS specification, so they will be ignored for all further validation. Under the rules of psych-DS, non-specified files are allowed to be included, but if you would like to avoid receiving this warning moving forward, you can include in your \".psychdsignore\" file.\n",
-                "requires": []
+                "requires": [],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/FileNotChecked/"
             },
             "MissingRequiredElement": {
                 "code": "MISSING_REQUIRED_ELEMENT",
                 "level": "error",
                 "reason": "Your dataset is missing an element that is required under the psych-DS specification.",
-                "requires": []
+                "requires": [],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/MissingRequiredElement/"
             },
             "CSVHeaderMissing": {
                 "code": "CSV_HEADER_MISSING",
@@ -584,7 +632,8 @@
                 "reason": "CSV data files must contain a valid header with at least one column.",
                 "requires": [
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/CSVHeaderMissing/"
             },
             "CSVFormattingError": {
                 "code": "CSV_FORMATTING_ERROR",
@@ -592,7 +641,9 @@
                 "reason": "CSV data files must be parsable as valid CSV formatting. If you are having trouble creating CSV files or converting your existing data files to CSV, try visiting https://flatfile.com/blog/what-is-a-csv-file-guide-to-uses-and-benefits/",
                 "requires": [
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/CSVFormattingError/",
+                "troubleshooting": "To resolve these error, there are a few approaches you might take:\n- Open your data file in a text editor and confirm that it has at least one line of text. This should be a row of \"column headers\" that describe the data to be stored in each column. Headers should be separated by commas (`,`).\n- Confirm that all rows have the same number of columns. In general, this means that each row should have the same number of columns, but this is not strictly the case. Cells in a given row can contain a comma that isn't intended as a [delimiter](https://www.ninjaone.com/it-hub/it-service-management/what-is-a-delimiter/#:~:text=A%20delimiter%20is%20a%20sequence,sequence%20of%20comma%2Dseparated%20values.) (for instance, if one column is used to store an open text response, which may contain commas), but any cell containing non-delimiter commas must be surrounded by double quotes. For example, this is a valid csv:\n    `subject,text response\n    A123,\"I am a CSV, and this is okay\"`\n- Confirm that there are no empty lines in your CSV file.\n- Confirm that all opening double quotes have a corresponding closing double quote.\n"
             },
             "CSVHeaderLengthMismatch": {
                 "code": "CSV_HEADER_LENGTH_MISMATCH",
@@ -600,7 +651,8 @@
                 "reason": "The header and all rows for CSV data files must contain the same number of columns. If you are having trouble creating CSV files or converting your existing data files to CSV, try visiting https://flatfile.com/blog/what-is-a-csv-file-guide-to-uses-and-benefits/",
                 "requires": [
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/CSVHeaderLengthMismatch/"
             },
             "RowidValuesNotUnique": {
                 "code": "ROWID_VALUES_NOT_UNIQUE",
@@ -608,31 +660,38 @@
                 "reason": "Columns within CSV data files with the header \"row_id\" must contain unique values in every row.",
                 "requires": [
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/RowidValuesNotUnique/",
+                "troubleshooting": "If you've chosen to use `row_id` as one of your column header, make sure to go through the columns and confirm that no values are repeated at any point. If you happened to be using the header `row_id` for your own purposes and don't wish to change it, you'll need to rename the header to something different. One easy way to check if your `row_id` column has all unique values is to open the file in a spreadsheet program like excel and use something like a pivot table or a formula to detect repeat values.\n"
             },
             "WrongMetadataLocation": {
                 "code": "WRONG_METADATA_LOCATION",
                 "level": "warning",
                 "reason": "The main metadata file (dataset_description.json) is expected to be found at the root of your project directory, at the same level as your data/ subdirectory. A file with this name was found in the locations listed below.",
-                "requires": []
+                "requires": [],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/WrongMetadataLocation/"
             },
             "FilenameKeywordFormattingError": {
                 "code": "FILENAME_KEYWORD_FORMATTING_ERROR",
                 "level": "error",
-                "reason": "All datafiles must use psych-DS keyword formatting. That is, datafile names must consist of a series of keyword-value pairs, separated by underscores, with keywords using only lowercase alphabetic characters and values using any alphanumeric characters of either case. The file must end with '_data.csv'. In other words, files must follow this regex: /([a-z]+-[a-zA-Z0-9]+)(_[a-z]+-[a-zA-Z0-9]+)*_data\\.csv/\n",
-                "requires": []
+                "reason": "All datafiles must use psych-DS keyword formatting. That is, datafile names must consist of a series of keyword-value pairs, separated by underscores, with keywords using only lowercase alphabetic characters and values using any alphanumeric characters of either case. A keyword-value pair would look something like this: \"subject-123a\", where \"subject\" is the keyword and \"123a\" is the value. The file must end with '_data.csv'. An example file might look like this: \"subject-123a_session-2_data.csv\". This filename has two keyword-value pairs, separated by an underscore, the \"_data\" suffix, and the \".csv\" extension. In other words, files must follow this regex: /([a-z]+-[a-zA-Z0-9]+)(_[a-z]+-[a-zA-Z0-9]+)*_data\\.csv/\n",
+                "requires": [],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/FilenameKeywordFormattingError/",
+                "troubleshooting": "One easy way to check the validity of your filenames is to use this [regular expression (regex) validator](https://regex101.com/). A regular expression is a special way of describing patterns of characters. The regular expression for Psych-DS datafiles is `([a-z]+-[a-zA-Z0-9]+)(_[a-z]+-[a-zA-Z0-9]+)*_data\\.csv`, so if you input this to the regex validator, and then put your filename as a test string, the validator will tell you whether it follows the regex pattern.\n"
             },
             "FilenameUnofficialKeywordWarning": {
                 "code": "FILENAME_UNOFFICIAL_KEYWORD_WARNING",
                 "level": "warning",
                 "reason": "Although it is not recommended, datafiles are permitted to use keywords other than those provided in the official psych-DS specification. If you do choose to use unofficial keywords, please ensure that they are clearly defined within your research community and used consistently across relevant datasets.\n",
-                "requires": []
+                "requires": [],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/FilenameUnofficialKeywordWarning/"
             },
             "FilenameUnofficialKeywordError": {
                 "code": "FILENAME_UNOFFICIAL_KEYWORD_ERROR",
                 "level": "error",
                 "reason": "Names for data files must not include keywords other than those listed in the psych-DS schema.",
-                "requires": []
+                "requires": [],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/FilenameUnofficialKeywordWarning/"
             },
             "InvalidJsonFormatting": {
                 "code": "INVALID_JSON_FORMATTING",
@@ -640,7 +699,9 @@
                 "reason": "One of your metadata files in not in valid JSON format. If you are having trouble creating your dataset_description.json file, you can download a template by filling out the form at https://psych-ds.github.io/cedar-wizard-psychds/.",
                 "requires": [
                     "rules.files.common.core.dataset_description"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/InvalidJsonFormatting/",
+                "troubleshooting": "To check what's wrong with your JSON file, you can could paste it into [a validator like this](https://jsonlint.com/), which should output the specific error in question. Often, the issue is caused by something simple, like a missing comma between elements, or a missing close bracket at the end of the file.\n"
             },
             "InvalidJsonldFormatting": {
                 "code": "INVALID_JSONLD_FORMATTING",
@@ -648,7 +709,9 @@
                 "reason": "Your metadata files are required to follow legal JSON-LD formatting. If you are having trouble creating your dataset_description.json file, you can download a template by filling out the form at https://psych-ds.github.io/cedar-wizard-psychds/.",
                 "requires": [
                     "rules.files.common.core.dataset_description"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/InvalidJsonldFormatting/",
+                "troubleshooting": "To get feedback on whether your file violates any JSON-LD rules, just input it into [this JSON-LD validator/converter](https://json-ld.org/playground/) and follow any suggestions for how to fix it. Typically, this error will only occur if you are attempting to use some of JSON-LD's more complex elements.\n"
             },
             "IncorrectDatasetType": {
                 "code": "INCORRECT_DATASET_TYPE",
@@ -657,7 +720,9 @@
                 "requires": [
                     "rules.files.common.core.dataset_description",
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/IncorrectDatasetType/",
+                "troubleshooting": "You can resolve these errors by making sure that you have a `@type` field in your metadata file with `Dataset` or `https://schema.org/Dataset` as its value. You should also make sure that you have a `@context` field with `https://schema.org/` at its value.\n"
             },
             "MissingDatasetType": {
                 "code": "MISSING_DATASET_TYPE",
@@ -666,7 +731,8 @@
                 "requires": [
                     "rules.files.common.core.dataset_description",
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/MissingDatasetType/"
             },
             "UnknownNamespace": {
                 "code": "UNKNOWN_NAMESPACE",
@@ -675,7 +741,8 @@
                 "requires": [
                     "rules.files.common.core.dataset_description",
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/UnknownNamespace/"
             },
             "ObjectTypeMissing": {
                 "code": "OBJECT_TYPE_MISSING",
@@ -684,7 +751,8 @@
                 "requires": [
                     "rules.files.common.core.dataset_description",
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/ObjectTypeMissing/"
             },
             "InvalidSchemaorgProperty": {
                 "code": "INVALID_SCHEMAORG_PROPERTY",
@@ -693,7 +761,8 @@
                 "requires": [
                     "rules.files.common.core.dataset_description",
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/InvalidSchemaorgProperty/"
             },
             "InvalidObjectType": {
                 "code": "INVALID_OBJECT_TYPE",
@@ -702,13 +771,25 @@
                 "requires": [
                     "rules.files.common.core.dataset_description",
                     "rules.files.tabular_data.data.Datafile"
-                ]
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/InvalidObjectType/"
             },
             "ExtensionMismatch": {
                 "code": "EXTENSION_MISMATCH",
                 "level": "error",
                 "reason": "Extension used by file does not match allowed extensions for its suffix.\n",
-                "requires": []
+                "requires": [],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/ExtensionMismatch/"
+            },
+            "CSVHeaderRepeated": {
+                "code": "CSV_HEADER_REPEATED",
+                "level": "error",
+                "reason": "Duplicate CSV header names can not be duplicate.",
+                "requires": [
+                    "rules.files.common.core.dataset_description",
+                    "rules.files.tabular_data.data.Datafile"
+                ],
+                "helpUrl": "https://psychds-docs.readthedocs.io/en/latest/reference/schema/rules/errors/CSVHeaderRepeated/"
             }
         },
         "common_principles": [
