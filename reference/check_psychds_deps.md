@@ -61,7 +61,7 @@ check_psychds_deps()
 #> ✓ DT (0.34.0)
 #> ✓ jsonlite (2.0.0)
 #> ✓ jsonvalidate (1.5.0)
-#> ✓ dplyr (1.1.4)
+#> ✓ dplyr (1.2.0)
 #> ✓ tidyr (1.3.2)
 #> ✓ readr (2.1.6)
 #> 
