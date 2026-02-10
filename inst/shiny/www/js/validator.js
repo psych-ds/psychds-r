@@ -5784,22 +5784,35 @@ async function getParser() {
   }
   return cachedParse;
 }
-async function parseCSV(contents) {
+async function parseCSV(contents, extension = ".csv") {
   const columns = new ColumnsMap();
   const issues = [];
   const normalizedStr = normalizeEOL(contents);
+  const delimiter = extension === ".tsv" ? "	" : ",";
+  const formatName = extension === ".tsv" ? "TSV" : "CSV";
   try {
     const parse3 = await getParser();
     const rows = parse3(normalizedStr, {
       skip_empty_lines: false,
-      relax_column_count: true
+      relax_column_count: true,
+      delimiter
     });
     const headers = rows.length ? rows[0] : [];
     if (new Set(headers).size !== headers.length) {
-      issues.push({ issue: "CSVHeaderRepeated", message: null });
+      const seen = /* @__PURE__ */ new Set();
+      const duplicates = /* @__PURE__ */ new Set();
+      for (const h of headers) {
+        if (seen.has(h))
+          duplicates.add(h);
+        seen.add(h);
+      }
+      issues.push({
+        issue: "CSVHeaderRepeated",
+        message: `Duplicate column headers found: [${[...duplicates].join(", ")}]`
+      });
     }
     if (headers.length === 0) {
-      issues.push({ issue: "CSVHeaderMissing", message: null });
+      issues.push({ issue: "CSVHeaderMissing", message: `${formatName} file contains no headers` });
     } else {
       const numDataRows = rows.length - 1;
       headers.forEach((header) => {
@@ -5829,14 +5842,24 @@ async function parseCSV(contents) {
         const rowIds = columns["row_id"];
         const rowIdSet = new Set(rowIds);
         if (rowIdSet.size !== rowIds.length) {
-          issues.push({ issue: "RowidValuesNotUnique", message: null });
+          const seen = /* @__PURE__ */ new Set();
+          const duplicates = /* @__PURE__ */ new Set();
+          for (const id of rowIds) {
+            if (seen.has(id))
+              duplicates.add(id);
+            seen.add(id);
+          }
+          issues.push({
+            issue: "RowidValuesNotUnique",
+            message: `Duplicate row_id values found: [${[...duplicates].join(", ")}]`
+          });
         }
       }
     }
   } catch (error2) {
     issues.push({
       issue: "CSVFormattingError",
-      message: error2.message
+      message: `${formatName} parsing error: ${error2.message}`
     });
   }
   return { columns, issues };
@@ -5949,10 +5972,10 @@ var psychDSContext = class {
   }
   /**
    * Extracts valid column names from metadata
-   * Used for CSV header validation
+   * Used for CSV/TSV header validation
    */
   loadValidColumns() {
-    if (this.extension !== ".csv") {
+    if (this.extension !== ".csv" && this.extension !== ".tsv") {
       return;
     }
     const nameSpace = "http://schema.org/";
@@ -5975,15 +5998,15 @@ var psychDSContext = class {
     this.validColumns = validColumns;
   }
   /**
-   * Loads and validates CSV column data
+   * Loads and validates CSV/TSV column data
    */
   async loadColumns() {
-    if (this.extension !== ".csv") {
+    if (this.extension !== ".csv" && this.extension !== ".tsv") {
       return;
     }
     let result;
     try {
-      result = await parseCSV(await this.file.text());
+      result = await parseCSV(await this.file.text(), this.extension);
     } catch (_error) {
       result = /* @__PURE__ */ new Map();
     }
@@ -6149,13 +6172,16 @@ var CHECKS3 = [
   filenameValidate,
   applyRules
 ];
+function isDataFile(extension, suffix) {
+  return (extension === ".csv" || extension === ".tsv") && suffix === "data";
+}
 async function validate(fileTree, options) {
   options.emitter?.emit("start", { success: true });
   const summary = new Summary();
   const schema = await loadSchema(options.schema);
   const issues = new DatasetIssues(schema);
-  let totalCsvFiles = 0;
-  let processedCsvFiles = 0;
+  let totalDataFiles = 0;
+  let processedDataFiles = 0;
   options.emitter?.emit("build-tree", { success: true });
   summary.schemaVersion = schema.schema_version;
   const ddFile = fileTree.files.find(
@@ -6186,19 +6212,27 @@ async function validate(fileTree, options) {
   }
   const rulesRecord = {};
   findFileRules(schema, rulesRecord);
-  const emitCheck = (event_name, issue_keys, progress) => {
+  const failedEvents = /* @__PURE__ */ new Set();
+  const emitCheck = (event_name, issue_keys, progress, failOnly = false) => {
     const fails = issue_keys.filter((issue) => issues.hasIssue({ key: issue }));
-    const eventData = fails.length > 0 ? { success: false, issue: issues.get(fails[0]), progress } : { success: true, progress };
-    options.emitter?.emit(event_name, eventData);
+    if (fails.length > 0) {
+      options.emitter?.emit(event_name, {
+        success: false,
+        issue: issues.get(fails[0]),
+        progress
+      });
+    } else if (!failOnly) {
+      options.emitter?.emit(event_name, { success: true, progress });
+    }
   };
   let validColumns = {};
   for await (const context of walkFileTree(fileTree, issues, dsContext)) {
-    if (context.extension === ".csv" && context.suffix === "data") {
-      totalCsvFiles++;
+    if (isDataFile(context.extension, context.suffix)) {
+      totalDataFiles++;
     }
   }
-  if (totalCsvFiles > 0) {
-    options.emitter?.emit("csv-count-total", { total: totalCsvFiles });
+  if (totalDataFiles > 0) {
+    options.emitter?.emit("csv-count-total", { total: totalDataFiles });
   }
   for await (const context of walkFileTree(fileTree, issues, dsContext)) {
     if (dsContext.baseDirs.includes("/data")) {
@@ -6218,7 +6252,7 @@ async function validate(fileTree, options) {
     if (context.file.ignored)
       continue;
     await context.asyncLoads();
-    if (context.extension === ".csv") {
+    if (context.extension === ".csv" || context.extension === ".tsv") {
       summary.suggestedColumns = [
         .../* @__PURE__ */ new Set([
           ...summary.suggestedColumns,
@@ -6233,7 +6267,7 @@ async function validate(fileTree, options) {
       rulesRecord[rule] = true;
     }
     await summary.update(context);
-    if (context.extension === ".csv" && context.suffix === "data") {
+    if (isDataFile(context.extension, context.suffix)) {
       options.emitter?.emit("check-for-csv", { success: true });
       options.emitter?.emit("metadata-utf8", { success: true });
       emitCheck("metadata-json", ["INVALID_JSON_FORMATTING"]);
@@ -6248,18 +6282,18 @@ async function validate(fileTree, options) {
         "INVALID_OBJECT_TYPE",
         "OBJECT_TYPE_MISSING"
       ]);
-      processedCsvFiles++;
+      processedDataFiles++;
       options.emitter?.emit("csv-progress", {
-        current: processedCsvFiles,
-        total: totalCsvFiles
+        current: processedDataFiles,
+        total: totalDataFiles
       });
-      const csvProgress = { current: processedCsvFiles, total: totalCsvFiles };
-      emitCheck("csv-keywords", ["FILENAME_KEYWORD_FORMATTING_ERROR", "FILENAME_UNOFFICIAL_KEYWORD_ERROR"], csvProgress);
-      emitCheck("csv-parse", ["CSV_FORMATTING_ERROR"], csvProgress);
-      emitCheck("csv-header", ["CSV_HEADER_MISSING"], csvProgress);
-      emitCheck("csv-header-repeat", ["CSV_HEADER_REPEATED"], csvProgress);
-      emitCheck("csv-nomismatch", ["CSV_HEADER_LENGTH_MISMATCH"], csvProgress);
-      emitCheck("csv-rowid", ["ROWID_VALUES_NOT_UNIQUE"], csvProgress);
+      const dataFileProgress = { current: processedDataFiles, total: totalDataFiles };
+      emitCheck("csv-keywords", ["FILENAME_KEYWORD_FORMATTING_ERROR", "FILENAME_UNOFFICIAL_KEYWORD_ERROR"], dataFileProgress, true);
+      emitCheck("csv-parse", ["CSV_FORMATTING_ERROR"], dataFileProgress, true);
+      emitCheck("csv-header", ["CSV_HEADER_MISSING"], dataFileProgress, true);
+      emitCheck("csv-header-repeat", ["CSV_HEADER_REPEATED"], dataFileProgress, true);
+      emitCheck("csv-nomismatch", ["CSV_HEADER_LENGTH_MISMATCH"], dataFileProgress, true);
+      emitCheck("csv-rowid", ["ROWID_VALUES_NOT_UNIQUE"], dataFileProgress, true);
     }
     if (context.validColumns.length != 0) {
       context.validColumns.forEach((col) => {
@@ -6276,7 +6310,7 @@ async function validate(fileTree, options) {
       {
         ...dsContext.metadataFile,
         evidence: `One of the metadata files in your dataset (either dataset_description.json or a sidecar file) 
-          contains a variable in variableMeasured that does not appear in any CSV column headers. Here are the variables in question: [${extraVars}]`
+          contains a variable in variableMeasured that does not appear in any CSV/TSV column headers. Here are the variables in question: [${extraVars}]`
       }
     ]);
   }
@@ -7507,4 +7541,4 @@ export {
 };
 //# sourceMappingURL=psychds-validator.js.map
 
-if (typeof window !== "undefined") { window.psychDSValidator = { validateWeb, ValidationProgressTracker }; }
+if (typeof window !== "undefined") { window.psychDSValidator = { validateWeb, ValidationProgressTracker}; }
