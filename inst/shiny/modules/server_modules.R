@@ -952,7 +952,9 @@ generate_overview_html <- function(dictionary_data, dataset_info) {
     }
     if (!is.null(dataset_info$author) && length(dataset_info$author) > 0) {
       author_names <- sapply(dataset_info$author, function(a) {
-        if (!is.null(a$givenName) && !is.null(a$familyName)) {
+        if (is.character(a) || is.atomic(a)) {
+          as.character(a)
+        } else if (!is.null(a$givenName) && !is.null(a$familyName)) {
           paste(a$givenName, a$familyName)
         } else if (!is.null(a$name)) { a$name } else { "Unknown" }
       })
@@ -1382,21 +1384,21 @@ directoryInputServer <- function(id, state, session) {
   })
 }
 
-#' List CSV Files
+#' List Data Files (CSV and TSV)
 #'
-#' Lists all CSV files in a directory, returning relative paths
+#' Lists all CSV and TSV files in a directory, returning relative paths
 #'
 #' @param dir_path Path to directory
 #' @return Character vector of relative file paths
-list_csv_files <- function(dir_path) {
+list_data_files <- function(dir_path) {
   if (is.null(dir_path) || dir_path == "" || !dir.exists(dir_path)) {
     return(character(0))
   }
   
-  # Find all CSV files recursively
+  # Find all CSV and TSV files recursively
   files <- list.files(
     dir_path,
-    pattern = "\\.csv$",
+    pattern = "\\.(csv|tsv)$",
     recursive = TRUE,
     full.names = FALSE,
     ignore.case = TRUE
@@ -1539,7 +1541,7 @@ fileBrowserServer <- function(id, state, dir_path, session) {
       message("Select directory: ", dir_prefix)
 
       # Get all files
-      all_files <- list_csv_files(dir_path())
+      all_files <- list_data_files(dir_path())
 
       # Find files in this directory
       dir_files <- all_files[startsWith(all_files, dir_prefix)]
@@ -1565,7 +1567,7 @@ fileBrowserServer <- function(id, state, dir_path, session) {
       message("Select all files clicked")
       
       # Get all files in the current directory
-      all_files <- list_csv_files(dir_path())
+      all_files <- list_data_files(dir_path())
       
       # Select all files
       selected(all_files)
@@ -1598,14 +1600,14 @@ fileBrowserServer <- function(id, state, dir_path, session) {
         ))
       }
 
-      # Get CSV files
-      files <- list_csv_files(current_dir)
+      # Get data files (CSV/TSV)
+      files <- list_data_files(current_dir)
 
       # If no files found
       if (length(files) == 0) {
         return(div(
           style = "text-align: center; padding-top: 30px; color: #999;",
-          "No CSV files found in this directory"
+          "No CSV or TSV files found in this directory"
         ))
       }
 
@@ -1629,7 +1631,7 @@ fileBrowserServer <- function(id, state, dir_path, session) {
       ui_elements <- tagList(
         # File count with selection count
         div(style = "color: #999; font-size: 12px; margin-bottom: 10px;",
-            paste0("Found ", length(files), " CSV files, selected ", num_selected))
+            paste0("Found ", length(files), " data files, selected ", num_selected))
       )
 
       # Track previously rendered directories to avoid duplicates
@@ -2107,7 +2109,7 @@ step1Server <- function(id, state, session) {
 
             # Extract column information if file exists
             if (file.exists(file_path)) {
-              data_dict[[file]] <- extract_csv_structure(file_path)
+              data_dict[[file]] <- extract_data_structure(file_path)
             } else {
               # Create empty data dictionary if file doesn't exist yet
               data_dict[[file]] <- data.frame(
@@ -2215,10 +2217,10 @@ step2Server <- function(id, state, session) {
         full_path <- file.path(project_dir, file_path)
 
         if (file.exists(full_path)) {
-          # Read column names from CSV
+          # Read column names from data file (CSV or TSV)
           tryCatch({
             # Read just the header row
-            header <- colnames(read.csv(full_path, nrows = 1))
+            header <- colnames(read_data_file(full_path, nrows = 1))
 
             # Add to the variable tracking
             for (var_name in header) {
@@ -2260,7 +2262,7 @@ step2Server <- function(id, state, session) {
         return(DT::datatable(
           data.frame(
             Variable = "No variables detected",
-            `Present In` = "Please select CSV files in Step 1",
+            `Present In` = "Please select data files in Step 1",
             check.names = FALSE
           ),
           options = list(
@@ -2772,8 +2774,121 @@ step3Server <- function(id, state, session) {
     # because we now have a more robust change detection system above that
     # monitors state$data_files directly
 
+    # --- Validate Existing Filenames ---
+    # Checks if original filenames already match Psych-DS naming conventions
+    # Pattern: keyword-value_keyword-value_..._data.(csv|tsv)
+    PSYCH_DS_FILENAME_REGEX <- "^([a-z]+-[a-zA-Z0-9]+)(_[a-z]+-[a-zA-Z0-9]+)*_data\\.(csv|tsv)$"
+    STANDARD_KEYWORDS <- c("subject", "session", "study", "task", "condition", "stimulus", "trial", "description")
+    
+    parseKeywordsFromFilename <- function(filename, file_idx = 1) {
+      # Extract the part before _data.ext
+      base <- sub("_data\\.(csv|tsv)$", "", filename)
+      # Split on underscores to get keyword-value pairs
+      pairs <- strsplit(base, "_")[[1]]
+      keywords <- list()
+      for (i in seq_along(pairs)) {
+        parts <- strsplit(pairs[i], "-", fixed = TRUE)[[1]]
+        if (length(parts) >= 2) {
+          kw_name <- parts[1]
+          kw_value <- paste(parts[-1], collapse = "-")  # in case value contains hyphens... though it shouldn't
+          keywords[[i]] <- list(
+            name = kw_name,
+            display = kw_name,
+            value = kw_value,
+            id = paste0(kw_name, "_", format(Sys.time(), "%Y%m%d%H%M%S"), "_f", file_idx, "k", i),
+            custom = !(kw_name %in% STANDARD_KEYWORDS)
+          )
+        }
+      }
+      keywords
+    }
+    
+    observeEvent(input$validate_existing_names, {
+      mappings <- file_mappings()
+      if (length(mappings) == 0) return()
+      
+      valid_count <- 0
+      invalid_files <- character(0)
+      
+      for (i in seq_along(mappings)) {
+        filename <- basename(mappings[[i]]$original)
+        
+        if (grepl(PSYCH_DS_FILENAME_REGEX, filename)) {
+          # Parse keywords from the valid filename
+          parsed_keywords <- parseKeywordsFromFilename(filename, i)
+          mappings[[i]]$new <- filename
+          mappings[[i]]$keywords <- parsed_keywords
+          mappings[[i]]$partial_keywords <- parsed_keywords
+          valid_count <- valid_count + 1
+        } else {
+          invalid_files <- c(invalid_files, filename)
+        }
+      }
+      
+      file_mappings(mappings)
+      ui_trigger(ui_trigger() + 1)
+      
+      # Update current file keywords display
+      current_idx <- current_file()
+      if (!is.null(current_idx) && current_idx <= length(mappings)) {
+        selected_keywords(mappings[[current_idx]]$keywords)
+      }
+      
+      # Render results
+      output$validate_existing_results <- renderUI({
+        if (valid_count == length(mappings)) {
+          # All files valid
+          div(
+            style = "margin-top: 12px; padding: 10px 14px; background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px;",
+            icon("check-circle", style = "color: #28a745; margin-right: 8px;"),
+            tags$strong(paste0("All ", valid_count, " file", if(valid_count > 1) "s" else "", " match"), 
+                       style = "color: #155724;"),
+            span(" the Psych-DS naming convention! You can continue to the next step.",
+                 style = "color: #155724;")
+          )
+        } else if (valid_count > 0) {
+          # Some valid, some not
+          div(
+            style = "margin-top: 12px;",
+            div(
+              style = "padding: 10px 14px; background-color: #d4edda; border: 1px solid #c3e6cb; border-radius: 4px; margin-bottom: 8px;",
+              icon("check-circle", style = "color: #28a745; margin-right: 6px;"),
+              tags$strong(paste0(valid_count, " file", if(valid_count > 1) "s" else "", " accepted."),
+                         style = "color: #155724;")
+            ),
+            div(
+              style = "padding: 10px 14px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;",
+              icon("exclamation-triangle", style = "color: #856404; margin-right: 6px;"),
+              tags$strong(paste0(length(invalid_files), " file", if(length(invalid_files) > 1) "s" else "", 
+                                " need renaming:"),
+                         style = "color: #856404;"),
+              tags$ul(
+                style = "margin: 6px 0 0 0; padding-left: 20px; font-size: 13px; color: #856404;",
+                lapply(invalid_files, function(f) tags$li(tags$code(f, style = "font-size: 12px;")))
+              )
+            )
+          )
+        } else {
+          # None valid
+          div(
+            style = "margin-top: 12px; padding: 10px 14px; background-color: #fff3cd; border: 1px solid #ffc107; border-radius: 4px;",
+            icon("exclamation-triangle", style = "color: #856404; margin-right: 8px;"),
+            tags$strong("No files match ", style = "color: #856404;"),
+            span("the Psych-DS naming pattern. Use the tools below to rename them.",
+                 style = "color: #856404;"),
+            div(
+              style = "margin-top: 8px; font-size: 12px; color: #856404;",
+              "Expected pattern: ",
+              tags$code("keyword-value_keyword-value_data.csv", style = "font-size: 11px;"),
+              " (e.g., ", tags$code("subject-01_task-memory_data.csv", style = "font-size: 11px;"), ")"
+            )
+          )
+        }
+      })
+    })
+
     #
-    # Analyzes CSV files to find columns with constant values
+    # Analyzes data files to find columns with constant values
     # These columns can be used for automatic keyword-based naming
     #
     analyzeConstantColumns <- function() {
@@ -2787,7 +2902,7 @@ step3Server <- function(id, state, session) {
           if (file.exists(file_path)) {
             tryCatch({
               # Read sample of data to find constant columns
-              data <- read.csv(file_path, stringsAsFactors = FALSE, nrows = 1000)
+              data <- read_data_file(file_path, stringsAsFactors = FALSE, nrows = 1000)
               
               const_cols <- list()
               
@@ -2820,6 +2935,60 @@ step3Server <- function(id, state, session) {
       
       constant_columns(constant_cols)
     }
+    
+    # Helper: compute the destination path for a file mapping
+    get_destination_path <- function(mapping) {
+      if (mapping$new == "") return(NA_character_)
+      file_parts <- strsplit(mapping$original, "/")[[1]]
+      if (length(file_parts) > 2) {
+        subdir_parts <- file_parts[2:(length(file_parts) - 1)]
+        paste(c(subdir_parts, mapping$new), collapse = "/")
+      } else {
+        mapping$new
+      }
+    }
+    
+    # Reactive: find any duplicate destination paths among renamed files
+    duplicate_paths <- reactive({
+      mappings <- file_mappings()
+      if (length(mappings) == 0) return(character(0))
+      
+      dest_paths <- vapply(mappings, get_destination_path, character(1))
+      # Only consider files that have been renamed
+      named <- dest_paths[!is.na(dest_paths) & dest_paths != ""]
+      if (length(named) == 0) return(character(0))
+      
+      # Return the paths that appear more than once
+      tab <- table(named)
+      names(tab[tab > 1])
+    })
+    
+    # Render duplicate warning UI
+    output$duplicate_warning <- renderUI({
+      dupes <- duplicate_paths()
+      if (length(dupes) == 0) return(NULL)
+      
+      div(
+        class = "alert",
+        style = "background-color: #f8d7da; border: 1px solid #f5c6cb; border-radius: 4px; padding: 15px; margin-top: 15px; margin-bottom: 10px;",
+        div(
+          style = "display: flex; align-items: start;",
+          icon("exclamation-triangle", style = "color: #721c24; font-size: 20px; margin-right: 12px; margin-top: 2px;"),
+          div(
+            style = "flex: 1;",
+            strong("Duplicate filenames detected", style = "color: #721c24; display: block; margin-bottom: 5px;"),
+            span(
+              style = "color: #721c24; line-height: 1.5;",
+              "Two or more files would share the same destination path. Please rename them so every file has a unique name."
+            ),
+            tags$ul(
+              style = "margin-top: 8px; margin-bottom: 0; color: #721c24;",
+              lapply(dupes, function(p) tags$li(tags$code(p)))
+            )
+          )
+        )
+      )
+    })
     
     # Configure directory selection widget
     shinyDirChoose(
@@ -3134,6 +3303,9 @@ step3Server <- function(id, state, session) {
         message("  File ", i, " - original: ", mappings[[i]]$original, " - new: ", mappings[[i]]$new)
       }
 
+      # Compute current duplicate paths for highlighting
+      dupes <- duplicate_paths()
+      
       rows <- lapply(seq_along(mappings), function(i) {
         file_info <- mappings[[i]]
         is_current <- current_file() == i
@@ -3151,6 +3323,10 @@ step3Server <- function(id, state, session) {
         } else {
           NULL
         }
+        
+        # Check if this file has a duplicate destination path
+        dest <- get_destination_path(file_info)
+        is_duplicate <- !is.na(dest) && dest %in% dupes
 
         div(
           class = paste("file-mapping-row", 
@@ -3159,7 +3335,8 @@ step3Server <- function(id, state, session) {
           style = paste0(
             "padding: 8px 15px; border-bottom: 1px solid #eee; cursor: pointer; ",
             "display: flex; align-items: center; ",
-            if(is_current) "background-color: #e3f2fd; border-left: 4px solid #2196F3;" 
+            if(is_duplicate) "background-color: #f8d7da; border-left: 4px solid #dc3545;"
+            else if(is_current) "background-color: #e3f2fd; border-left: 4px solid #2196F3;" 
             else if(i %% 2 == 0) "background-color: #f8f9fa;" 
             else ""
           ),
@@ -3184,7 +3361,14 @@ step3Server <- function(id, state, session) {
             ),
             div(class = "col-xs-6",
               if (!is.null(display_new_path)) {
-                span(display_new_path, class = "new-filename", style = "color: #3498db; font-weight: bold;")
+                if (is_duplicate) {
+                  tagList(
+                    icon("exclamation-triangle", style = "color: #dc3545; margin-right: 4px; font-size: 12px;"),
+                    span(display_new_path, class = "new-filename", style = "color: #dc3545; font-weight: bold;")
+                  )
+                } else {
+                  span(display_new_path, class = "new-filename", style = "color: #3498db; font-weight: bold;")
+                }
               } else if (length(file_info$partial_keywords) > 0) {
                 span(
                   paste(length(file_info$partial_keywords), "keywords applied"),
@@ -3788,7 +3972,26 @@ step3Server <- function(id, state, session) {
           footer = modalButton("OK")
         ))
       } else {
-        proceedToFinalStep()
+        # Check for duplicate destination paths
+        dupes <- duplicate_paths()
+        if (length(dupes) > 0) {
+          showModal(modalDialog(
+            title = "Duplicate Filenames Detected",
+            div(
+              p("Two or more files would be saved to the same destination path. Each file must have a unique name."),
+              p(strong("Conflicting paths:")),
+              tags$ul(
+                lapply(dupes, function(p) tags$li(tags$code(p)))
+              ),
+              p(style = "margin-top: 15px; color: #666;",
+                "Please go back and change the keyword values for these files so that each one produces a unique filename.")
+            ),
+            easyClose = TRUE,
+            footer = modalButton("OK")
+          ))
+        } else {
+          proceedToFinalStep()
+        }
       }
     })
 
@@ -3947,11 +4150,11 @@ step3Server <- function(id, state, session) {
             # Reconstruct path: skip first part (which is typically "data" or root)
             # and use the subdirectory structure with the new filename
             if (length(file_parts) > 2) {
-              # Has subdirectories: data/subdir1/subdir2/file.csv
+              # Has subdirectories: data/subdir1/subdir2/file.csv (or .tsv)
               subdir_parts <- file_parts[2:(length(file_parts)-1)]
               full_path <- paste(c(subdir_parts, mapping$new), collapse = "/")
             } else {
-              # No subdirectories: data/file.csv
+              # No subdirectories: data/file.csv (or .tsv)
               full_path <- mapping$new
             }
             
@@ -5233,7 +5436,7 @@ inferUnit <- function(var_name, mean_val) {
 # =========================================================================
 # MAIN FUNCTION: analyzeVariable - PURE BASE R VERSION
 # =========================================================================
-analyzeVariable <- function(csv_file, var_name) {
+analyzeVariable <- function(data_file, var_name) {
   result <- list(
     type = "string",
     unit = "",
@@ -5246,9 +5449,9 @@ analyzeVariable <- function(csv_file, var_name) {
   )
   
   tryCatch({
-    # Use base R read.csv - read all as character
-    data <- read.csv(
-      csv_file, 
+    # Use read_data_file to handle both CSV and TSV - read all as character
+    data <- read_data_file(
+      data_file, 
       stringsAsFactors = FALSE,
       colClasses = "character",  # Force all columns as character
       nrows = 10000,
@@ -5414,7 +5617,8 @@ dictionary_state <- reactiveValues(
   variable_data = list(),
   is_modified = FALSE,
   editing_cat_index = NULL,  # Add this for tracking which categorical value is being edited
-  missing_values = c("NA", "N/A", "null", "NULL", "-999", "missing", "")
+  missing_values = c("NA", "N/A", "null", "NULL", "-999", "missing", ""),
+  sidecar_sources = character(0)  # Track which sidecar files contributed metadata
 )
 
 # Initialize categorical values storage for current variable
@@ -5931,12 +6135,35 @@ output$dataset_info <- renderUI({
   if (!is.null(dictionary_state$dataset_path)) {
     dataset_name <- basename(dictionary_state$dataset_path)
     variable_count <- length(dictionary_state$variables)
+    sidecar_count <- length(dictionary_state$sidecar_sources)
     
-    div(
-      icon("check-circle", style = "color: #28a745; margin-right: 8px;"),
-      strong("Dataset loaded: "), dataset_name,
-      span(style = "margin-left: 15px; color: #6c757d;",
-           paste(variable_count, "variables detected"))
+    tagList(
+      div(
+        icon("check-circle", style = "color: #28a745; margin-right: 8px;"),
+        strong("Dataset loaded: "), dataset_name,
+        span(style = "margin-left: 15px; color: #6c757d;",
+             paste(variable_count, "variables detected"))
+      ),
+      if (sidecar_count > 0) {
+        div(
+          style = "margin-top: 8px;",
+          icon("file-code", style = "color: #9b59b6; margin-right: 8px;"),
+          span(
+            paste0("Metadata inherited from ", sidecar_count, " sidecar file",
+                   if (sidecar_count > 1) "s" else "", ":"),
+            style = "color: #6c757d;"
+          ),
+          div(
+            style = "margin-top: 4px; margin-left: 28px;",
+            lapply(dictionary_state$sidecar_sources, function(src) {
+              div(
+                tags$code(src, style = "font-size: 12px; background-color: #f3e8ff; color: #6b21a8; padding: 1px 6px; border-radius: 3px;"),
+                style = "margin-bottom: 2px;"
+              )
+            })
+          )
+        )
+      }
     )
   }
 })
@@ -5984,16 +6211,22 @@ observeEvent(input$load_dataset_btn, {
     return()
   }
   
-  # Load variables from CSV files
+  # Load variables from data files (CSV/TSV)
   tryCatch({
     variables <- extractVariablesFromDataset(dataset_path)
     
     # Load existing metadata from JSON and merge with auto-detected info
     variables <- loadExistingMetadata(dataset_path, variables)
     
+    # Collect unique metadata sources for display
+    sources <- unique(unlist(lapply(variables, function(v) v$metadata_source)))
+    sources <- sources[!is.na(sources)]
+    sidecar_sources <- sources[sources != "dataset_description.json"]
+    
     dictionary_state$dataset_path <- dataset_path
     dictionary_state$variables <- variables
     dictionary_state$current_variable <- NULL
+    dictionary_state$sidecar_sources <- sidecar_sources
     
     removeModal()
     showNotification("Dataset loaded successfully! Running validation...", type = "message")
@@ -6139,73 +6372,406 @@ observe({
 
 # Render validation status
 
-# Function to load existing metadata from dataset_description.json
+# Function to load existing metadata from dataset_description.json and sidecar files
+# Precedence (highest wins): file-level sidecar > directory-level sidecar > global
 loadExistingMetadata <- function(dataset_path, variables) {
-  json_path <- file.path(dataset_path, "dataset_description.json")
+  # Normalize to expanded absolute path so tilde paths match list.files() output
+  dataset_path <- normalizePath(dataset_path, mustWork = FALSE)
+  message("\n=== LOAD EXISTING METADATA ===")
+  message("  dataset_path: ", dataset_path)
+  message("  variables to process: ", length(variables))
   
-  if (!file.exists(json_path)) {
-    return(variables)
+  # --- 1. Apply global metadata from dataset_description.json ---
+  global_json <- file.path(dataset_path, "dataset_description.json")
+  message("  Global JSON path: ", global_json)
+  message("  Global JSON exists: ", file.exists(global_json))
+  if (file.exists(global_json)) {
+    tryCatch({
+      json_data <- jsonlite::read_json(global_json, simplifyVector = FALSE)
+      vm_count <- length(json_data$variableMeasured)
+      message("  Global variableMeasured entries: ", vm_count)
+      if (vm_count > 0) {
+        vm_names <- sapply(json_data$variableMeasured, function(x) {
+          if (is.character(x) || is.atomic(x)) as.character(x) else x$name %||% "<unnamed>"
+        })
+        message("  Global variableMeasured names: ", paste(head(vm_names, 10), collapse = ", "),
+                if (length(vm_names) > 10) paste0("... (", length(vm_names), " total)") else "")
+      }
+      variables <- applyVariableMeasured(variables, json_data$variableMeasured, "dataset_description.json",
+                                         source_path = global_json)
+      
+      # Load global missing value codes if present
+      if (!is.null(json_data$missingValueCodes)) {
+        dictionary_state$missing_values <- unlist(json_data$missingValueCodes)
+        message("  Loaded ", length(json_data$missingValueCodes), " missing value codes")
+      }
+    }, error = function(e) {
+      message("  ERROR loading global metadata: ", e$message)
+      warning(paste("Error loading global metadata:", e$message))
+    })
   }
   
-  tryCatch({
-    json_data <- jsonlite::read_json(json_path, simplifyVector = FALSE)
+  # --- 2. Discover and apply sidecar metadata ---
+  data_dir <- file.path(dataset_path, "data")
+  message("\n  Data dir: ", data_dir)
+  message("  Data dir exists: ", dir.exists(data_dir))
+  if (dir.exists(data_dir)) {
+    sidecars <- discoverSidecarFiles(dataset_path)
     
-    if (!is.null(json_data$variableMeasured)) {
-      for (var_meta in json_data$variableMeasured) {
-        var_name <- var_meta$name
-        
-        if (!is.null(var_name) && var_name %in% names(variables)) {
-          # Convert Schema.org valueType to internal type
-          schema_type <- var_meta$valueType %||% var_meta$`@type`
-          internal_type <- switch(
-            tolower(schema_type),
-            "text" = "string",
-            "string" = "string",
-            "number" = "number",
-            "float" = "number",
-            "integer" = "integer",
-            "boolean" = "boolean",
-            "date" = "date",
-            "datetime" = "datetime",
-            "categorical" = "categorical",
-            variables[[var_name]]$type  # default to auto-detected
-          )
-          
-          # Override auto-detected values with JSON metadata
-          variables[[var_name]]$description <- var_meta$description %||% variables[[var_name]]$description
-          variables[[var_name]]$type <- internal_type
-          variables[[var_name]]$unit <- var_meta$unitText %||% variables[[var_name]]$unit
-          variables[[var_name]]$min_value <- as.character(var_meta$minValue %||% "")
-          variables[[var_name]]$max_value <- as.character(var_meta$maxValue %||% "")
-          variables[[var_name]]$required <- var_meta$required %||% FALSE
-          variables[[var_name]]$unique <- var_meta$unique %||% FALSE
-          variables[[var_name]]$pattern <- var_meta$pattern %||% ""
-          
-          # Load categorical values from valueReference
-          if (!is.null(var_meta$valueReference) && length(var_meta$valueReference) > 0) {
-            cat_vals <- lapply(var_meta$valueReference, function(vr) {
-              list(
-                value = as.character(vr$value %||% ""),
-                label = as.character(vr$label %||% vr$value %||% ""),
-                description = as.character(vr$description %||% "")
-              )
-            })
-            variables[[var_name]]$categorical_values <- cat_vals
-          }
+    message("\n  --- Applying directory-level sidecars (", length(sidecars$directory), " found) ---")
+    # Apply directory-level sidecars (shallowest first, so deeper dirs override)
+    for (sc in sidecars$directory) {
+      message("  Processing dir sidecar: ", sc$label)
+      message("    Path: ", sc$path)
+      message("    Applies to dir: ", sc$applies_to_dir)
+      message("    Depth: ", sc$depth)
+      tryCatch({
+        json_data <- jsonlite::read_json(sc$path, simplifyVector = FALSE)
+        vm_count <- length(json_data$variableMeasured)
+        message("    variableMeasured entries in sidecar: ", vm_count)
+        if (vm_count > 0) {
+          vm_names <- sapply(json_data$variableMeasured, function(x) { if (is.character(x) || is.atomic(x)) as.character(x) else x$name %||% "<unnamed>" })
+          message("    variableMeasured names: ", paste(vm_names, collapse = ", "))
         }
-      }
+        # Only apply to variables that appear in files under this directory
+        applicable_vars <- filterVariablesByDirectory(variables, sc$applies_to_dir, dataset_path)
+        message("    Applicable variables (in this dir): ", length(applicable_vars))
+        if (length(applicable_vars) > 0) {
+          message("    Applicable var names: ", paste(head(applicable_vars, 10), collapse = ", "),
+                  if (length(applicable_vars) > 10) "..." else "")
+        }
+        variables <- applyVariableMeasured(variables, json_data$variableMeasured, sc$label,
+                                           only_vars = applicable_vars, source_path = sc$path)
+      }, error = function(e) {
+        message("    ERROR loading directory sidecar: ", e$message)
+        warning(paste("Error loading directory sidecar", sc$path, ":", e$message))
+      })
     }
     
-    # Load global missing value codes if present
-    if (!is.null(json_data$missingValueCodes)) {
-      dictionary_state$missing_values <- unlist(json_data$missingValueCodes)
+    message("\n  --- Applying file-level sidecars (", length(sidecars$file_level), " found) ---")
+    # Apply file-level sidecars (highest precedence)
+    for (sc in sidecars$file_level) {
+      message("  Processing file sidecar: ", sc$label)
+      message("    Path: ", sc$path)
+      message("    Applies to file: ", sc$applies_to_file)
+      tryCatch({
+        json_data <- jsonlite::read_json(sc$path, simplifyVector = FALSE)
+        vm_count <- length(json_data$variableMeasured)
+        message("    variableMeasured entries in sidecar: ", vm_count)
+        if (vm_count > 0) {
+          vm_names <- sapply(json_data$variableMeasured, function(x) { if (is.character(x) || is.atomic(x)) as.character(x) else x$name %||% "<unnamed>" })
+          message("    variableMeasured names: ", paste(vm_names, collapse = ", "))
+        }
+        # Only apply to variables that appear in the matched data file
+        applicable_vars <- filterVariablesByFile(variables, sc$applies_to_file, dataset_path)
+        message("    Applicable variables (in this file): ", length(applicable_vars))
+        if (length(applicable_vars) > 0) {
+          message("    Applicable var names: ", paste(head(applicable_vars, 10), collapse = ", "),
+                  if (length(applicable_vars) > 10) "..." else "")
+        }
+        variables <- applyVariableMeasured(variables, json_data$variableMeasured, sc$label,
+                                           only_vars = applicable_vars, source_path = sc$path)
+      }, error = function(e) {
+        message("    ERROR loading file sidecar: ", e$message)
+        warning(paste("Error loading file sidecar", sc$path, ":", e$message))
+      })
     }
-    
-  }, error = function(e) {
-    warning(paste("Error loading existing metadata:", e$message))
-  })
+  }
+  
+  # Summary of metadata sources
+  sources <- unique(unlist(lapply(variables, function(v) v$metadata_source)))
+  sources <- sources[!is.na(sources)]
+  message("\n  Final metadata sources: ", paste(sources, collapse = ", "))
+  message("  Variables with metadata_source set: ", 
+          sum(sapply(variables, function(v) !is.null(v$metadata_source))))
+  message("=== END LOAD EXISTING METADATA ===\n")
   
   return(variables)
+}
+
+# Apply a variableMeasured list to the variables, optionally restricted to certain variable names
+applyVariableMeasured <- function(variables, var_measured_list, source_label, only_vars = NULL, source_path = NULL) {
+  message("    applyVariableMeasured from '", source_label, "'")
+  if (is.null(var_measured_list)) {
+    message("      variableMeasured is NULL — skipping")
+    return(variables)
+  }
+  message("      Entries to process: ", length(var_measured_list))
+  if (!is.null(only_vars)) {
+    message("      Restricted to ", length(only_vars), " variable(s)")
+  }
+  
+  applied_count <- 0
+  skipped_not_found <- 0
+  skipped_not_applicable <- 0
+  skipped_string_only <- 0
+  
+  for (var_meta in var_measured_list) {
+    # Handle simple string entries (just a variable name, no metadata to apply)
+    if (is.character(var_meta) || is.atomic(var_meta)) {
+      message("      SKIP string entry: '", var_meta, "' (no metadata to apply)")
+      skipped_string_only <- skipped_string_only + 1
+      next
+    }
+    
+    var_name <- var_meta$name
+    if (is.null(var_name)) {
+      message("      SKIP: entry has no 'name' field")
+      next
+    }
+    if (!(var_name %in% names(variables))) {
+      message("      SKIP '", var_name, "': not found in detected variables")
+      skipped_not_found <- skipped_not_found + 1
+      next
+    }
+    if (!is.null(only_vars) && !(var_name %in% only_vars)) {
+      message("      SKIP '", var_name, "': not in applicable vars for this scope")
+      skipped_not_applicable <- skipped_not_applicable + 1
+      next
+    }
+    
+    # Convert Schema.org valueType to internal type
+    schema_type <- var_meta$valueType %||% var_meta$`@type`
+    if (!is.null(schema_type) && tolower(schema_type) != "propertyvalue") {
+      internal_type <- switch(
+        tolower(schema_type),
+        "text" = "string",
+        "string" = "string",
+        "number" = "number",
+        "float" = "number",
+        "integer" = "integer",
+        "boolean" = "boolean",
+        "date" = "date",
+        "datetime" = "datetime",
+        "categorical" = "categorical",
+        variables[[var_name]]$type  # default to auto-detected
+      )
+      variables[[var_name]]$type <- internal_type
+      message("      '", var_name, "': type -> ", internal_type, " (from schema '", schema_type, "')")
+    }
+    
+    # Override auto-detected values — only overwrite if the sidecar actually provides the field
+    fields_set <- character(0)
+    if (!is.null(var_meta$description))  { variables[[var_name]]$description <- var_meta$description; fields_set <- c(fields_set, "description") }
+    if (!is.null(var_meta$unitText))     { variables[[var_name]]$unit <- var_meta$unitText; fields_set <- c(fields_set, "unit") }
+    if (!is.null(var_meta$minValue))     { variables[[var_name]]$min_value <- as.character(var_meta$minValue); fields_set <- c(fields_set, "minValue") }
+    if (!is.null(var_meta$maxValue))     { variables[[var_name]]$max_value <- as.character(var_meta$maxValue); fields_set <- c(fields_set, "maxValue") }
+    if (!is.null(var_meta$required))     { variables[[var_name]]$required <- var_meta$required; fields_set <- c(fields_set, "required") }
+    if (!is.null(var_meta$unique))       { variables[[var_name]]$unique <- var_meta$unique; fields_set <- c(fields_set, "unique") }
+    if (!is.null(var_meta$pattern))      { variables[[var_name]]$pattern <- var_meta$pattern; fields_set <- c(fields_set, "pattern") }
+    
+    # Load categorical values from valueReference
+    if (!is.null(var_meta$valueReference) && length(var_meta$valueReference) > 0) {
+      cat_vals <- lapply(var_meta$valueReference, function(vr) {
+        list(
+          value = as.character(vr$value %||% ""),
+          label = as.character(vr$label %||% vr$value %||% ""),
+          description = as.character(vr$description %||% "")
+        )
+      })
+      variables[[var_name]]$categorical_values <- cat_vals
+      fields_set <- c(fields_set, paste0("valueReference(", length(cat_vals), ")"))
+    }
+    
+    # Track the source of this variable's metadata
+    variables[[var_name]]$metadata_source <- source_label
+    variables[[var_name]]$metadata_source_path <- source_path
+    applied_count <- applied_count + 1
+    message("      APPLIED '", var_name, "': fields=[", paste(fields_set, collapse = ", "), "] source='", source_label, "'")
+  }
+  
+  message("      Summary: applied=", applied_count, " skipped_not_found=", skipped_not_found, 
+          " skipped_not_applicable=", skipped_not_applicable, " skipped_string_only=", skipped_string_only)
+  
+  return(variables)
+}
+
+# Discover all sidecar metadata files in the data directory
+# Returns list with $directory (sorted shallowest-first) and $file_level
+discoverSidecarFiles <- function(dataset_path) {
+  dataset_path <- normalizePath(dataset_path, mustWork = FALSE)
+  data_dir <- file.path(dataset_path, "data")
+  result <- list(directory = list(), file_level = list())
+  
+  message("\n  === DISCOVER SIDECAR FILES ===")
+  message("    data_dir: ", data_dir)
+  message("    data_dir exists: ", dir.exists(data_dir))
+  
+  if (!dir.exists(data_dir)) {
+    message("    Data dir missing — returning empty")
+    return(result)
+  }
+  
+  # Find all JSON files under data/
+  all_json <- list.files(data_dir, pattern = "\\.json$", recursive = TRUE, full.names = TRUE)
+  message("    JSON files found under data/: ", length(all_json))
+  for (jf in all_json) {
+    message("      ", jf)
+  }
+  
+  # Find all data files for matching
+  all_data <- list.files(data_dir, pattern = "\\.(csv|tsv)$", recursive = TRUE, full.names = TRUE)
+  data_basenames <- tools::file_path_sans_ext(all_data)
+  message("    Data files found: ", length(all_data))
+  for (df in all_data) {
+    message("      ", df)
+  }
+  message("    Data basenames (sans ext): ", length(data_basenames))
+  for (db in data_basenames) {
+    message("      ", db)
+  }
+  
+  for (json_file in all_json) {
+    json_basename <- basename(json_file)
+    json_dir <- dirname(json_file)
+    message("\n    Evaluating: ", json_file)
+    message("      basename: ", json_basename)
+    message("      dirname: ", json_dir)
+    
+    if (json_basename == "file_metadata.json") {
+      message("      -> DIRECTORY-LEVEL sidecar (file_metadata.json)")
+      # Directory-level sidecar
+      data_dir_norm <- normalizePath(data_dir, mustWork = FALSE)
+      json_dir_norm <- normalizePath(json_dir, mustWork = FALSE)
+      message("      data_dir normalized: ", data_dir_norm)
+      message("      json_dir normalized: ", json_dir_norm)
+      message("      dirs equal: ", json_dir_norm == data_dir_norm)
+      
+      rel_dir <- if (json_dir_norm == data_dir_norm) {
+        "data"
+      } else {
+        file.path("data", sub(paste0(data_dir_norm, "/"), "", json_dir_norm, fixed = TRUE))
+      }
+      depth <- length(strsplit(rel_dir, "/")[[1]])
+      message("      rel_dir: ", rel_dir)
+      message("      depth: ", depth)
+      
+      result$directory <- c(result$directory, list(list(
+        path = json_file,
+        applies_to_dir = json_dir,
+        depth = depth,
+        label = file.path(rel_dir, "file_metadata.json")
+      )))
+    } else {
+      # Check if this JSON matches a data file (file-level sidecar)
+      json_sans_ext <- tools::file_path_sans_ext(json_file)
+      message("      json sans ext: ", json_sans_ext)
+      match_idx <- which(data_basenames == json_sans_ext)
+      message("      match_idx: ", paste(match_idx, collapse = ", "), 
+              " (", length(match_idx), " match(es))")
+      
+      if (length(match_idx) > 0) {
+        matched_data_file <- all_data[match_idx[1]]
+        rel_path <- sub(paste0(dataset_path, "/"), "",
+                         normalizePath(json_file, mustWork = FALSE), fixed = TRUE)
+        rel_data <- sub(paste0(dataset_path, "/"), "",
+                         normalizePath(matched_data_file, mustWork = FALSE), fixed = TRUE)
+        
+        message("      -> FILE-LEVEL sidecar")
+        message("      matched data file: ", matched_data_file)
+        message("      rel json path: ", rel_path)
+        message("      rel data path: ", rel_data)
+        
+        result$file_level <- c(result$file_level, list(list(
+          path = json_file,
+          applies_to_file = matched_data_file,
+          label = rel_path
+        )))
+      } else {
+        message("      -> NO MATCH (not a sidecar)")
+      }
+    }
+  }
+  
+  # Sort directory-level sidecars by depth (shallowest first)
+  if (length(result$directory) > 0) {
+    depths <- sapply(result$directory, function(x) x$depth)
+    result$directory <- result$directory[order(depths)]
+    message("\n    Directory sidecars after sorting by depth:")
+    for (sc in result$directory) {
+      message("      depth=", sc$depth, " ", sc$label)
+    }
+  }
+  
+  message("    RESULT: ", length(result$directory), " directory sidecar(s), ", 
+          length(result$file_level), " file-level sidecar(s)")
+  message("  === END DISCOVER SIDECAR FILES ===\n")
+  
+  return(result)
+}
+
+# Get variable names that appear in files under a given directory
+filterVariablesByDirectory <- function(variables, dir_path, dataset_path) {
+  dataset_path <- normalizePath(dataset_path, mustWork = FALSE)
+  dir_norm <- normalizePath(dir_path, mustWork = FALSE)
+  # Ensure trailing separator so /data/exp doesn't match /data/experiment/
+  if (!endsWith(dir_norm, .Platform$file.sep)) {
+    dir_norm <- paste0(dir_norm, .Platform$file.sep)
+  }
+  
+  message("    filterVariablesByDirectory:")
+  message("      dir_path: ", dir_path)
+  message("      dir_norm (with sep): ", dir_norm)
+  message("      dataset_path (normalized): ", dataset_path)
+  message("      Total variables to check: ", length(variables))
+  
+  matching_vars <- character(0)
+  for (var_name in names(variables)) {
+    var_files <- variables[[var_name]]$files
+    for (f in var_files) {
+      # f may be relative (data/file.csv) or absolute — handle both
+      if (startsWith(f, "/") || startsWith(f, "~")) {
+        full_path <- normalizePath(f, mustWork = FALSE)
+      } else {
+        full_path <- normalizePath(file.path(dataset_path, f), mustWork = FALSE)
+      }
+      if (startsWith(full_path, dir_norm)) {
+        matching_vars <- c(matching_vars, var_name)
+        message("      MATCH: '", var_name, "' via file '", f, "' -> '", full_path, "'")
+        break
+      }
+    }
+  }
+  
+  result <- unique(matching_vars)
+  message("      Result: ", length(result), " matching variables")
+  return(result)
+}
+
+# Get variable names that appear in a specific data file
+filterVariablesByFile <- function(variables, file_path, dataset_path) {
+  dataset_path <- normalizePath(dataset_path, mustWork = FALSE)
+  file_norm <- normalizePath(file_path, mustWork = FALSE)
+  rel_path <- sub(paste0(dataset_path, "/"), "", file_norm, fixed = TRUE)
+  
+  message("    filterVariablesByFile:")
+  message("      file_path: ", file_path)
+  message("      file_norm: ", file_norm)
+  message("      dataset_path (normalized): ", dataset_path)
+  message("      rel_path: ", rel_path)
+  message("      Total variables to check: ", length(variables))
+  
+  matching_vars <- character(0)
+  for (var_name in names(variables)) {
+    var_files <- variables[[var_name]]$files
+    for (f in var_files) {
+      # f may be relative (data/file.csv) or absolute — handle both
+      if (startsWith(f, "/") || startsWith(f, "~")) {
+        f_norm <- normalizePath(f, mustWork = FALSE)
+      } else {
+        f_norm <- normalizePath(file.path(dataset_path, f), mustWork = FALSE)
+      }
+      if (f_norm == file_norm || f == rel_path) {
+        matching_vars <- c(matching_vars, var_name)
+        message("      MATCH: '", var_name, "' via stored file '", f, "' (norm: '", f_norm, "')")
+        break
+      }
+    }
+  }
+  
+  result <- unique(matching_vars)
+  message("      Result: ", length(result), " matching variables")
+  return(result)
 }
 
 # Function to validate dataset
@@ -6366,12 +6932,12 @@ autoPopulateCategoricalValues <- function(var_name) {
   # Read values from all files containing this variable
   withProgress(message = "Detecting categorical values...", value = 0, {
     data_dir <- file.path(dictionary_state$dataset_path, "data")
-    csv_files <- list.files(data_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE)
+    csv_files <- list.files(data_dir, pattern = "\\.(csv|tsv)$", recursive = TRUE, full.names = TRUE)
     
     for (i in seq_along(csv_files)) {
       setProgress(i / length(csv_files))
       tryCatch({
-        data <- read.csv(csv_files[i], stringsAsFactors = FALSE, nrows = 1000)
+        data <- read_data_file(csv_files[i], stringsAsFactors = FALSE, nrows = 1000)
         if (var_name %in% names(data)) {
           col_values <- unique(data[[var_name]][!is.na(data[[var_name]])])
           all_values <- c(all_values, as.character(col_values))
@@ -6400,25 +6966,28 @@ autoPopulateCategoricalValues <- function(var_name) {
 
 # Extract variables from dataset with enhanced analysis
 extractVariablesFromDataset <- function(dataset_path) {
+  # Normalize to expanded absolute path so it matches list.files() output
+  dataset_path <- normalizePath(dataset_path, mustWork = FALSE)
   data_dir <- file.path(dataset_path, "data")
-  csv_files <- list.files(data_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE)
+  data_files <- list.files(data_dir, pattern = "\\.(csv|tsv)$", recursive = TRUE, full.names = TRUE)
   
-  if (length(csv_files) == 0) {
-    stop("No CSV files found in data directory")
+  if (length(data_files) == 0) {
+    stop("No CSV or TSV files found in data directory")
   }
   
   all_variables <- list()
   
   withProgress(message = "Analyzing dataset variables...", value = 0, {
-    for (i in seq_along(csv_files)) {
-      csv_file <- csv_files[i]
-      rel_path <- gsub(paste0("^", dataset_path, "/"), "", csv_file)
+    for (i in seq_along(data_files)) {
+      data_file <- data_files[i]
+      # Use fixed = TRUE to avoid regex issues with special chars in paths
+      rel_path <- sub(paste0(dataset_path, "/"), "", data_file, fixed = TRUE)
       
-      setProgress(i / length(csv_files), detail = paste("Processing", basename(csv_file)))
+      setProgress(i / length(data_files), detail = paste("Processing", basename(data_file)))
       
       tryCatch({
         # Read just the header first
-        header <- names(read.csv(csv_file, nrows = 1))
+        header <- names(read_data_file(data_file, nrows = 1))
         
         for (var_name in header) {
           if (var_name %in% names(all_variables)) {
@@ -6426,7 +6995,7 @@ extractVariablesFromDataset <- function(dataset_path) {
             all_variables[[var_name]]$files <- c(all_variables[[var_name]]$files, rel_path)
           } else {
             # Create new variable entry with enhanced analysis
-            var_analysis <- analyzeVariable(csv_file, var_name)
+            var_analysis <- analyzeVariable(data_file, var_name)
             
             all_variables[[var_name]] <- list(
               name = var_name,
@@ -6448,7 +7017,7 @@ extractVariablesFromDataset <- function(dataset_path) {
           }
         }
       }, error = function(e) {
-        warning(paste("Could not read file:", csv_file, "-", e$message))
+        warning(paste("Could not read file:", data_file, "-", e$message))
       })
     }
   })
@@ -6464,11 +7033,11 @@ extractVariablesFromDataset <- function(dataset_path) {
         
         all_values <- character(0)
         
-        # Read from all CSV files
-        for (csv_file in csv_files) {
+        # Read from all data files
+        for (data_file in data_files) {
           tryCatch({
             # Read up to 1000 rows to collect values
-            data <- read.csv(csv_file, stringsAsFactors = FALSE, nrows = 1000)
+            data <- read_data_file(data_file, stringsAsFactors = FALSE, nrows = 1000)
             if (var_name %in% names(data)) {
               # Get non-NA values
               col_values <- data[[var_name]]
@@ -6544,7 +7113,18 @@ output$variables_list <- renderUI({
       
       div(
         style = "display: flex; justify-content: space-between; align-items: center;",
-        span(var_name, style = "font-weight: 500;"),
+        div(
+          style = "display: flex; align-items: center; gap: 6px;",
+          span(var_name, style = "font-weight: 500;"),
+          if (!is.null(var_info$metadata_source) && var_info$metadata_source != "dataset_description.json") {
+            span(
+              icon("file-code"),
+              title = paste("Metadata from:", var_info$metadata_source),
+              style = paste0("font-size: 11px; cursor: help; ",
+                           if (is_selected) "color: rgba(255,255,255,0.8);" else "color: #9b59b6;")
+            )
+          }
+        ),
         span(
           paste(file_count, if (file_count == 1) "file" else "files"),
           style = paste0("font-size: 12px; ", if (is_selected) "color: rgba(255,255,255,0.8);" else "color: #6c757d;")
@@ -6611,9 +7191,22 @@ observeEvent(input$var_type, {
 # Render variable name header
 output$variable_name_header <- renderUI({
   if (!is.null(dictionary_state$current_variable)) {
-    h3(
-      dictionary_state$current_variable,
-      style = "color: #333; margin: 0; font-weight: bold;"
+    var_info <- dictionary_state$variables[[dictionary_state$current_variable]]
+    tagList(
+      h3(
+        dictionary_state$current_variable,
+        style = "color: #333; margin: 0; font-weight: bold;"
+      ),
+      if (!is.null(var_info$metadata_source)) {
+        div(
+          style = "margin-top: 4px;",
+          span(
+            icon("file-code", style = "font-size: 11px; margin-right: 4px;"),
+            paste("Metadata from:", var_info$metadata_source),
+            style = "font-size: 12px; color: #6c757d; font-style: italic;"
+          )
+        )
+      }
     )
   }
 })
@@ -6804,6 +7397,68 @@ observeEvent(input$remove_cat_value, {
   }
 }, ignoreInit = TRUE)
 
+# Shared helper: build a Psych-DS PropertyValue object from internal variable info
+buildPropertyValue <- function(var_name, var_info, global_missing_values = NULL) {
+  prop_value <- list(
+    `@type` = "PropertyValue",
+    name = var_name,
+    description = if(nchar(var_info$description) > 0) var_info$description else NULL,
+    valueType = var_info$type
+  )
+  
+  if (!is.null(global_missing_values) && length(global_missing_values) > 0) {
+    prop_value$missingValueCodes <- global_missing_values
+  }
+  
+  if (nchar(var_info$unit) > 0) prop_value$unitText <- var_info$unit
+  if (nchar(var_info$min_value) > 0) prop_value$minValue <- var_info$min_value
+  if (nchar(var_info$max_value) > 0) prop_value$maxValue <- var_info$max_value
+  
+  if (var_info$type == "categorical" && length(var_info$categorical_values) > 0) {
+    prop_value$valueReference <- I(lapply(var_info$categorical_values, function(cat) {
+      cat_obj <- list(
+        value = cat$value,
+        label = if(nchar(cat$label) > 0 && cat$label != cat$value) cat$label else NULL,
+        description = if(nchar(cat$description) > 0) cat$description else NULL
+      )
+      cat_obj[!sapply(cat_obj, is.null)]
+    }))
+  }
+  
+  prop_value$required <- var_info$required %||% FALSE
+  prop_value$unique <- var_info$unique %||% FALSE
+  if (nchar(var_info$pattern) > 0) prop_value$pattern <- var_info$pattern
+  
+  prop_value[!sapply(prop_value, is.null)]
+}
+
+# Partition variables into global vs sidecar groups based on metadata_source_path
+partitionVariablesBySaveTarget <- function(variables, dataset_path) {
+  dataset_path <- normalizePath(dataset_path, mustWork = FALSE)
+  global_json <- file.path(dataset_path, "dataset_description.json")
+  
+  groups <- list()  # keyed by file path
+  
+  for (var_name in names(variables)) {
+    var_info <- variables[[var_name]]
+    target <- var_info$metadata_source_path
+    
+    # If no sidecar source, or source is global, goes to dataset_description.json
+    if (is.null(target) || normalizePath(target, mustWork = FALSE) == global_json) {
+      target_key <- global_json
+    } else {
+      target_key <- normalizePath(target, mustWork = FALSE)
+    }
+    
+    if (is.null(groups[[target_key]])) {
+      groups[[target_key]] <- character(0)
+    }
+    groups[[target_key]] <- c(groups[[target_key]], var_name)
+  }
+  
+  groups
+}
+
 generateFullDatasetDescriptionPreview <- function() {
   # Read existing dataset_description.json to get name, description, authors
   json_path <- file.path(dictionary_state$dataset_path, "dataset_description.json")
@@ -6823,43 +7478,17 @@ generateFullDatasetDescriptionPreview <- function() {
     }, error = function(e) {})
   }
   
-  # Build variableMeasured array
+  # Partition variables by save target
+  global_json <- normalizePath(json_path, mustWork = FALSE)
+  groups <- partitionVariablesBySaveTarget(dictionary_state$variables, dictionary_state$dataset_path)
+  global_var_names <- groups[[global_json]] %||% character(0)
+  
+  # Build variableMeasured array (only global variables)
   global_missing_values <- dictionary_state$missing_values
   
-  variable_measured <- lapply(names(dictionary_state$variables), function(var_name) {
+  variable_measured <- lapply(global_var_names, function(var_name) {
     var_info <- dictionary_state$variables[[var_name]]
-    
-    prop_value <- list(
-      `@type` = "PropertyValue",
-      name = var_name,
-      description = if(nchar(var_info$description) > 0) var_info$description else NULL,
-      valueType = var_info$type
-    )
-    
-    if (length(global_missing_values) > 0) {
-      prop_value$missingValueCodes <- global_missing_values
-    }
-    
-    if (nchar(var_info$unit) > 0) prop_value$unitText <- var_info$unit
-    if (nchar(var_info$min_value) > 0) prop_value$minValue <- var_info$min_value
-    if (nchar(var_info$max_value) > 0) prop_value$maxValue <- var_info$max_value
-    
-    if (var_info$type == "categorical" && length(var_info$categorical_values) > 0) {
-      prop_value$valueReference <- I(lapply(var_info$categorical_values, function(cat) {
-        cat_obj <- list(
-          value = cat$value,
-          label = if(nchar(cat$label) > 0 && cat$label != cat$value) cat$label else NULL,
-          description = if(nchar(cat$description) > 0) cat$description else NULL
-        )
-        cat_obj[!sapply(cat_obj, is.null)]
-      }))
-    }
-    
-    prop_value$required <- var_info$required %||% FALSE
-    prop_value$unique <- var_info$unique %||% FALSE
-    if (nchar(var_info$pattern) > 0) prop_value$pattern <- var_info$pattern
-    
-    prop_value[!sapply(prop_value, is.null)]
+    buildPropertyValue(var_name, var_info, global_missing_values)
   })
   
   # Build complete dataset_description
@@ -6885,6 +7514,55 @@ generateFullDatasetDescriptionPreview <- function() {
   return(json_html)
 }
 
+# Generate a syntax-highlighted JSON preview of what will be saved to a sidecar file
+generateSidecarPreview <- function(sc_path, sc_var_names, global_missing_values) {
+  # Read existing sidecar to preserve non-variableMeasured fields
+  if (file.exists(sc_path)) {
+    tryCatch({
+      sc_json <- jsonlite::read_json(sc_path, simplifyVector = FALSE)
+    }, error = function(e) {
+      sc_json <<- list()
+    })
+  } else {
+    sc_json <- list()
+  }
+  
+  # Build updated variableMeasured — same logic as save handler
+  existing_vm <- sc_json$variableMeasured %||% list()
+  kept_entries <- list()
+  for (entry in existing_vm) {
+    if (is.character(entry) || is.atomic(entry)) {
+      if (!(as.character(entry) %in% sc_var_names)) {
+        kept_entries <- c(kept_entries, list(entry))
+      }
+    } else {
+      entry_name <- entry$name
+      if (!is.null(entry_name) && !(entry_name %in% sc_var_names)) {
+        kept_entries <- c(kept_entries, list(entry))
+      }
+    }
+  }
+  
+  updated_entries <- lapply(sc_var_names, function(var_name) {
+    var_info <- dictionary_state$variables[[var_name]]
+    buildPropertyValue(var_name, var_info, global_missing_values)
+  })
+  
+  sc_json$variableMeasured <- c(kept_entries, updated_entries)
+  
+  # Convert to JSON string
+  json_str <- jsonlite::toJSON(sc_json, pretty = TRUE, auto_unbox = TRUE)
+  
+  # Add syntax highlighting (same as global preview)
+  json_html <- json_str
+  json_html <- gsub('"(@?[^"]+)":', '<span style="color: #0969da;">\"\\1\"</span>:', json_html)
+  json_html <- gsub(':\\s*"([^"]*)"', ': <span style="color: #0a3069;">\"\\1\"</span>', json_html)
+  json_html <- gsub(':\\s*(true|false)', ': <span style="color: #cf222e;">\\1</span>', json_html)
+  json_html <- gsub(':\\s*([0-9.]+)', ': <span style="color: #953800;">\\1</span>', json_html)
+  
+  return(json_html)
+}
+
 
 observeEvent(input$continue, {
   message("Save dictionary button clicked\n")
@@ -6892,34 +7570,156 @@ observeEvent(input$continue, {
   # Save current variable before proceeding
   saveCurrentVariable()
   
-  # Generate the FULL dataset_description.json preview
+  # Generate the dataset_description.json preview (global vars only)
   full_json_preview <- generateFullDatasetDescriptionPreview()
   
   # Default save path
   default_save_path <- file.path(dictionary_state$dataset_path, "dataset_description.json")
   
-  # Show preview modal with overwrite warning and path selector
+  # Compute sidecar save targets for display
+  dataset_path_norm <- normalizePath(dictionary_state$dataset_path, mustWork = FALSE)
+  global_json_norm <- normalizePath(default_save_path, mustWork = FALSE)
+  groups <- partitionVariablesBySaveTarget(dictionary_state$variables, dictionary_state$dataset_path)
+  sidecar_groups <- groups[names(groups) != global_json_norm]
+  global_var_count <- length(groups[[global_json_norm]] %||% character(0))
+  
+  # Build sidecar info UI with collapsible JSON previews
+  sidecar_info_ui <- NULL
+  if (length(sidecar_groups) > 0) {
+    global_missing_values <- dictionary_state$missing_values
+    
+    sidecar_items <- lapply(seq_along(sidecar_groups), function(idx) {
+      sc_path <- names(sidecar_groups)[idx]
+      sc_vars <- sidecar_groups[[sc_path]]
+      rel_path <- sub(paste0(dataset_path_norm, "/"), "", sc_path, fixed = TRUE)
+      
+      # Generate JSON preview for this sidecar
+      sc_preview_json <- generateSidecarPreview(sc_path, sc_vars, global_missing_values)
+      
+      tags$details(
+        style = "margin-bottom: 6px; border: 1px solid #e9d5ff; border-radius: 6px; overflow: hidden;",
+        tags$summary(
+          style = paste0(
+            "padding: 10px 14px; cursor: pointer; background-color: #f3e8ff; ",
+            "display: flex; justify-content: space-between; align-items: center; ",
+            "list-style: none; user-select: none;"
+          ),
+          div(
+            style = "display: flex; align-items: center; gap: 8px;",
+            icon("chevron-right", class = "sidecar-chevron", 
+                 style = "color: #9b59b6; font-size: 11px; transition: transform 0.2s;"),
+            icon("file-code", style = "color: #9b59b6; font-size: 13px;"),
+            tags$code(rel_path, style = "font-size: 12px; color: #6b21a8; background: transparent;")
+          ),
+          div(
+            style = "display: flex; align-items: center; gap: 10px;",
+            span(paste0(length(sc_vars), " variable", if(length(sc_vars) > 1) "s" else ""),
+                 style = "font-size: 12px; color: #6c757d;"),
+            span("Click to preview", style = "font-size: 11px; color: #9b59b6; font-style: italic;")
+          )
+        ),
+        div(
+          style = "padding: 0 14px 12px 14px; background-color: #faf5ff;",
+          div(
+            style = "margin-top: 8px; margin-bottom: 6px; font-size: 11px; color: #6c757d;",
+            paste("Variables:", paste(sc_vars, collapse = ", "))
+          ),
+          tags$pre(
+            style = "background-color: #f8f9fa; padding: 12px; border-radius: 4px; max-height: 250px; overflow-y: auto; font-family: monospace; font-size: 11px; margin: 0; border: 1px solid #e2e8f0;",
+            HTML(sc_preview_json)
+          )
+        )
+      )
+    })
+    
+    sidecar_info_ui <- div(
+      style = "margin-top: 15px;",
+      div(
+        style = "margin-bottom: 8px; display: flex; align-items: center; gap: 6px;",
+        icon("file-code", style = "color: #9b59b6;"),
+        tags$strong(paste0("Sidecar files to update (", length(sidecar_groups), "):")),
+        span(paste0(sum(sapply(sidecar_groups, length)), " variables total"),
+             style = "color: #6c757d; font-size: 12px; margin-left: 4px;")
+      ),
+      do.call(tagList, sidecar_items),
+      tags$small(
+        style = "color: #6c757d; display: block; margin-top: 6px;",
+        "These variables were loaded from sidecar metadata and will be saved back to their source files."
+      )
+    )
+  }
+  
+  # Default copy path suggestion
+  dataset_basename <- basename(dictionary_state$dataset_path)
+  parent_dir <- dirname(normalizePath(dictionary_state$dataset_path, mustWork = FALSE))
+  suggested_copy_path <- file.path(parent_dir, paste0(dataset_basename, "_updated"))
+  
+  # Count files that will be written
+  files_to_write <- 1 + length(sidecar_groups)  # dataset_description.json + sidecars
+  
+  # Build file list for display
+  files_list_items <- list(
+    tags$li(tags$code("dataset_description.json"),
+            span(paste0(" (", global_var_count, " variables)"), style = "color: #6c757d;"))
+  )
+  for (sc_path_key in names(sidecar_groups)) {
+    sc_rel <- sub(paste0(dataset_path_norm, "/"), "", sc_path_key, fixed = TRUE)
+    sc_count <- length(sidecar_groups[[sc_path_key]])
+    files_list_items <- c(files_list_items, list(
+      tags$li(tags$code(sc_rel),
+              span(paste0(" (", sc_count, " variables)"), style = "color: #6c757d;"))
+    ))
+  }
+  
+  # Unique ID for the copy-path section (for JS toggle)
+  copy_section_id <- session$ns("copy_dir_section")
+  
+  # Show preview modal
   showModal(modalDialog(
-    title = "Review Complete Dataset Description",
+    title = "Review & Save Data Dictionary",
     size = "l",
     
-    div(
-      class = "alert alert-warning",
-      style = "margin-bottom: 20px;",
-      icon("exclamation-triangle", style = "margin-right: 8px;"),
-      tags$strong("Important: "),
-      "By default, this will overwrite the existing dataset_description.json file. ",
-      "You can change the save location below if you want to preserve the original."
-    ),
+    # CSS for collapsible preview chevrons
+    tags$style(HTML("
+      details[open] > summary .sidecar-chevron {
+        transform: rotate(90deg);
+      }
+      details > summary::-webkit-details-marker { display: none; }
+      details > summary::marker { display: none; content: ''; }
+    ")),
     
     div(
-      p("Here's the complete dataset_description.json that will be saved:"),
-      
-      # Preview container
-      tags$pre(
-        style = "background-color: #f8f9fa; padding: 15px; border-radius: 5px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px;",
-        HTML(full_json_preview)
+      # Global dataset_description.json preview (collapsible, open by default)
+      tags$details(
+        open = "open",
+        style = "margin-bottom: 6px; border: 1px solid #bee5eb; border-radius: 6px; overflow: hidden;",
+        tags$summary(
+          style = paste0(
+            "padding: 10px 14px; cursor: pointer; background-color: #e8f4f8; ",
+            "display: flex; justify-content: space-between; align-items: center; ",
+            "list-style: none; user-select: none;"
+          ),
+          div(
+            style = "display: flex; align-items: center; gap: 8px;",
+            icon("chevron-right", class = "sidecar-chevron",
+                 style = "color: #3498db; font-size: 11px; transition: transform 0.2s;"),
+            icon("file-alt", style = "color: #3498db; font-size: 13px;"),
+            tags$code("dataset_description.json", style = "font-size: 12px; color: #0969da; background: transparent;")
+          ),
+          span(paste0(global_var_count, " variable", if(global_var_count != 1) "s" else ""),
+               style = "font-size: 12px; color: #6c757d;")
+        ),
+        div(
+          style = "padding: 0 14px 12px 14px; background-color: #f0f9ff;",
+          tags$pre(
+            style = "background-color: #f8f9fa; padding: 12px; border-radius: 4px; max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 11px; margin: 8px 0 0 0; border: 1px solid #e2e8f0;",
+            HTML(full_json_preview)
+          )
+        )
       ),
+      
+      # Sidecar info (if any)
+      sidecar_info_ui,
       
       # Summary stats
       div(
@@ -6933,33 +7733,73 @@ observeEvent(input$continue, {
         p(paste("Missing value codes defined:", length(dictionary_state$missing_values)))
       ),
       
-      # Save location selector
+      # --- Save options ---
+      tags$hr(style = "margin: 20px 0;"),
+      
       div(
-        style = "margin-top: 20px;",
-        tags$label("Save Location", style = "font-weight: bold; margin-bottom: 8px; display: block;"),
+        style = "margin-top: 10px;",
+        
+        # Info about what will be written
         div(
-          class = "directory-input",
-          textInput(
-            session$ns("dictionary_save_path"),
-            label = NULL,
-            value = default_save_path,
-            placeholder = "Path to save dataset_description.json",
-            width = "100%"
-          ),
-          shinySaveButton(
-            session$ns("dictionary_save_select"),
-            label = "...",
-            title = "Choose save location",
-            filetype = list(json = "json"),
-            class = "browse-btn"
-          )
+          class = "alert alert-info",
+          style = "margin-bottom: 15px;",
+          icon("info-circle", style = "margin-right: 8px;"),
+          tags$strong(paste0("Saving will update ", files_to_write, 
+                            " file", if(files_to_write > 1) "s" else "", ":")),
+          tags$ul(style = "margin: 8px 0 0 0; padding-left: 20px; font-size: 13px;",
+                  do.call(tagList, files_list_items))
         ),
-        tags$small(
-          style = "color: #6c757d; display: block; margin-top: 5px;",
-          "Change this path if you want to save to a different location without overwriting the original"
+        
+        # Copy option
+        div(
+          style = "padding: 14px; border: 1px solid #dee2e6; border-radius: 6px; background-color: #f8f9fa;",
+          
+          checkboxInput(
+            session$ns("save_to_copy"),
+            label = tagList(
+              icon("copy", style = "margin-right: 6px; color: #6c757d;"),
+              tags$strong("Save to a copy of the dataset"),
+              span(" — preserves all original files", style = "color: #6c757d;")
+            ),
+            value = FALSE
+          ),
+          
+          tags$small(
+            style = "display: block; color: #6c757d; margin-top: -8px; margin-bottom: 10px; margin-left: 24px;",
+            "Creates a full copy of the dataset directory and writes all changes there instead."
+          ),
+          
+          # Copy directory input (hidden by default)
+          div(
+            id = copy_section_id,
+            style = "display: none; margin-top: 12px; padding: 12px; background-color: #fff; border: 1px solid #dee2e6; border-radius: 4px;",
+            tags$label("Copy location:", style = "font-weight: bold; margin-bottom: 6px; display: block; font-size: 13px;"),
+            textInput(
+              session$ns("copy_dir_path"),
+              label = NULL,
+              value = suggested_copy_path,
+              width = "100%"
+            ),
+            tags$small(
+              style = "color: #6c757d; display: block; margin-top: -8px;",
+              "The entire dataset will be copied to this directory. A new directory will be created if it doesn't exist."
+            )
+          )
         )
       )
     ),
+    
+    # JS to toggle the copy dir section based on checkbox
+    tags$script(HTML(paste0("
+      $(document).on('change', '#", session$ns("save_to_copy"), "', function() {
+        var section = document.getElementById('", copy_section_id, "');
+        if (this.checked) {
+          section.style.display = 'block';
+        } else {
+          section.style.display = 'none';
+        }
+      });
+    "))),
     
     footer = tagList(
       modalButton("Back to Editing"),
@@ -6969,113 +7809,170 @@ observeEvent(input$continue, {
   ))
 })
 
-shinyFileSave(
-  input,
-  "dictionary_save_select",
-  roots = volumes,
-  session = session,
-  filetypes = c("json"),
-  restrictions = system.file(package = "base")
-)
-
-observeEvent(input$dictionary_save_select, {
-  if (!is.integer(input$dictionary_save_select)) {
-    file_selected <- parseSavePath(volumes, input$dictionary_save_select)
-    if (length(file_selected$datapath) > 0) {
-      save_path <- as.character(file_selected$datapath)
-      # Ensure it has .json extension
-      if (!grepl("\\.json$", save_path)) {
-        save_path <- paste0(save_path, ".json")
-      }
-      updateTextInput(session, "dictionary_save_path", value = save_path)
-    }
-  }
-})
-
 observeEvent(input$confirm_save_dictionary, {
-  # Use the custom save path from the input
-  json_path <- input$dictionary_save_path
-  
-  if (is.null(json_path) || json_path == "") {
-    showNotification("Please specify a save location", type = "error")
-    return()
-  }
-  
-  # Get the directory path from the file path
-  save_dir <- dirname(json_path)
-  
-  if (!dir.exists(save_dir)) {
-    showNotification("The directory does not exist. Please choose a valid location.", type = "error")
-    return()
-  }
+  save_to_copy <- isTRUE(input$save_to_copy)
   
   tryCatch({
-    # Read existing dataset_description.json for base info
-    original_json_path <- file.path(dictionary_state$dataset_path, "dataset_description.json")
+    dataset_path_norm <- normalizePath(dictionary_state$dataset_path, mustWork = FALSE)
+    global_json_norm <- normalizePath(
+      file.path(dictionary_state$dataset_path, "dataset_description.json"), mustWork = FALSE
+    )
+    global_missing_values <- dictionary_state$missing_values
     
+    # --- Determine the target directory ---
+    if (save_to_copy) {
+      copy_dir <- input$copy_dir_path
+      if (is.null(copy_dir) || trimws(copy_dir) == "") {
+        showNotification("Please specify a directory for the copy.", type = "error")
+        return()
+      }
+      copy_dir <- trimws(copy_dir)
+      copy_dir_norm <- normalizePath(copy_dir, mustWork = FALSE)
+      
+      # Don't allow copying over itself
+      if (copy_dir_norm == dataset_path_norm) {
+        showNotification("Copy directory cannot be the same as the original dataset.", type = "error")
+        return()
+      }
+      
+      # Copy entire dataset directory
+      message("\n=== COPYING DATASET ===")
+      message("  From: ", dataset_path_norm)
+      message("  To:   ", copy_dir_norm)
+      
+      if (dir.exists(copy_dir_norm)) {
+        # Directory exists — warn but proceed (files will be overwritten)
+        message("  Target directory already exists, files will be merged/overwritten")
+      }
+      
+      dir.create(copy_dir_norm, recursive = TRUE, showWarnings = FALSE)
+      
+      # Copy all files recursively
+      all_files <- list.files(dataset_path_norm, recursive = TRUE, all.files = TRUE, full.names = TRUE)
+      for (src_file in all_files) {
+        rel <- sub(paste0(dataset_path_norm, "/"), "", src_file, fixed = TRUE)
+        dest_file <- file.path(copy_dir_norm, rel)
+        dir.create(dirname(dest_file), recursive = TRUE, showWarnings = FALSE)
+        file.copy(src_file, dest_file, overwrite = TRUE)
+      }
+      message("  Copied ", length(all_files), " files")
+      message("=== END COPYING DATASET ===\n")
+      
+      target_dir <- copy_dir_norm
+    } else {
+      target_dir <- dataset_path_norm
+    }
+    
+    # --- Remap save paths to target directory ---
+    # For copy mode, we need to translate original paths to their counterparts in the copy
+    remapPath <- function(original_path) {
+      if (!save_to_copy) return(original_path)
+      rel <- sub(paste0(dataset_path_norm, "/"), "", 
+                 normalizePath(original_path, mustWork = FALSE), fixed = TRUE)
+      file.path(target_dir, rel)
+    }
+    
+    json_path <- file.path(target_dir, "dataset_description.json")
+    
+    # Partition variables by save target
+    groups <- partitionVariablesBySaveTarget(dictionary_state$variables, dictionary_state$dataset_path)
+    sidecar_groups <- groups[names(groups) != global_json_norm]
+    global_var_names <- groups[[global_json_norm]] %||% character(0)
+    
+    message("\n=== SAVING DATA DICTIONARY ===")
+    message("  Mode: ", if(save_to_copy) "copy" else "overwrite in place")
+    message("  Target dir: ", target_dir)
+    message("  Global save path: ", json_path)
+    message("  Global variables: ", length(global_var_names))
+    message("  Sidecar targets: ", length(sidecar_groups))
+    
+    # --- 1. Save sidecar-sourced variables back to their sidecar files ---
+    sidecar_save_count <- 0
+    for (sc_path in names(sidecar_groups)) {
+      sc_var_names <- sidecar_groups[[sc_path]]
+      sc_target <- remapPath(sc_path)
+      rel_path <- sub(paste0(target_dir, "/"), "", sc_target, fixed = TRUE)
+      message("  Saving to sidecar: ", rel_path, " (", length(sc_var_names), " variables)")
+      
+      # Read from the target (which is the copy if copying, or original if overwriting)
+      if (file.exists(sc_target)) {
+        sc_json <- jsonlite::read_json(sc_target, simplifyVector = FALSE)
+      } else {
+        sc_json <- list()
+      }
+      
+      # Keep existing entries that we're NOT updating
+      existing_vm <- sc_json$variableMeasured %||% list()
+      kept_entries <- list()
+      for (entry in existing_vm) {
+        if (is.character(entry) || is.atomic(entry)) {
+          if (!(as.character(entry) %in% sc_var_names)) {
+            kept_entries <- c(kept_entries, list(entry))
+          }
+        } else {
+          entry_name <- entry$name
+          if (!is.null(entry_name) && !(entry_name %in% sc_var_names)) {
+            kept_entries <- c(kept_entries, list(entry))
+          }
+        }
+      }
+      
+      # Build PropertyValue entries for our variables
+      updated_entries <- lapply(sc_var_names, function(var_name) {
+        var_info <- dictionary_state$variables[[var_name]]
+        buildPropertyValue(var_name, var_info, global_missing_values)
+      })
+      
+      sc_json$variableMeasured <- c(kept_entries, updated_entries)
+      jsonlite::write_json(sc_json, sc_target, pretty = TRUE, auto_unbox = TRUE)
+      sidecar_save_count <- sidecar_save_count + 1
+      message("    Saved ", length(sc_var_names), " variables to ", rel_path)
+    }
+    
+    # --- 2. Save global variables to dataset_description.json ---
+    original_json_path <- file.path(dictionary_state$dataset_path, "dataset_description.json")
+    # Read from original (always has the base metadata like name, authors, etc.)
     if (file.exists(original_json_path)) {
       dataset_desc <- jsonlite::fromJSON(original_json_path)
     } else {
       dataset_desc <- list()
     }
     
-    # Get global missing values
-    global_missing_values <- dictionary_state$missing_values
-    
-    # Update variableMeasured with missing values in each PropertyValue
-    dataset_desc$variableMeasured <- lapply(names(dictionary_state$variables), function(var_name) {
+    dataset_desc$variableMeasured <- lapply(global_var_names, function(var_name) {
       var_info <- dictionary_state$variables[[var_name]]
-      
-      prop_value <- list(
-        `@type` = "PropertyValue",
-        name = var_name,
-        description = if(nchar(var_info$description) > 0) var_info$description else NULL,
-        valueType = var_info$type
-      )
-      
-      # Add missing value codes to each variable
-      if (length(global_missing_values) > 0) {
-        prop_value$missingValueCodes <- global_missing_values
-      }
-      
-      if (nchar(var_info$unit) > 0) prop_value$unitText <- var_info$unit
-      if (nchar(var_info$min_value) > 0) prop_value$minValue <- var_info$min_value
-      if (nchar(var_info$max_value) > 0) prop_value$maxValue <- var_info$max_value
-      
-      if (var_info$type == "categorical" && length(var_info$categorical_values) > 0) {
-        prop_value$valueReference <- I(lapply(var_info$categorical_values, function(cat) {
-          cat_obj <- list(
-            value = cat$value,
-            label = if(nchar(cat$label) > 0 && cat$label != cat$value) cat$label else NULL,
-            description = if(nchar(cat$description) > 0) cat$description else NULL
-          )
-          cat_obj[!sapply(cat_obj, is.null)]
-        }))
-      }
-      
-      # ALWAYS include these fields
-      prop_value$required <- var_info$required %||% FALSE
-      prop_value$unique <- var_info$unique %||% FALSE
-      
-      # Only add pattern if it has a value
-      if (nchar(var_info$pattern) > 0) prop_value$pattern <- var_info$pattern
-      
-      prop_value[!sapply(prop_value, is.null)]
+      buildPropertyValue(var_name, var_info, global_missing_values)
     })
     
-    # Write to the specified path
     jsonlite::write_json(dataset_desc, json_path, pretty = TRUE, auto_unbox = TRUE)
+    message("  Saved ", length(global_var_names), " variables to ", json_path)
+    message("=== END SAVING DATA DICTIONARY ===\n")
     
-    # Store the dataset path in state for the explorer
-    state$dictionary_dataset_dir <- dictionary_state$dataset_path
+    # Store the dataset path in state for the explorer (point to the copy if we made one)
+    state$dictionary_dataset_dir <- target_dir
     
     removeModal()
-    showNotification(paste("Data dictionary saved successfully to:", json_path), type = "message")
+    
+    # Build notification message
+    total_files <- 1 + sidecar_save_count
+    if (save_to_copy) {
+      msg <- paste0("Dataset copied and dictionary saved to: ", basename(target_dir), "/ ",
+                     "(", total_files, " metadata file", if(total_files > 1) "s" else "", " updated)")
+    } else if (sidecar_save_count > 0) {
+      sidecar_var_total <- sum(sapply(sidecar_groups, length))
+      msg <- paste0("Data dictionary saved! ", length(global_var_names), 
+                     " variables to dataset_description.json, ",
+                     sidecar_var_total, " variables to ", sidecar_save_count, 
+                     " sidecar file", if(sidecar_save_count > 1) "s" else "", ".")
+    } else {
+      msg <- paste("Data dictionary saved successfully to:", json_path)
+    }
+    showNotification(msg, type = "message", duration = 6)
     
     # Navigate to dataset explorer
     session$sendCustomMessage("changeTab", list(tabName = "explorer"))
     
   }, error = function(e) {
+    message("  ERROR saving dictionary: ", e$message)
     showNotification(paste("Error saving dictionary:", e$message), type = "error")
   })
 })
@@ -7096,7 +7993,7 @@ datasetExplorerServer <- function(id, state, session) {
 # Reactive values for explorer state
 explorer_state <- reactiveValues(
   dataset_path = NULL,
-  csv_files = list(),
+  data_files = list(),
   current_file = NULL,
   current_data = NULL,
   keyword_filters = list(),
@@ -7107,7 +8004,7 @@ explorer_state <- reactiveValues(
 
 # Track if dataset is loaded
 output$dataset_loaded <- reactive({
-  !is.null(explorer_state$dataset_path) && length(explorer_state$csv_files) > 0
+  !is.null(explorer_state$dataset_path) && length(explorer_state$data_files) > 0
 })
 outputOptions(output, "dataset_loaded", suspendWhenHidden = FALSE)
 
@@ -7128,7 +8025,7 @@ shinyDirChoose(
 extractKeywordValues <- function(keyword) {
   values <- character(0)
   
-  for (file in explorer_state$csv_files) {
+  for (file in explorer_state$data_files) {
     filename <- basename(file)
     # Look for pattern like "keyword-value"
     pattern <- paste0(keyword, "-([^_]+)")
@@ -7152,22 +8049,22 @@ observeEvent(input$dataset_dir_select, {
 
 # Display dataset info
 output$dataset_info <- renderUI({
-  if (!is.null(explorer_state$dataset_path) && length(explorer_state$csv_files) > 0) {
+  if (!is.null(explorer_state$dataset_path) && length(explorer_state$data_files) > 0) {
     dataset_name <- basename(explorer_state$dataset_path)
-    file_count <- length(explorer_state$csv_files)
+    file_count <- length(explorer_state$data_files)
     
     div(
       icon("check-circle", style = "color: #28a745; margin-right: 8px;"),
       strong("Dataset loaded: "), dataset_name,
       span(style = "margin-left: 15px; color: #6c757d;",
-           paste(file_count, "CSV files found"))
+           paste(file_count, "data files found"))
     )
   } else if (!is.null(explorer_state$dataset_path)) {
     div(
       icon("exclamation-triangle", style = "color: #ffc107; margin-right: 8px;"),
       strong("Dataset path selected: "), basename(explorer_state$dataset_path),
       span(style = "margin-left: 15px; color: #dc3545;",
-           "No CSV files found in data directory")
+           "No data files found in data directory")
     )
   }
 })
@@ -7192,33 +8089,33 @@ observeEvent(input$load_dataset_btn, {
     return()
   }
   
-  # Load CSV files from data directory
+  # Load data files from data directory
   tryCatch({
     data_dir <- file.path(dataset_path, "data")
-    # Use recursive = TRUE to find CSV files in subdirectories
-    csv_files <- list.files(data_dir, pattern = "\\.csv$", recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
+    # Use recursive = TRUE to find CSV and TSV files in subdirectories
+    data_files <- list.files(data_dir, pattern = "\\.(csv|tsv)$", recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
     
-    message("Looking for CSV files in: ", data_dir)
-    message("Found files: ", paste(csv_files, collapse = ", "))
+    message("Looking for data files in: ", data_dir)
+    message("Found files: ", paste(data_files, collapse = ", "))
     
-    if (length(csv_files) == 0) {
+    if (length(data_files) == 0) {
       # Try looking without the recursive flag first to debug
       all_files <- list.files(data_dir, recursive = TRUE, full.names = TRUE)
       message("All files in data dir: ", paste(all_files, collapse = ", "))
       
-      showNotification("No CSV files found in data directory", type = "warning")
+      showNotification("No CSV or TSV files found in data directory", type = "warning")
       explorer_state$dataset_path <- dataset_path
-      explorer_state$csv_files <- character(0)
+      explorer_state$data_files <- character(0)
       return()
     }
     
     # Extract keywords from filenames
-    keywords <- extractKeywordsFromFilenames(basename(csv_files))
+    keywords <- extractKeywordsFromFilenames(basename(data_files))
     
     explorer_state$dataset_path <- dataset_path
-    explorer_state$csv_files <- csv_files
+    explorer_state$data_files <- data_files
     explorer_state$available_keywords <- keywords
-    explorer_state$current_file <- csv_files[1]
+    explorer_state$current_file <- data_files[1]
     
     # Load the first file
     loadCurrentFile()
@@ -7226,7 +8123,7 @@ observeEvent(input$load_dataset_btn, {
     # Update UI choices
     updateSelectInput(session, "keyword_select", choices = c("Select keyword..." = "", keywords))
     
-    showNotification(paste("Dataset loaded successfully!", length(csv_files), "CSV files found"), type = "message")
+    showNotification(paste("Dataset loaded successfully!", length(data_files), "data files found"), type = "message")
     
   }, error = function(e) {
     message("Error in loading dataset: ", e$message)
@@ -7261,9 +8158,9 @@ observeEvent(input$column_select, {
     # Get unique values from the selected column across all loaded files
     all_values <- character(0)
     
-    for (file in explorer_state$csv_files) {
+    for (file in explorer_state$data_files) {
       tryCatch({
-        temp_data <- read.csv(file, stringsAsFactors = FALSE)
+        temp_data <- read_data_file(file, stringsAsFactors = FALSE)
         if (input$column_select %in% names(temp_data)) {
           column_values <- as.character(temp_data[[input$column_select]])
           # Keep blank values explicitly
@@ -7351,7 +8248,7 @@ loadCurrentFile <- function() {
   if (!is.null(explorer_state$current_file) && file.exists(explorer_state$current_file)) {
     tryCatch({
       message("Loading file: ", explorer_state$current_file)
-      data <- read.csv(explorer_state$current_file, stringsAsFactors = FALSE)
+      data <- read_data_file(explorer_state$current_file, stringsAsFactors = FALSE)
       explorer_state$current_data <- data
       explorer_state$available_columns <- names(data)
       
@@ -7434,7 +8331,7 @@ applyFilters <- function() {
   }
   
   # Filter files based on keyword filters
-  matching_files <- explorer_state$csv_files
+  matching_files <- explorer_state$data_files
   
   for (filter in explorer_state$keyword_filters) {
     pattern <- paste0(filter$keyword, "-", filter$value)
@@ -7522,17 +8419,17 @@ observeEvent(input$remove_column_filter, {
 
 # File tabs
 output$file_tabs <- renderUI({
-  if (length(explorer_state$csv_files) == 0) {
+  if (length(explorer_state$data_files) == 0) {
     return(div(
       style = "color: #6c757d; font-style: italic; padding: 10px;",
-      "No CSV files loaded. Select and load a dataset above."
+      "No data files loaded. Select and load a dataset above."
     ))
   }
   
   current_file <- explorer_state$current_file
   
   # Apply keyword filters to determine which files to show
-  files_to_show <- explorer_state$csv_files
+  files_to_show <- explorer_state$data_files
   for (filter in explorer_state$keyword_filters) {
     pattern <- paste0(filter$keyword, "-", filter$value)
     files_to_show <- files_to_show[grepl(pattern, basename(files_to_show))]
@@ -7580,7 +8477,7 @@ output$variable_statistics <- renderUI({
   }
   
   # Get all files that match current keyword filters
-  files_to_analyze <- explorer_state$csv_files
+  files_to_analyze <- explorer_state$data_files
   
   # Apply keyword filters to determine which files to include
   if (length(explorer_state$keyword_filters) > 0) {
@@ -7602,7 +8499,7 @@ output$variable_statistics <- renderUI({
   
   for (file in files_to_analyze) {
     tryCatch({
-      file_data <- read.csv(file, stringsAsFactors = FALSE)
+      file_data <- read_data_file(file, stringsAsFactors = FALSE)
       
       if (input$stats_variable %in% names(file_data)) {
         # Apply column filters to this file's data
