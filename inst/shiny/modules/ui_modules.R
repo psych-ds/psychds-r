@@ -149,7 +149,7 @@ fileBrowserUI <- function(id, title, description, with_convert = FALSE) {
     description = if (with_convert) {
       tagList(
         description,
-        " If your data are not yet in CSV format, you'll need to start by ",
+        " If your data are not yet in CSV or TSV format, you'll need to start by ",
         tags$a(
           href = "https://support.microsoft.com/en-us/office/import-or-export-text-txt-or-csv-files-5250ac4c-663c-47ce-937b-339e391393ba",
           target = "_blank",
@@ -293,7 +293,7 @@ step1UI <- function(id) {
         fileBrowserUI(
           ns("files"),
           "Select Data Files",
-          "Select the CSV files that you want to include in your Psych-DS data folder.",
+          "Select the CSV or TSV files that you want to include in your Psych-DS data folder.",
           with_convert = TRUE
         )
       ),
@@ -344,7 +344,7 @@ step2UI <- function(id) {
           ),
           div(
             style = "margin-top: 10px; color: #666; font-size: 13px;",
-            "If you need to change any variable names, exit this tool and open your CSV files to make those changes directly. Then, start again with Step 1 of the \"Create Dataset\" process."
+            "If you need to change any variable names, exit this tool and open your data files to make those changes directly. Then, start again with Step 1 of the \"Create Dataset\" process."
           )
         )
       ),
@@ -415,6 +415,36 @@ step3UI <- function(id) {
       style = "margin-bottom: 20px;",
       p("Psych-DS has specific naming conventions that your data files need to follow. This naming system is going to make you explain what each piece of a filename means: you can't just say \"347B\". Instead you have to use keywords to describe what that refers to. Is that participant 347B? Session 347B? Or even participant 347, session B?"),
       p("We encourage you to use keywords from the suggested list below, but you can add your own if needed.")
+    ),
+    
+    # Optional: check if existing filenames already match
+    div(
+      style = "margin-bottom: 20px; padding: 14px; background-color: #f0f9ff; border: 1px solid #bee5eb; border-radius: 6px;",
+      div(
+        style = "display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;",
+        div(
+          style = "flex: 1; min-width: 250px;",
+          div(
+            style = "display: flex; align-items: center; gap: 8px; margin-bottom: 4px;",
+            icon("check-double", style = "color: #3498db;"),
+            tags$strong("Already renamed your files?", style = "font-size: 14px;")
+          ),
+          tags$small(
+            style = "color: #6c757d; display: block;",
+            "If your filenames already follow the Psych-DS pattern (e.g., ",
+            tags$code("subject-01_task-memory_data.csv", style = "font-size: 11px;"),
+            "), click to validate them automatically."
+          )
+        ),
+        actionButton(
+          ns("validate_existing_names"),
+          tagList(icon("magic"), "Validate Existing Filenames"),
+          class = "btn btn-info",
+          style = "white-space: nowrap;"
+        )
+      ),
+      # Results appear here
+      uiOutput(ns("validate_existing_results"))
     ),
     
     # FULL WIDTH - File Selection at top
@@ -591,6 +621,9 @@ step3UI <- function(id) {
         )
       )
     ),
+    
+    # Warning for duplicate destination filepaths
+    uiOutput(ns("duplicate_warning")),
     
     commonNavigation(ns, show_back = TRUE, continue_text = "Continue to save your dataset - no files will be saved yet")
   )
@@ -900,6 +933,7 @@ validateUI <- function(id) {
            list(key = "csv-keywords", message = list(imperative = "Check filename for keyword formatting", pastTense = "Filename uses valid keyword formatting")),
            list(key = "csv-parse", message = list(imperative = "Parse data file as CSV", pastTense = "Data file successfully parsed as CSV")),
            list(key = "csv-header", message = list(imperative = "Check for header line", pastTense = "Header line found")),
+           list(key = "csv-header-repeat", message = list(imperative = "Check for redundant column names", pastTense = "No redundant column names found")),
            list(key = "csv-nomismatch", message = list(imperative = "Check all lines for equal number of cells", pastTense = "All lines have equal number of cells")),
            list(key = "csv-rowid", message = list(imperative = "Check for any row_id columns with non-unique values", pastTense = "All row_id columns have unique values"))
          )),
@@ -1127,7 +1161,7 @@ dataDictionaryUI <- function(id) {
             icon("info-circle", style = "margin-right: 8px;"),
             "Please note that the details you set here are descriptive: they tell whoever is using the data what the values in that column ", 
             tags$em("should"), 
-            " be. That is, if you write that a variable called height should be greater than zero and should never be missing, the Psych-DS validator will still pass your dataset even if there is a negative or missing value in the actual CSV."
+            " be. That is, if you write that a variable called height should be greater than zero and should never be missing, the Psych-DS validator will still pass your dataset even if there is a negative or missing value in the actual data file."
           ),
           conditionalPanel(
             condition = paste0("output['", ns("variable_selected"), "']"),
