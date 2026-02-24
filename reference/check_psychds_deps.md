@@ -54,7 +54,7 @@ for setting up PDF capabilities.
 # Quick check
 check_psychds_deps()
 #> Checking psychds dependencies...
-#> ✓ shiny (1.12.1)
+#> ✓ shiny (1.13.0)
 #> ✓ shinydashboard (0.7.3)
 #> ✓ shinyjs (2.1.1)
 #> ✓ shinyFiles (0.9.3)
@@ -63,10 +63,10 @@ check_psychds_deps()
 #> ✓ jsonvalidate (1.5.0)
 #> ✓ dplyr (1.2.0)
 #> ✓ tidyr (1.3.2)
-#> ✓ readr (2.1.6)
+#> ✓ readr (2.2.0)
 #> 
 #> Recommended packages:
-#> ✓ httr (1.4.7)
+#> ✓ httr (1.4.8)
 #> ✓ rmarkdown (2.30)
 #> ✓ knitr (1.51)
 #> 
