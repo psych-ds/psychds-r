@@ -1,4 +1,4 @@
-# psychds [![psychds website](reference/figures/logo.png)](https://psych-ds.github.io/psychds-r/)
+# psychds [](https://psych-ds.github.io/psychds-r/)
 
 ## Overview
 
@@ -48,14 +48,6 @@ This opens a guided interface for:
 5.  Validating your dataset
 6.  Exploring your dataset
 7.  Optionally uploading to OSF
-
-### Check Dependencies
-
-Before running the app, verify that all required packages are installed:
-
-``` r
-check_psychds_deps(detailed = TRUE)
-```
 
 ## Features
 
