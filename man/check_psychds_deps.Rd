@@ -4,19 +4,26 @@
 \alias{check_psychds_deps}
 \title{Check psychds Dependencies}
 \usage{
-check_psychds_deps(install_missing = interactive())
+check_psychds_deps(
+  install_missing = interactive(),
+  detailed = FALSE,
+  check_pdf = TRUE
+)
 }
 \arguments{
-\item{detailed}{Logical. If \code{TRUE}, displays detailed information about
-installed package versions, R environment, and PDF generation capabilities.
-Default is \code{FALSE}.}
+\item{install_missing}{Logical. If \code{TRUE} (and session is interactive),
+prompts the user to install any missing packages. Defaults to
+\code{interactive()}.}
 
-\item{check_pdf}{Logical. If \code{TRUE} (and \code{detailed = TRUE}), also checks
-PDF generation capabilities. Default is \code{TRUE}.}
+\item{detailed}{Logical. If \code{TRUE}, displays additional information about
+the R environment. Default is \code{FALSE}.}
+
+\item{check_pdf}{Logical. Ignored. Retained for backwards compatibility.
+Default is \code{TRUE}.}
 }
 \value{
-Invisibly returns \code{TRUE} if all required dependencies are satisfied,
-\code{FALSE} otherwise.
+Invisibly returns a list with \code{missing_required} and
+\code{missing_recommended} character vectors.
 }
 \description{
 Verifies that all required and optional package dependencies are installed
@@ -26,9 +33,8 @@ and meet minimum version requirements.
 This function checks for:
 \itemize{
 \item Required packages: shiny, shinydashboard, shinyjs, shinyFiles, DT, jsonlite
-\item Optional packages: sortable, zip, pointblank, osfr
+\item Optional packages: httr, rmarkdown, knitr
 \item Minimum version requirements for each package
-\item PDF generation capabilities (rmarkdown, TinyTeX, pagedown)
 }
 
 If dependencies are missing, the function provides installation instructions.
@@ -37,10 +43,7 @@ If dependencies are missing, the function provides installation instructions.
 # Quick check
 check_psychds_deps()
 
-# Detailed check with all version info
+# Detailed check with environment info
 check_psychds_deps(detailed = TRUE)
 
-}
-\seealso{
-\code{\link[=setup_pdf_generation]{setup_pdf_generation()}} for setting up PDF capabilities.
 }

@@ -1,2 +1,15 @@
-^.*\.Rproj$
-^\.Rproj\.user$
+^\.github$
+^docs$
+^README-old\.md$
+^diff\.txt$
+^test\.txt$
+^lookit-analysis\.rmd$
+^\.venv$
+^CONTRIBUTING\.md$
+^SETUP_GUIDE\.md$
+^_pkgdown\.yml$
+^fix_cran_structure\.sh$
+^fix_non_ascii\.R$
+^fix_r_functions\.R$
+^test_cran_changes\.R$
+^psychds-r\.Rproj$
