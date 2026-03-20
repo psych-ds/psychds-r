@@ -68,58 +68,59 @@ is_valid_dir <- function(dir_path) {
   })
 }
 
-#' List all CSV files in a directory (recursively) - Fixed Version
+#' List all data files (CSV and TSV) in a directory (recursively)
 #'
 #' @param dir_path Character string of directory path to scan
 #' @param recursive Logical indicating whether to search recursively
-#' @return List of CSV files (relative paths from dir_path)
-#' List all CSV files in a directory (recursively) - Fixed rel_paths issue
-#'
-#' @param dir_path Character string of directory path to scan
-#' @param recursive Logical indicating whether to search recursively
-#' @return List of CSV files (relative paths from dir_path)
-list_csv_files <- function(dir_path, recursive = TRUE) {
-  # Debug output
-  message("Listing CSV files in: ", dir_path)
+#' @param verbose Logical; if TRUE prints progress messages to the console.
+#'   Default is FALSE.
+#' @return List of data files (relative paths from dir_path)
+list_data_files <- function(dir_path, recursive = TRUE, verbose = FALSE) {
+  if (verbose) message("Listing data files in: ", dir_path)
 
   # Ensure the directory exists
   if (!dir.exists(dir_path)) {
-    message("Directory does not exist or is not accessible")
+    if (verbose) message("Directory does not exist or is not accessible")
     return(character(0))
   }
 
   tryCatch({
     # Get all files (with full paths)
     all_files <- list.files(dir_path, recursive = recursive, full.names = TRUE)
-    message("Found ", length(all_files), " total files")
+    if (verbose) message("Found ", length(all_files), " total files")
 
-    # Filter for CSV files (case insensitive)
-    csv_files <- all_files[grepl("\\.csv$", all_files, ignore.case = TRUE)]
-    message("Found ", length(csv_files), " CSV files")
+    # Filter for CSV and TSV files (case insensitive)
+    data_files <- all_files[grepl("\\.(csv|tsv)$", all_files, ignore.case = TRUE)]
+    if (verbose) message("Found ", length(data_files), " data files (CSV/TSV)")
 
     # Get JUST the relative paths without using regex
     # This is the most reliable approach
-    rel_paths <- list.files(dir_path, recursive = recursive, pattern = "\\.csv$",
+    rel_paths <- list.files(dir_path, recursive = recursive, pattern = "\\.(csv|tsv)$",
                             ignore.case = TRUE, full.names = FALSE)
 
-    message("Relative paths (first 3): ", paste(head(rel_paths, 3), collapse=", "),
-            ifelse(length(rel_paths) > 3, "...", ""))
+    if (verbose) {
+      message("Relative paths (first 3): ", paste(head(rel_paths, 3), collapse=", "),
+              ifelse(length(rel_paths) > 3, "...", ""))
+    }
 
     return(rel_paths)
   }, error = function(e) {
-    message("Error listing files: ", e$message)
+    if (verbose) message("Error listing files: ", e$message)
     return(character(0))
   })
 }
 
-#' Extract column information from a CSV file
+#' Extract column information from a data file (CSV or TSV)
 #'
-#' @param file_path Path to the CSV file
+#' @param file_path Path to the data file
 #' @return Data frame with column information
-extract_csv_structure <- function(file_path) {
+extract_data_structure <- function(file_path) {
   tryCatch({
     # Read the first few rows to determine column types
-    data <- utils::read.csv(file_path, nrows = 100, stringsAsFactors = FALSE)
+    # Detect separator based on file extension
+    file_ext <- tolower(tools::file_ext(file_path))
+    sep <- if (file_ext == "tsv") "\t" else ","
+    data <- utils::read.csv(file_path, nrows = 100, stringsAsFactors = FALSE, sep = sep)
 
     # Create column info data frame
     column_info <- data.frame(
@@ -142,6 +143,20 @@ extract_csv_structure <- function(file_path) {
     # Return empty data frame if there's an error
     return(data.frame())
   })
+}
+
+#' Read a data file (CSV or TSV) with appropriate separator
+#'
+#' Detects the file type from extension and uses the correct separator.
+#' Drop-in replacement for read.csv that handles both CSV and TSV.
+#'
+#' @param file_path Path to the data file
+#' @param ... Additional arguments passed to read.csv/read.delim
+#' @return Data frame
+read_data_file <- function(file_path, ...) {
+  file_ext <- tolower(tools::file_ext(file_path))
+  sep <- if (file_ext == "tsv") "\t" else ","
+  utils::read.csv(file_path, sep = sep, ...)
 }
 
 #' Create a basic dataset_description.json template
@@ -175,18 +190,6 @@ create_dataset_description_template <- function(dataset_info) {
 generate_id <- function(prefix = "id") {
   paste0(prefix, "_", format(Sys.time(), "%Y%m%d%H%M%S"), "_", sample(1000:9999, 1))
 }
-
-js_code <- "
-Shiny.addCustomMessageHandler('refreshUI', function(message) {
-  // Force a redraw by slightly resizing elements
-  $('.file-browser').each(function() {
-    var $this = $(this);
-    var w = $this.width();
-    $this.width(w+1);
-    setTimeout(function() { $this.width(w); }, 50);
-  });
-});
-"
 
 # Helper function to create a hierarchical structure from file paths
 organize_directory_hierarchy <- function(files) {
@@ -261,10 +264,12 @@ organize_directory_hierarchy <- function(files) {
 #' even if directories are empty.
 #'
 #' @param directory Path to the dataset directory
+#' @param verbose Logical; if TRUE prints progress messages to the console.
+#'   Default is FALSE.
 #' @return List representing the file tree
-buildFileTree <- function(directory) {
+buildFileTree <- function(directory, verbose = FALSE) {
   directory <- normalizePath(directory, mustWork = TRUE)
-  message("Building file tree for: ", directory)
+  if (verbose) message("Building file tree for: ", directory)
   
   # Get all files first
   all_files <- list.files(directory, recursive = TRUE, full.names = TRUE)
@@ -272,7 +277,7 @@ buildFileTree <- function(directory) {
   all_dirs <- all_dirs[all_dirs != directory]
   
   total_files <- length(all_files)
-  message("Found ", total_files, " files to process")
+  if (verbose) message("Found ", total_files, " files to process")
   
   # Helper to check binary files
   isLikelyBinary <- function(path) {
@@ -294,7 +299,7 @@ buildFileTree <- function(directory) {
     }
     
     # Read CSV files completely
-    if (file_ext == "csv") {
+    if (file_ext == "csv" || file_ext == "tsv") {
       tryCatch({
         # Read the entire CSV file
         content <- readLines(path, warn = FALSE, encoding = "UTF-8")
@@ -308,7 +313,7 @@ buildFileTree <- function(directory) {
         return(paste(content, collapse = "\n"))
         
       }, error = function(e) {
-        message("Error reading CSV: ", basename(path), " - ", e$message)
+        if (verbose) message("Error reading data file: ", basename(path), " - ", e$message)
         return(paste0("ERROR: ", e$message))
       })
     }
@@ -435,7 +440,7 @@ buildFileTree <- function(directory) {
     }
   }
   
-  message("Successfully processed all ", total_files, " files")
+  if (verbose) message("Successfully processed all ", total_files, " files")
   
   # Clean up memory for large datasets
   if (total_files > 50) {
@@ -483,163 +488,3 @@ summarizeDirectory <- function(contents) {
   ))
 }
 
-#' Print a comprehensive visualization of the file tree
-#'
-#' @param tree File tree structure
-#' @param prefix Prefix for indentation (used in recursion)
-#' @param isLast Whether the current item is the last in its list (used in recursion)
-#' @return None, prints to console
-printFileTree <- function(tree, prefix = "", isLast = TRUE) {
-  if (is.null(tree) || length(tree) == 0) return()
-  
-  # Get all names and iterate
-  names <- names(tree)
-  for (i in seq_along(names)) {
-    name <- names[i]
-    item <- tree[[name]]
-    isLastItem <- (i == length(names))
-    
-    # Print the current item
-    cat(prefix)
-    if (isLast && isLastItem) {
-      cat("└── ")
-      newPrefix <- paste0(prefix, "    ")
-    } else {
-      cat("├── ")
-      newPrefix <- paste0(prefix, "│   ")
-    }
-    
-    if (identical(item$type, "directory")) {
-      cat(crayon::blue(name), "\n")
-      # Recursively print contents
-      printFileTree(item[["contents"]], newPrefix, isLastItem)
-    } else {
-      cat(name, "\n")
-    }
-  }
-}
-
-#' Validate the file tree structure
-#'
-#' @param fileTree The file tree to validate
-#' @return Logical indicating if the structure is valid
-validateFileTree <- function(fileTree) {
-  # Count files and directories
-  fileCount <- 0
-  dirCount <- 0
-  nestedFileCount <- 0
-  
-  # Helper function to recursively count items
-  countItems <- function(node) {
-    if (is.null(node) || length(node) == 0) return()
-    
-    for (name in names(node)) {
-      item <- node[[name]]
-      if (identical(item$type, "directory")) {
-        dirCount <<- dirCount + 1
-        # Recursively count items in the directory
-        countItems(item[["contents"]])
-      } else if (identical(item$type, "file")) {
-        if (identical(node, fileTree)) {
-          fileCount <<- fileCount + 1
-        } else {
-          nestedFileCount <<- nestedFileCount + 1
-        }
-      }
-    }
-  }
-  
-  # Count everything
-  countItems(fileTree)
-  
-  # Print results
-  cat("File Tree Validation Results:\n")
-  cat("----------------------------\n")
-  cat("Top-level directories:", dirCount, "\n")
-  cat("Top-level files:", fileCount, "\n")
-  cat("Nested files:", nestedFileCount, "\n")
-  cat("Total items:", dirCount + fileCount + nestedFileCount, "\n\n")
-  
-  # Show first level of tree
-  cat("Top-level structure:\n")
-  for (name in names(fileTree)) {
-    item <- fileTree[[name]]
-    if (identical(item$type, "directory")) {
-      itemCount <- length(item[["contents"]])
-      cat(sprintf("📁 %s (%d items)\n", name, itemCount))
-    } else {
-      cat(sprintf("📄 %s\n", name))
-    }
-  }
-  
-  # Return TRUE if structure looks good
-  return(dirCount > 0 && (fileCount + nestedFileCount) > 0)
-}
-
-createTestFileTree <- function() {
-  # This time using string values instead of functions
-  fileTree <- list(
-    `dataset_description.json` = list(
-      type = "file",
-      file = list(
-        name = "dataset_description.json",
-        path = "/dataset_description.json",
-        text = '{"name":"Test Dataset","description":"A test dataset","@type":"Dataset","@context":"https://schema.org","variableMeasured":[{"name":"id"},{"name":"value"}]}'
-      )
-    ),
-    
-    `README.md` = list(
-      type = "file",
-      file = list(
-        name = "README.md",
-        path = "/README.md",
-        text = '# Test Dataset\nThis is a test dataset for validation.'
-      )
-    ),
-    
-    `CHANGES.md` = list(
-      type = "file",
-      file = list(
-        name = "CHANGES.md",
-        path = "/CHANGES.md",
-        text = '# Changes\n- Initial version'
-      )
-    ),
-    
-    `data` = list(
-      type = "directory",
-      contents = list(
-        `sub-01_task-test_data.csv` = list(
-          type = "file",
-          file = list(
-            name = "sub-01_task-test_data.csv",
-            path = "/data/sub-01_task-test_data.csv",
-            text = 'id,value\n1,10\n2,20'
-          )
-        )
-      )
-    ),
-    
-    `analysis` = list(
-      type = "directory",
-      contents = list()
-    ),
-    
-    `results` = list(
-      type = "directory",
-      contents = list()
-    ),
-    
-    `materials` = list(
-      type = "directory",
-      contents = list()
-    ),
-    
-    `documentation` = list(
-      type = "directory",
-      contents = list()
-    )
-  )
-  
-  return(fileTree)
-}
