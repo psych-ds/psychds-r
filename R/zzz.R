@@ -40,9 +40,7 @@
     psychds.force_browser = FALSE,
     psychds.max_file_size = 100,  # MB
     psychds.validation_level = "standard",
-    psychds.debug = FALSE,
-    # ADD THIS NEW OPTION
-    psychds.pdf_check_done = FALSE  # Track if we've checked PDF this session
+    psychds.debug = FALSE
   )
   
   # Only set options that haven't been set already
@@ -56,7 +54,7 @@
 }
 
 #' Startup Environment Check (MODIFIED VERSION)
-#' @noRd
+#' @keywords internal
 startup_check <- function() {
   
   # Don't run checks if explicitly disabled
@@ -120,54 +118,6 @@ startup_check <- function() {
   }
   
   # ============================================================================
-  # 5. NEW: Check PDF generation capabilities (only once per session)
-  # ============================================================================
-  if (!isTRUE(getOption("psychds.pdf_check_done", FALSE))) {
-    
-    # Simple check - don't load the full function, just do basic detection
-    pdf_available <- FALSE
-    pdf_method <- NULL
-    
-    # Check for LaTeX
-    if (Sys.which("pdflatex") != "") {
-      pdf_available <- TRUE
-      
-      # Check if it's TinyTeX
-      if (requireNamespace("tinytex", quietly = TRUE)) {
-        if (tryCatch(tinytex::is_tinytex(), error = function(e) FALSE)) {
-          pdf_method <- "TinyTeX"
-        } else {
-          pdf_method <- "System LaTeX"
-        }
-      } else {
-        pdf_method <- "System LaTeX"
-      }
-    }
-    
-    # Check for pagedown as alternative
-    if (!pdf_available && requireNamespace("pagedown", quietly = TRUE)) {
-      pdf_available <- TRUE
-      pdf_method <- "pagedown (HTML to PDF)"
-    }
-    
-    # Check if rmarkdown is available (needed for nice formatting)
-    has_rmarkdown <- requireNamespace("rmarkdown", quietly = TRUE)
-    
-    # Add appropriate message
-    if (!pdf_available) {
-      # Only show message if user might want PDF generation
-      # Don't overwhelm with messages on every startup
-      warnings <- c(warnings,
-                   "PDF generation not available. Run setup_pdf_generation() to enable.")
-    } else if (!has_rmarkdown) {
-      warnings <- c(warnings,
-                   sprintf("Using %s for PDFs. Install 'rmarkdown' for better formatting.", pdf_method))
-    }
-    
-    # Mark that we've done the PDF check this session
-    options(psychds.pdf_check_done = TRUE)
-  }
-  # ============================================================================
   
   # Display warnings if any
   if (length(warnings) > 0) {
@@ -177,21 +127,7 @@ startup_check <- function() {
       "\n"
     )
   } else {
-    # ============================================================================
-    # NEW: Show success message including PDF status
-    # ============================================================================
-    if (isTRUE(getOption("psychds.pdf_check_done", FALSE))) {
-      # We already checked, so we can show status
-      
-      # Do a quick re-check for the success message
-      if (Sys.which("pdflatex") != "") {
-        packageStartupMessage("✓ All dependencies satisfied (PDF generation available)")
-      } else if (requireNamespace("pagedown", quietly = TRUE)) {
-        packageStartupMessage("✓ All dependencies satisfied (PDF via pagedown)")
-      } else {
-        packageStartupMessage("✓ Core dependencies satisfied (HTML output only)")
-      }
-    }
+    packageStartupMessage("\u2713 All dependencies satisfied")
   }
   
   invisible()
@@ -208,131 +144,8 @@ startup_check <- function() {
   op.psychds <- op[grep("^psychds\\.", names(op))]
   if (length(op.psychds) > 0) {
     # Set them to NULL to remove
-    options(setNames(vector("list", length(op.psychds)), names(op.psychds)))
+    options(stats::setNames(vector("list", length(op.psychds)), names(op.psychds)))
   }
   
   invisible()
-}
-
-#' Setup PDF Generation Capabilities
-#'
-#' Interactive setup wizard for enabling PDF generation in psychds.
-#' Guides users through installing TinyTeX or pagedown.
-#'
-#' @param force Logical. If `TRUE`, runs setup even if PDF generation is
-#'   already available. Default is `FALSE`.
-#'
-#' @return Invisibly returns `TRUE` if PDF generation is successfully
-#'   configured, `FALSE` otherwise.
-#'
-#' @details
-#' PDF generation requires either:
-#' \itemize{
-#'   \item TinyTeX (recommended): A lightweight LaTeX distribution
-#'   \item pagedown: An alternative that uses Chrome/Chromium
-#' }
-#'
-#' If neither is available, data dictionaries will be generated as HTML files
-#' which can be printed to PDF from any web browser.
-#'
-#' @seealso [check_psychds_deps()] for checking current capabilities.
-#'
-#' @examples
-#' \dontrun{
-#' # Run interactive setup
-#' setup_pdf_generation()
-#'
-#' # Force re-setup even if already configured
-#' setup_pdf_generation(force = TRUE)
-#' }
-#'
-#' @export
-
-setup_pdf_generation <- function(method = "auto") {
-  
-  # Check current status
-  has_latex <- Sys.which("pdflatex") != ""
-  has_tinytex <- requireNamespace("tinytex", quietly = TRUE) && 
-                 tryCatch(tinytex::is_tinytex(), error = function(e) FALSE)
-  has_pagedown <- requireNamespace("pagedown", quietly = TRUE)
-  has_rmarkdown <- requireNamespace("rmarkdown", quietly = TRUE)
-  
-  # If everything is already set up
-  if (has_latex && has_rmarkdown) {
-    message("✓ PDF generation is already configured!")
-    if (has_tinytex) {
-      message("  Using: TinyTeX")
-    } else {
-      message("  Using: System LaTeX")
-    }
-    return(invisible(TRUE))
-  }
-  
-  message("=== Setting up PDF generation for psychds ===\n")
-  
-  # Step 1: Ensure rmarkdown is installed
-  if (!has_rmarkdown) {
-    message("Step 1: Installing rmarkdown package...")
-    install.packages("rmarkdown")
-    message("✓ rmarkdown installed\n")
-  } else {
-    message("✓ Step 1: rmarkdown already installed\n")
-  }
-  
-  # Step 2: Set up PDF engine
-  if (!has_latex && !has_pagedown) {
-    
-    if (method == "auto" && interactive()) {
-      message("Step 2: Choose PDF generation method:\n")
-      message("  1. TinyTeX (recommended, ~100MB)")
-      message("     Pros: Best quality, handles complex formatting")
-      message("     Cons: Requires download\n")
-      
-      message("  2. pagedown (alternative, uses Chrome)")
-      message("     Pros: No LaTeX needed, quick setup")
-      message("     Cons: Requires Chrome/Chromium\n")
-      
-      choice <- readline("Enter choice (1 or 2): ")
-      method <- if (choice == "2") "pagedown" else "tinytex"
-    }
-    
-    if (method == "tinytex") {
-      message("\nInstalling TinyTeX...")
-      message("This will download ~100MB and may take a few minutes.\n")
-      
-      if (!requireNamespace("tinytex", quietly = TRUE)) {
-        install.packages("tinytex")
-      }
-      
-      tinytex::install_tinytex()
-      
-      # Verify
-      if (tinytex::is_tinytex()) {
-        message("\n✓ TinyTeX installed successfully!")
-      } else {
-        message("\n⚠ TinyTeX installation may have issues.")
-        message("Try running: tinytex::reinstall_tinytex()")
-      }
-      
-    } else if (method == "pagedown") {
-      message("\nInstalling pagedown...")
-      install.packages("pagedown")
-      message("✓ pagedown installed successfully!")
-      message("\nNote: pagedown requires Chrome or Chromium browser.")
-    }
-    
-  } else if (has_latex) {
-    message("✓ Step 2: LaTeX already available\n")
-  } else if (has_pagedown) {
-    message("✓ Step 2: pagedown already available\n")
-  }
-  
-  message("\n=== Setup complete! ===")
-  message("You can now generate PDF data dictionaries.")
-  message("\nTest it with: run_psych_ds_app()")
-  
-  # Update the session option so we don't check again
-  options(psychds.pdf_check_done = TRUE)
-  
-  invisible(TRUE)
 }

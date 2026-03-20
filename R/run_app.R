@@ -117,39 +117,39 @@ run_psych_ds_app <- function(
 #' Verifies that all required and optional package dependencies are installed
 #' and meet minimum version requirements.
 #'
-#' @param detailed Logical. If `TRUE`, displays detailed information about
-#'   installed package versions, R environment, and PDF generation capabilities.
-#'   Default is `FALSE`.
-#' @param check_pdf Logical. If `TRUE` (and `detailed = TRUE`), also checks
-
-#'   PDF generation capabilities. Default is `TRUE`.
+#' @param install_missing Logical. If `TRUE` (and session is interactive),
+#'   prompts the user to install any missing packages. Defaults to
+#'   `interactive()`.
+#' @param detailed Logical. If `TRUE`, displays additional information about
+#'   the R environment. Default is `FALSE`.
+#' @param check_pdf Logical. Ignored. Retained for backwards compatibility.
+#'   Default is `TRUE`.
 #'
-#' @return Invisibly returns `TRUE` if all required dependencies are satisfied,
-#'   `FALSE` otherwise.
+#' @return Invisibly returns a list with `missing_required` and
+#'   `missing_recommended` character vectors.
 #'
 #' @details
 #' This function checks for:
 #' \itemize{
 #'   \item Required packages: shiny, shinydashboard, shinyjs, shinyFiles, DT, jsonlite
-#'   \item Optional packages: sortable, zip, pointblank, osfr
+#'   \item Optional packages: httr, rmarkdown, knitr
 #'   \item Minimum version requirements for each package
-#'   \item PDF generation capabilities (rmarkdown, TinyTeX, pagedown)
 #' }
 #'
 #' If dependencies are missing, the function provides installation instructions.
-#'
-#' @seealso [setup_pdf_generation()] for setting up PDF capabilities.
 #'
 #' @examples
 #' # Quick check
 #' check_psychds_deps()
 #'
-#' # Detailed check with all version info
+#' # Detailed check with environment info
 #' check_psychds_deps(detailed = TRUE)
 #'
 #' @export
 
-check_psychds_deps <- function(install_missing = interactive()) {
+check_psychds_deps <- function(install_missing = interactive(),
+                              detailed = FALSE,
+                              check_pdf = TRUE) {
   
   # Core required packages
   required_packages <- c(
@@ -165,12 +165,6 @@ check_psychds_deps <- function(install_missing = interactive()) {
     "knitr"       # For documentation
   )
   
-  # PDF generation packages
-  pdf_packages <- c(
-    "tinytex",    # For LaTeX-based PDF
-    "pagedown"    # For Chrome-based PDF
-  )
-  
   message("Checking psychds dependencies...\n")
   
   # Check required packages
@@ -178,10 +172,10 @@ check_psychds_deps <- function(install_missing = interactive()) {
   for (pkg in required_packages) {
     if (!requireNamespace(pkg, quietly = TRUE)) {
       missing_required <- c(missing_required, pkg)
-      message("✗ ", pkg, " - MISSING (required)")
+      message("\u2717 ", pkg, " - MISSING (required)")
     } else {
-      ver <- packageVersion(pkg)
-      message("✓ ", pkg, " (", ver, ")")
+      ver <- utils::packageVersion(pkg)
+      message("\u2713 ", pkg, " (", ver, ")")
     }
   }
   
@@ -191,41 +185,30 @@ check_psychds_deps <- function(install_missing = interactive()) {
   for (pkg in recommended_packages) {
     if (!requireNamespace(pkg, quietly = TRUE)) {
       missing_recommended <- c(missing_recommended, pkg)
-      message("○ ", pkg, " - not installed (optional)")
+      message("o ", pkg, " - not installed (optional)")
     } else {
-      ver <- packageVersion(pkg)
-      message("✓ ", pkg, " (", ver, ")")
+      ver <- utils::packageVersion(pkg)
+      message("\u2713 ", pkg, " (", ver, ")")
     }
   }
   
-  # Check PDF capabilities
-  message("\nPDF Generation:")
-  has_latex <- Sys.which("pdflatex") != ""
-  has_tinytex <- requireNamespace("tinytex", quietly = TRUE) && 
-                 tryCatch(tinytex::is_tinytex(), error = function(e) FALSE)
-  has_pagedown <- requireNamespace("pagedown", quietly = TRUE)
-  
-  if (has_tinytex) {
-    message("✓ TinyTeX installed")
-  } else if (has_latex) {
-    message("✓ System LaTeX available")
-  } else if (has_pagedown) {
-    message("✓ pagedown available (HTML to PDF)")
-  } else {
-    message("○ No PDF generation available")
-    message("  Run setup_pdf_generation() to enable")
+  # Detailed output (only when detailed = TRUE)
+  if (detailed) {
+    message("\nEnvironment:")
+    message("  R version: ", getRversion())
+    message("  Platform: ", .Platform$OS.type)
   }
   
   # Summary and installation
   if (length(missing_required) > 0) {
-    message("\n⚠ Missing required packages: ", 
+    message("\n\u26a0 Missing required packages: ", 
             paste(missing_required, collapse = ", "))
     
     if (install_missing) {
       response <- readline("Install missing required packages? [Y/n]: ")
       if (tolower(response) != "n") {
-        install.packages(missing_required)
-        message("✓ Required packages installed!")
+        utils::install.packages(missing_required)
+        message("\u2713 Required packages installed!")
       }
     } else {
       message("\nTo install missing packages, run:")
@@ -233,19 +216,18 @@ check_psychds_deps <- function(install_missing = interactive()) {
               paste(missing_required, collapse = '", "'), '"))')
     }
   } else {
-    message("\n✓ All required dependencies are installed!")
+    message("\n\u2713 All required dependencies are installed!")
   }
   
   if (length(missing_recommended) > 0 && install_missing) {
     response <- readline("\nInstall recommended packages? [y/N]: ")
     if (tolower(response) == "y") {
-      install.packages(missing_recommended)
+      utils::install.packages(missing_recommended)
     }
   }
   
   invisible(list(
     missing_required = missing_required,
-    missing_recommended = missing_recommended,
-    pdf_available = has_latex || has_pagedown
+    missing_recommended = missing_recommended
   ))
 }

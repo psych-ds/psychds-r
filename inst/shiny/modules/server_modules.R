@@ -5,12 +5,6 @@
 #' This file contains server-side logic for the modular UI components.
 #' Each module handles its own state and communicates with the global state.
 #' 
-# =============================================================================
-# Required Libraries for Variable Analysis
-# =============================================================================
-library(dplyr)
-library(readr)
-library(stringr)
 
 # =============================================================================
 # HTML Data Dictionary Generator
@@ -117,7 +111,6 @@ generate_html_dictionary <- function(dictionary_data,
   dir.create(dirname(output_file), showWarnings = FALSE, recursive = TRUE)
   html_content <- generate_html_content(dictionary_data, dataset_info, include_stats)
   writeLines(html_content, output_file, useBytes = TRUE)
-  message("HTML dictionary generated: ", output_file)
   return(output_file)
 }
 
@@ -1339,7 +1332,9 @@ directoryInputServer <- function(id, state, session) {
       if (!is.null(state$project_dir) && state$project_dir != "" && path_value() == "") {
         updateTextInput(session, "path", value = state$project_dir)
         path_value(state$project_dir)
-        message("Restored directory path from state: ", state$project_dir)
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("Restored directory path from state: ", state$project_dir)
+        }
       }
     })
 
@@ -1348,7 +1343,9 @@ directoryInputServer <- function(id, state, session) {
       tryCatch({
         if (!is.null(input$select)) {
           selected_dir <- parseDirPath(volumes, input$select)
-          message("Directory selected: ", selected_dir)
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("Directory selected: ", selected_dir)
+          }
 
           if (length(selected_dir) > 0 && selected_dir != "") {
             # Update input field
@@ -1368,7 +1365,9 @@ directoryInputServer <- function(id, state, session) {
 
     # Also monitor manual changes to the path input
     observeEvent(input$path, {
-      message("Path input changed to: ", input$path)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("Path input changed to: ", input$path)
+      }
 
       if (input$path != "" && input$path != path_value()) {
         # Update reactive value
@@ -1498,7 +1497,9 @@ fileBrowserServer <- function(id, state, dir_path, session) {
       dir_changed <- is.null(last) || current_dir != last
       
       if (dir_changed && !is.null(last)) {
-        message("FILE BROWSER: Directory changed from '", last, "' to '", current_dir, "' - clearing selection")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("FILE BROWSER: Directory changed from '", last, "' to '", current_dir, "' - clearing selection")
+        }
         
         # Clear selection
         selected(character(0))
@@ -1510,7 +1511,9 @@ fileBrowserServer <- function(id, state, dir_path, session) {
         restored(FALSE)
       } else if (!dir_changed && !restored() && !is.null(state$data_files) && length(state$data_files) > 0) {
         # Same directory and haven't restored yet - restore selection from state
-        message("FILE BROWSER: Restoring selection from state: ", length(state$data_files), " files")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("FILE BROWSER: Restoring selection from state: ", length(state$data_files), " files")
+        }
         selected(state$data_files)
         restored(TRUE)
       }
@@ -1522,7 +1525,9 @@ fileBrowserServer <- function(id, state, dir_path, session) {
     # Handle file selection
     observeEvent(input$toggle_file, {
       file <- input$toggle_file
-      message("Toggle file: ", file)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("Toggle file: ", file)
+      }
 
       current <- selected()
       if (file %in% current) {
@@ -1538,7 +1543,9 @@ fileBrowserServer <- function(id, state, dir_path, session) {
     # Handle directory selection
     observeEvent(input$select_dir, {
       dir_prefix <- input$select_dir
-      message("Select directory: ", dir_prefix)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("Select directory: ", dir_prefix)
+      }
 
       # Get all files
       all_files <- list_data_files(dir_path())
@@ -1564,7 +1571,9 @@ fileBrowserServer <- function(id, state, dir_path, session) {
     
     # Handle Select All button
     observeEvent(input$select_all, {
-      message("Select all files clicked")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("Select all files clicked")
+      }
       
       # Get all files in the current directory
       all_files <- list_data_files(dir_path())
@@ -1578,7 +1587,9 @@ fileBrowserServer <- function(id, state, dir_path, session) {
     
     # Handle Deselect All button
     observeEvent(input$deselect_all, {
-      message("Deselect all files clicked")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("Deselect all files clicked")
+      }
       
       # Clear selection
       selected(character(0))
@@ -1590,7 +1601,9 @@ fileBrowserServer <- function(id, state, dir_path, session) {
     # Render the file browser with complete hierarchy
     output$file_container <- renderUI({
       current_dir <- dir_path()
-      message("Rendering file container for: ", current_dir)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("Rendering file container for: ", current_dir)
+      }
 
       # If no directory selected
       if (is.null(current_dir) || current_dir == "") {
@@ -2641,9 +2654,15 @@ step3Server <- function(id, state, session) {
                        !all(current_files == last_files)
       
       if (files_changed) {
-        message("STEP3: Data files have changed - resetting state")
-        message("  Old files: ", if (!is.null(last_files)) paste(last_files, collapse = ", ") else "NULL")
-        message("  New files: ", paste(current_files, collapse = ", "))
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("STEP3: Data files have changed - resetting state")
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("  Old files: ", if (!is.null(last_files)) paste(last_files, collapse = ", ") else "NULL")
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("  New files: ", paste(current_files, collapse = ", "))
+        }
         
         # Clear all state to force re-initialization
         initialized(FALSE)
@@ -2720,12 +2739,18 @@ step3Server <- function(id, state, session) {
         return()
       }
       
-      message("STEP3 INIT: Project dir: ", state$project_dir)
-      message("STEP3 INIT: Number of data files: ", length(state$data_files))
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("STEP3 INIT: Project dir: ", state$project_dir)
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("STEP3 INIT: Number of data files: ", length(state$data_files))
+      }
       
       # Check if we have existing mappings from state (returning to step 3)
       if (!is.null(state$file_mappings) && length(state$file_mappings) > 0) {
-        message("STEP3 INIT: Restoring existing mappings from state")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("STEP3 INIT: Restoring existing mappings from state")
+        }
         file_mappings(state$file_mappings)
         
         # Restore constant columns analysis
@@ -2752,7 +2777,9 @@ step3Server <- function(id, state, session) {
         })
 
         file_mappings(mappings)
-        message("STEP3 INIT: Created new mappings")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("STEP3 INIT: Created new mappings")
+        }
 
         # Analyze files for columns with constant values (for auto-naming)
         analyzeConstantColumns()
@@ -2760,14 +2787,18 @@ step3Server <- function(id, state, session) {
         # Set initial file selection
         if (length(mappings) > 0) {
           current_file(1)
-          message("STEP3 INIT: Set current file to index 1")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("STEP3 INIT: Set current file to index 1")
+          }
         }
       }
       
       # Mark as initialized and remember which files we initialized with
       initialized(TRUE)
       last_data_files(state$data_files)
-      message("STEP3 INIT: Initialization complete for ", length(state$data_files), " files")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("STEP3 INIT: Initialization complete for ", length(state$data_files), " files")
+      }
     })
 
     # Note: The old "Handle returning to step 3" observer has been removed
@@ -3146,8 +3177,12 @@ step3Server <- function(id, state, session) {
       error_count <- 0
       filenames_generated <- 0
       
-      message("AUTO-NAME: Processing ", length(file_indices), " files")
-      message("AUTO-NAME: Keyword: ", keyword_name, ", Column: ", column_name)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("AUTO-NAME: Processing ", length(file_indices), " files")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("AUTO-NAME: Keyword: ", keyword_name, ", Column: ", column_name)
+      }
       
       withProgress(message = "Applying auto-naming...", value = 0, {
         for (i in seq_along(file_indices)) {
@@ -3186,7 +3221,9 @@ step3Server <- function(id, state, session) {
             next
           }
           
-          message("AUTO-NAME: File ", file_idx, " - value: ", keyword_value)
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("AUTO-NAME: File ", file_idx, " - value: ", keyword_value)
+          }
           
           # Update or add keyword
           file_keywords <- mappings[[file_idx]]$keywords
@@ -3245,16 +3282,22 @@ step3Server <- function(id, state, session) {
             mappings[[file_idx]]$new <- filename
             filenames_generated <- filenames_generated + 1
             
-            message("AUTO-NAME: Generated filename: ", filename)
+            if (isTRUE(getOption("psychds.verbose"))) {
+              message("AUTO-NAME: Generated filename: ", filename)
+            }
           } else {
-            message("AUTO-NAME: Incomplete keywords for file ", file_idx)
+            if (isTRUE(getOption("psychds.verbose"))) {
+              message("AUTO-NAME: Incomplete keywords for file ", file_idx)
+            }
           }
           
           success_count <- success_count + 1
         }
       })
       
-      message("AUTO-NAME: Completed. Success: ", success_count, ", Errors: ", error_count, ", Filenames: ", filenames_generated)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("AUTO-NAME: Completed. Success: ", success_count, ", Errors: ", error_count, ", Filenames: ", filenames_generated)
+      }
       
       file_mappings(mappings)
       ui_trigger(ui_trigger() + 1)
@@ -3287,12 +3330,16 @@ step3Server <- function(id, state, session) {
     # Render the file mapping interface with subdirectory display
     output$file_mapping_rows <- renderUI({
       trigger_value <- ui_trigger()
-      message("RENDER file_mapping_rows - trigger value: ", trigger_value)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("RENDER file_mapping_rows - trigger value: ", trigger_value)
+      }
       
       mappings <- file_mappings()
       selected <- selected_files()
       
-      message("RENDER: Number of mappings: ", length(mappings))
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("RENDER: Number of mappings: ", length(mappings))
+      }
       
       if (length(mappings) == 0) {
         return(div(class = "text-center text-muted", "No files selected"))
@@ -3300,7 +3347,9 @@ step3Server <- function(id, state, session) {
 
       # Log first few files for debugging
       for (i in 1:min(3, length(mappings))) {
-        message("  File ", i, " - original: ", mappings[[i]]$original, " - new: ", mappings[[i]]$new)
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("  File ", i, " - original: ", mappings[[i]]$original, " - new: ", mappings[[i]]$new)
+        }
       }
 
       # Compute current duplicate paths for highlighting
@@ -3442,7 +3491,9 @@ step3Server <- function(id, state, session) {
     # Handle file selection and keyword restoration
     observeEvent(input$select_file, {
       new_file_index <- input$select_file
-      message("FILE SELECT: Switching to file index: ", new_file_index)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("FILE SELECT: Switching to file index: ", new_file_index)
+      }
       
       current_file(new_file_index)
 
@@ -3451,21 +3502,29 @@ step3Server <- function(id, state, session) {
       if (new_file_index <= length(mappings)) {
         file_info <- mappings[[new_file_index]]
         
-        message("FILE SELECT: File ", new_file_index, " has ", length(file_info$keywords), " keywords")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("FILE SELECT: File ", new_file_index, " has ", length(file_info$keywords), " keywords")
+        }
         
         # Restore keywords for this file
         keywords_to_restore <- NULL
         
         if (length(file_info$keywords) > 0) {
           keywords_to_restore <- file_info$keywords
-          message("FILE SELECT: Restoring from keywords field")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("FILE SELECT: Restoring from keywords field")
+          }
         } else if (length(file_info$partial_keywords) > 0) {
           keywords_to_restore <- file_info$partial_keywords
-          message("FILE SELECT: Restoring from partial_keywords field")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("FILE SELECT: Restoring from partial_keywords field")
+          }
         }
         
         if (!is.null(keywords_to_restore)) {
-          message("FILE SELECT: Setting ", length(keywords_to_restore), " keywords")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("FILE SELECT: Setting ", length(keywords_to_restore), " keywords")
+          }
           selected_keywords(keywords_to_restore)
           
           # Update input fields with keyword values
@@ -3476,7 +3535,9 @@ step3Server <- function(id, state, session) {
             }
           }
         } else {
-          message("FILE SELECT: No keywords to restore")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("FILE SELECT: No keywords to restore")
+          }
           selected_keywords(list())
         }
       }
@@ -3520,7 +3581,9 @@ step3Server <- function(id, state, session) {
     # Handle removing a keyword
     observeEvent(input$remove_keyword, {
       keyword_index <- input$remove_keyword
-      message("REMOVE KEYWORD: Removing keyword at index ", keyword_index)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("REMOVE KEYWORD: Removing keyword at index ", keyword_index)
+      }
       
       keywords <- selected_keywords()
       
@@ -3529,14 +3592,18 @@ step3Server <- function(id, state, session) {
         keywords <- keywords[-keyword_index]
         selected_keywords(keywords)
         updateKeywordMapping()
-        message("REMOVE KEYWORD: Removed '", removed_name, "'. Remaining keywords: ", length(keywords))
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("REMOVE KEYWORD: Removed '", removed_name, "'. Remaining keywords: ", length(keywords))
+        }
       }
     }, ignoreInit = TRUE)
     
     # Handle keyword reordering via drag and drop
     observeEvent(input$keyword_order, {
       new_order <- input$keyword_order
-      message("REORDER KEYWORDS: New order received: ", paste(new_order, collapse = ", "))
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("REORDER KEYWORDS: New order received: ", paste(new_order, collapse = ", "))
+      }
       
       keywords <- selected_keywords()
       if (length(keywords) == 0 || length(new_order) == 0) return()
@@ -3558,7 +3625,9 @@ step3Server <- function(id, state, session) {
       if (length(reordered) == length(keywords)) {
         selected_keywords(reordered)
         updateKeywordMapping()
-        message("REORDER KEYWORDS: Successfully reordered ", length(reordered), " keywords")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("REORDER KEYWORDS: Successfully reordered ", length(reordered), " keywords")
+        }
       }
     }, ignoreInit = TRUE)
 
@@ -3566,7 +3635,9 @@ step3Server <- function(id, state, session) {
     addKeyword <- function(name, display) {
       keywords <- selected_keywords()
       
-      message("ADD KEYWORD: Adding '", name, "'")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("ADD KEYWORD: Adding '", name, "'")
+      }
 
       # Check for duplicates
       if (!any(sapply(keywords, function(k) k$name == name))) {
@@ -3580,7 +3651,9 @@ step3Server <- function(id, state, session) {
         )
         selected_keywords(keywords)
         updateKeywordMapping()
-        message("ADD KEYWORD: Added successfully. Total keywords: ", length(keywords))
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("ADD KEYWORD: Added successfully. Total keywords: ", length(keywords))
+        }
       }
     }
 
@@ -3592,7 +3665,9 @@ step3Server <- function(id, state, session) {
       mappings <- file_mappings()
       if (file_index > length(mappings)) return()
 
-      message("UPDATE MAPPING: Saving keywords for file ", file_index)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("UPDATE MAPPING: Saving keywords for file ", file_index)
+      }
       
       mappings[[file_index]]$keywords <- selected_keywords()
       mappings[[file_index]]$partial_keywords <- selected_keywords()
@@ -3602,10 +3677,14 @@ step3Server <- function(id, state, session) {
 
     # Generate standardized filename from keywords
     observeEvent(input$generate_filename, {
-      message("\n=== GENERATE FILENAME CLICKED ===")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("\n=== GENERATE FILENAME CLICKED ===")
+      }
 
       file_index <- current_file()
-      message("GEN: Current file index: ", file_index)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("GEN: Current file index: ", file_index)
+      }
       
       if (is.null(file_index)) {
         showNotification("No file selected", type = "warning")
@@ -3613,7 +3692,9 @@ step3Server <- function(id, state, session) {
       }
 
       keywords <- selected_keywords()
-      message("GEN: Number of keywords: ", length(keywords))
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("GEN: Number of keywords: ", length(keywords))
+      }
       
       if (length(keywords) == 0) {
         showNotification("Please add at least one keyword", type = "warning")
@@ -3630,11 +3711,15 @@ step3Server <- function(id, state, session) {
         input_name <- paste0("keyword_value_", keyword$id)
         value <- input[[input_name]]
         
-        message("GEN: Keyword '", keyword$name, "' - Input: ", input_name, " - Value: '", value, "'")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("GEN: Keyword '", keyword$name, "' - Input: ", input_name, " - Value: '", value, "'")
+        }
         
         if (is.null(value) || value == "") {
           all_filled <- FALSE
-          message("GEN: Missing value for keyword: ", keyword$name)
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("GEN: Missing value for keyword: ", keyword$name)
+          }
         } else {
           # Validate value format
           validation_result <- validateKeywordValue(value)
@@ -3660,10 +3745,14 @@ step3Server <- function(id, state, session) {
       }
       
       mappings <- isolate(file_mappings())
-      message("GEN: Retrieved ", length(mappings), " mappings")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("GEN: Retrieved ", length(mappings), " mappings")
+      }
       
       if (file_index > length(mappings)) {
-        message("GEN ERROR: file_index (", file_index, ") > mappings length (", length(mappings), ")")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("GEN ERROR: file_index (", file_index, ") > mappings length (", length(mappings), ")")
+        }
         return()
       }
       
@@ -3676,7 +3765,9 @@ step3Server <- function(id, state, session) {
         paste0(paste(filename_parts, collapse = "_"), "_data")
       }
       
-      message("GEN: Generated filename: ", filename)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("GEN: Generated filename: ", filename)
+      }
       
       # Save mapping with keywords and new filename
       mappings[[file_index]]$keywords <- updated_keywords
@@ -3684,43 +3775,63 @@ step3Server <- function(id, state, session) {
       mappings[[file_index]]$new <- filename
       
       file_mappings(mappings)
-      message("GEN: Saved mappings back to reactive")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("GEN: Saved mappings back to reactive")
+      }
       
       selected_keywords(updated_keywords)
-      message("GEN: Updated selected_keywords with values")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("GEN: Updated selected_keywords with values")
+      }
       
       # Trigger UI refresh
       old_trigger <- isolate(ui_trigger())
       ui_trigger(old_trigger + 1)
-      message("GEN: Incremented ui_trigger from ", old_trigger, " to ", old_trigger + 1)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("GEN: Incremented ui_trigger from ", old_trigger, " to ", old_trigger + 1)
+      }
       
       # Verify save
       verification <- isolate(file_mappings())
-      message("GEN VERIFY: File ", file_index, " new name: '", verification[[file_index]]$new, "'")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("GEN VERIFY: File ", file_index, " new name: '", verification[[file_index]]$new, "'")
+      }
       
       showNotification("Filename generated successfully!", type = "message")
       
       # Auto-advance to next unconfigured file
-      message("GEN: Attempting to advance to next file...")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("GEN: Attempting to advance to next file...")
+      }
       auto_advance_to_next_file(file_index)
       
-      message("=== END GENERATE FILENAME ===\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("=== END GENERATE FILENAME ===\n")
+      }
     })
 
     # Auto-advance to next unconfigured file
     auto_advance_to_next_file <- function(current_index) {
-      message("AUTO-ADVANCE: Starting from index ", current_index)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("AUTO-ADVANCE: Starting from index ", current_index)
+      }
 
       mappings <- file_mappings()
-      message("AUTO-ADVANCE: Total files: ", length(mappings))
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("AUTO-ADVANCE: Total files: ", length(mappings))
+      }
 
       if (length(mappings) <= 1 || current_index >= length(mappings)) {
-        message("AUTO-ADVANCE: Cannot advance - at end or only one file")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("AUTO-ADVANCE: Cannot advance - at end or only one file")
+        }
         return()
       }
 
       if (is.null(current_index) || current_index < 1 || current_index > length(mappings)) {
-        message("AUTO-ADVANCE: Invalid index, resetting to 1")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("AUTO-ADVANCE: Invalid index, resetting to 1")
+        }
         current_index <- 1
       }
 
@@ -3734,14 +3845,18 @@ step3Server <- function(id, state, session) {
 
       for (i in check_sequence) {
         if (mappings[[i]]$new == "") {
-          message("AUTO-ADVANCE: Found unconfigured file at index ", i)
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("AUTO-ADVANCE: Found unconfigured file at index ", i)
+          }
           current_file(i)
           session$sendInputMessage("select_file", list(value = i, priority = "event"))
           return()
         }
       }
 
-      message("AUTO-ADVANCE: All files are configured")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("AUTO-ADVANCE: All files are configured")
+      }
     }
 
     # UI output components
@@ -4000,7 +4115,9 @@ step3Server <- function(id, state, session) {
       
       # Build a nested tree structure from file paths
       build_tree <- function(file_paths) {
-        message("\n=== Building tree with ", length(file_paths), " file paths ===")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("\n=== Building tree with ", length(file_paths), " file paths ===")
+        }
         
         # Helper function to insert a path into the tree
         # NOTE: Files are marked with TRUE, directories are lists
@@ -4008,15 +4125,21 @@ step3Server <- function(id, state, session) {
           indent <- paste(rep("  ", depth), collapse = "")
           
           if (length(parts) == 0) {
-            message(indent, "ERROR: No parts to insert!")
+            if (isTRUE(getOption("psychds.verbose"))) {
+              message(indent, "ERROR: No parts to insert!")
+            }
             return(tree)
           }
           
           if (length(parts) == 1) {
             # It's a file at this level - mark with TRUE (not NULL which removes it!)
-            if (depth == 0) message(indent, "Adding file: ", parts[1])
+            if (isTRUE(getOption("psychds.verbose"))) {
+              if (depth == 0) message(indent, "Adding file: ", parts[1])
+            }
             tree[[parts[1]]] <- TRUE  # Changed from NULL to TRUE
-            if (depth == 0) message(indent, "Tree now has ", length(tree), " items")
+            if (isTRUE(getOption("psychds.verbose"))) {
+              if (depth == 0) message(indent, "Tree now has ", length(tree), " items")
+            }
             return(tree)
           }
           
@@ -4044,26 +4167,38 @@ step3Server <- function(id, state, session) {
           tree <- insert_path(tree, parts)
           
           if (i <= 3) {
-            message("After path ", i, ", tree has ", length(tree), " top-level items")
+            if (isTRUE(getOption("psychds.verbose"))) {
+              message("After path ", i, ", tree has ", length(tree), " top-level items")
+            }
           }
         }
         
-        message("\n=== Tree built with ", length(tree), " top-level items ===")
-        if (length(tree) > 0) {
-          message("Final top-level items: ", paste(names(tree)[1:min(5, length(tree))], collapse = ", "))
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("\n=== Tree built with ", length(tree), " top-level items ===")
         }
-        message("")
+        if (length(tree) > 0) {
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("Final top-level items: ", paste(names(tree)[1:min(5, length(tree))], collapse = ", "))
+          }
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("")
+        }
         return(tree)
       }
       
       # Recursively render tree as HTML with collapsible folders
       render_tree <- function(tree, depth = 0) {
         if (is.null(tree) || length(tree) == 0) {
-          message("render_tree: Empty tree at depth ", depth)
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("render_tree: Empty tree at depth ", depth)
+          }
           return(NULL)
         }
         
-        message("render_tree: Rendering ", length(tree), " items at depth ", depth)
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("render_tree: Rendering ", length(tree), " items at depth ", depth)
+        }
         
         items <- lapply(names(tree), function(name) {
           node <- tree[[name]]
@@ -4071,7 +4206,9 @@ step3Server <- function(id, state, session) {
           # Check if it's a file (TRUE) or directory (list)
           if (isTRUE(node)) {
             # It's a file
-            message("  Rendering file: ", name)
+            if (isTRUE(getOption("psychds.verbose"))) {
+              message("  Rendering file: ", name)
+            }
             tags$li(
               class = "tree-file",
               tags$span(class = "file-icon", "📄"),
@@ -4079,7 +4216,9 @@ step3Server <- function(id, state, session) {
             )
           } else if (is.list(node)) {
             # It's a directory
-            message("  Rendering directory: ", name, " with ", length(node), " children")
+            if (isTRUE(getOption("psychds.verbose"))) {
+              message("  Rendering directory: ", name, " with ", length(node), " children")
+            }
             tags$li(
               class = "tree-folder",
               tags$details(
@@ -4096,14 +4235,18 @@ step3Server <- function(id, state, session) {
             )
           } else {
             # Unexpected node type
-            message("  WARNING: Unexpected node type for ", name, ": ", class(node))
+            if (isTRUE(getOption("psychds.verbose"))) {
+              message("  WARNING: Unexpected node type for ", name, ": ", class(node))
+            }
             NULL
           }
         })
         
         # IMPORTANT: Must use do.call(tagList, ...) to properly combine list of tags
         result <- do.call(tagList, items)
-        message("render_tree: Returning ", length(items), " items")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("render_tree: Returning ", length(items), " items")
+        }
         return(result)
       }
       
@@ -4162,10 +4305,16 @@ step3Server <- function(id, state, session) {
           }
         }
         
-        message("\n=== Step 3 Modal: File Processing ===")
-        message("Total files to display: ", length(data_files))
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("\n=== Step 3 Modal: File Processing ===")
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("Total files to display: ", length(data_files))
+        }
         if (length(data_files) > 0) {
-          message("Sample files: ", paste(head(data_files, 3), collapse = ", "))
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("Sample files: ", paste(head(data_files, 3), collapse = ", "))
+          }
         }
         
         # Build tree from file paths
@@ -4173,14 +4322,22 @@ step3Server <- function(id, state, session) {
         
         # Debug: show tree structure
         if (length(data_tree) > 0) {
-          message("Tree structure keys: ", paste(names(data_tree), collapse = ", "))
-          message("Tree structure (first level):")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("Tree structure keys: ", paste(names(data_tree), collapse = ", "))
+          }
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("Tree structure (first level):")
+          }
           for (name in names(data_tree)) {
             node <- data_tree[[name]]
             if (is.null(node)) {
-              message("  ", name, " (file)")
+              if (isTRUE(getOption("psychds.verbose"))) {
+                message("  ", name, " (file)")
+              }
             } else {
-              message("  ", name, "/ (directory with ", length(node), " items)")
+              if (isTRUE(getOption("psychds.verbose"))) {
+                message("  ", name, "/ (directory with ", length(node), " items)")
+              }
             }
           }
         }
@@ -4188,9 +4345,15 @@ step3Server <- function(id, state, session) {
         # Check if we have any files
         has_files <- length(data_files) > 0
         
-        message("\n=== Creating data folder UI ===")
-        message("has_files: ", has_files)
-        message("About to call render_tree with data_tree")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("\n=== Creating data folder UI ===")
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("has_files: ", has_files)
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("About to call render_tree with data_tree")
+        }
         
         # Create the data folder with nested structure
         data_folder <- tags$li(
@@ -4215,7 +4378,9 @@ step3Server <- function(id, state, session) {
           )
         )
         
-        message("=== Data folder UI created ===\n")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("=== Data folder UI created ===\n")
+        }
 
         # Combine everything
         tags$ul(
@@ -4456,7 +4621,9 @@ step3Server <- function(id, state, session) {
               dest_subdir <- file.path(data_dir, subdir_path)
               if (!dir.exists(dest_subdir)) {
                 dir.create(dest_subdir, recursive = TRUE, showWarnings = FALSE)
-                message("Created subdirectory: ", dest_subdir)
+                if (isTRUE(getOption("psychds.verbose"))) {
+                  message("Created subdirectory: ", dest_subdir)
+                }
               }
               
               dest_path <- file.path(dest_subdir, mapping$new)
@@ -4471,14 +4638,18 @@ step3Server <- function(id, state, session) {
             if (file.exists(src_path)) {
               file.copy(src_path, dest_path, overwrite = FALSE)
               files_copied <- files_copied + 1
-              message("Copied: ", src_path, " -> ", dest_path)
+              if (isTRUE(getOption("psychds.verbose"))) {
+                message("Copied: ", src_path, " -> ", dest_path)
+              }
             } else {
               message("Warning: Source file not found: ", src_path)
             }
           }
         }
         
-        message("Total files copied: ", files_copied)
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("Total files copied: ", files_copied)
+        }
         
         # Create optional directories
         optional_dirs <- state$optional_dirs
@@ -4664,9 +4835,13 @@ check_validator_available <- function() {
 }
 
 validateServer <- function(id, state, session) {
-  message("\n*** validateServer module starting ***\n")
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("\n*** validateServer module starting ***\n")
+  }
   moduleServer(id, function(input, output, session) {
-    message("*** Inside moduleServer for validateServer ***\n")
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("*** Inside moduleServer for validateServer ***\n")
+    }
     # Track validation status
     validation_status <- reactiveValues(
       is_validating = FALSE,
@@ -4694,11 +4869,15 @@ validateServer <- function(id, state, session) {
         dir_info <- parseDirPath(volumes, input$validate_dir_select)
         if (length(dir_info) > 0) {
           selected_path <- as.character(dir_info)
-          message("Directory selected via button: ", selected_path)
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("Directory selected via button: ", selected_path)
+          }
           updateTextInput(session, "validate_dir", value = selected_path)
         }
       }, error = function(e) {
-        message("Error parsing directory path: ", e$message)
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("Error parsing directory path: ", e$message)
+        }
       })
     })
     
@@ -4980,14 +5159,18 @@ validateServer <- function(id, state, session) {
     
     # Handle validation complete events
     observeEvent(input$validation_complete, {
-      message("Validation complete event received")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("Validation complete event received")
+      }
       validation_status$is_complete <- TRUE
       validation_status$is_valid <- TRUE
     })
     
     # Handle validation halted events
     observeEvent(input$validation_halted, {
-      message("Validation halted event received")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("Validation halted event received")
+      }
       validation_status$is_complete <- TRUE
       validation_status$is_valid <- FALSE
     })
@@ -4995,8 +5178,12 @@ validateServer <- function(id, state, session) {
     # Handle validation results
     observeEvent(input$validation_results, {
       if (!is.null(input$validation_results)) {
-        message("=== Validation results received ===")
-        message("  input$validate_dir: '", if (!is.null(input$validate_dir)) input$validate_dir else "NULL", "'")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("=== Validation results received ===")
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("  input$validate_dir: '", if (!is.null(input$validate_dir)) input$validate_dir else "NULL", "'")
+        }
         
         validation_status$is_complete <- TRUE
         validation_status$is_valid <- input$validation_results$valid
@@ -5006,19 +5193,31 @@ validateServer <- function(id, state, session) {
         # Store the validated directory path for later use
         if (!is.null(input$validate_dir) && input$validate_dir != "") {
           state$validated_dataset_dir <- input$validate_dir
-          message("  -> Set validated_dataset_dir to: '", state$validated_dataset_dir, "'")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("  -> Set validated_dataset_dir to: '", state$validated_dataset_dir, "'")
+          }
         } else {
-          message("  -> Could NOT set validated_dataset_dir (validate_dir is NULL or empty)")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("  -> Could NOT set validated_dataset_dir (validate_dir is NULL or empty)")
+          }
         }
       }
     })
     
     # Clear old validation results when directory changes
     observeEvent(input$validate_dir, {
-      message("=== validate_dir changed ===")
-      message("  New value: '", input$validate_dir, "'")
-      message("  Has validation results: ", !is.null(state$validation_results))
-      message("  Last validated dir: '", if (!is.null(state$validated_dataset_dir)) state$validated_dataset_dir else "NULL", "'")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("=== validate_dir changed ===")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  New value: '", input$validate_dir, "'")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  Has validation results: ", !is.null(state$validation_results))
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  Last validated dir: '", if (!is.null(state$validated_dataset_dir)) state$validated_dataset_dir else "NULL", "'")
+      }
       
       # Clear results if we have them and directory is different from last validated
       if (!is.null(state$validation_results)) {
@@ -5026,7 +5225,9 @@ validateServer <- function(id, state, session) {
         if (is.null(state$validated_dataset_dir) || 
             state$validated_dataset_dir != input$validate_dir) {
           
-          message("  -> CLEARING validation results")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("  -> CLEARING validation results")
+          }
           
           # Clear validation state
           validation_status$is_validating <- FALSE
@@ -5037,7 +5238,9 @@ validateServer <- function(id, state, session) {
           
           # Send JavaScript message to reset the validation UI
           session$sendCustomMessage("reset_validation_ui", list(timestamp = Sys.time()))
-          message("  -> Sent reset_validation_ui message to JavaScript")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("  -> Sent reset_validation_ui message to JavaScript")
+          }
           
           # Show a brief notification
           showNotification(
@@ -5046,10 +5249,14 @@ validateServer <- function(id, state, session) {
             duration = 3
           )
         } else {
-          message("  -> Same directory, keeping results")
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("  -> Same directory, keeping results")
+          }
         }
       } else {
-        message("  -> No validation results to clear")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("  -> No validation results to clear")
+        }
       }
     }, ignoreInit = TRUE, ignoreNULL = FALSE)
 
@@ -5127,12 +5334,18 @@ validateServer <- function(id, state, session) {
       req(input$validate_dir)
       
       if (dir.exists(input$validate_dir)) {
-        message("VALIDATE BUTTON CLICKED - Preparing validation")
-        message("  Directory to validate: '", input$validate_dir, "'")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("VALIDATE BUTTON CLICKED - Preparing validation")
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("  Directory to validate: '", input$validate_dir, "'")
+        }
         
         # Store the directory we're about to validate BEFORE starting validation
         state$validated_dataset_dir <- input$validate_dir
-        message("  -> Set validated_dataset_dir to: '", state$validated_dataset_dir, "'")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("  -> Set validated_dataset_dir to: '", state$validated_dataset_dir, "'")
+        }
         
         # Reset validation state
         validation_status$is_validating <- TRUE
@@ -5789,33 +6002,6 @@ observeEvent(input$generate_dictionary, {
   ))
 })
 
-observeEvent(input$setup_pdf, {
-  removeModal()
-  
-  showModal(modalDialog(
-    title = "Setup PDF Generation",
-    size = "m",
-    
-    tags$div(
-      tags$h4("To enable PDF generation, run this in your R console:"),
-      tags$pre(
-        style = "background-color: #f5f5f5; padding: 10px; border-radius: 4px;",
-        "# Recommended: Install TinyTeX (lightweight LaTeX)\n",
-        "psychds::setup_pdf_generation()\n\n",
-        "# Or manually:\n",
-        "install.packages('tinytex')\n",
-        "tinytex::install_tinytex()"
-      ),
-      tags$hr(),
-      tags$p("After installation, restart your R session and try again."),
-      tags$p("Alternative: You can always generate HTML and print to PDF from your browser.")
-    ),
-    
-    footer = modalButton("Close"),
-    easyClose = TRUE
-  ))
-})
-
 # Handler for confirming generation
 observeEvent(input$confirm_generate, {
   ns <- session$ns
@@ -5915,220 +6101,6 @@ showNotification(
 
 
 
-
-
-
-
-
-  #' Smart PDF Dictionary Generator
-  #' 
-  #' Automatically selects the best available method for PDF generation:
-  #' 1. Try TinyTeX/LaTeX if available (best quality)
-  #' 2. Fall back to pagedown if available (good quality, no LaTeX)
-  #' 3. Fall back to HTML if neither available
-  #' 
-  #' @param dictionary_data The dictionary data
-  #' @param dataset_info Dataset metadata
-  #' @param output_file Output file path
-  #' @param include_stats Include statistics
-  #' @param format Requested format ("pdf", "html", "auto")
-  #' @return List with status and file path
-  generate_dictionary <- function(dictionary_data, 
-                                  dataset_info = NULL,
-                                  output_file = NULL,
-                                  include_stats = TRUE,
-                                  format = "auto") {
-
-# Check capabilities
-caps <- check_pdf_capabilities()
-
-# Determine actual format based on capabilities
-actual_format <- format
-method_used <- NULL
-
-if (format == "pdf" || format == "auto") {
-  if (caps$has_rmarkdown && caps$has_system_latex) {
-    # Best option: Use LaTeX (either TinyTeX or system)
-    actual_format <- "pdf"
-    method_used <- if (caps$has_tinytex) "TinyTeX" else "System LaTeX"
-    
-  } else if (caps$has_pagedown) {
-    # Good option: Use pagedown
-    actual_format <- "pdf"
-    method_used <- "pagedown (Chrome-based)"
-    
-  } else {
-    # Fallback: HTML only
-    actual_format <- "html"
-    method_used <- "HTML (PDF not available)"
-    
-    if (format == "pdf") {
-      # User specifically requested PDF but we can't do it
-      message("PDF generation not available, creating HTML instead")
-    }
-  }
-} else {
-  actual_format <- "html"
-  method_used <- "HTML (requested)"
-}
-
-# Set output file with correct extension
-if (is.null(output_file)) {
-  timestamp <- format(Sys.time(), "%Y%m%d_%H%M%S")
-  extension <- if (actual_format == "pdf") ".pdf" else ".html"
-  output_file <- paste0("data_dictionary_", timestamp, extension)
-} else {
-  # Ensure correct extension
-  if (actual_format == "pdf" && !grepl("\\.pdf$", output_file)) {
-    output_file <- gsub("\\.[^.]+$", ".pdf", output_file)
-  } else if (actual_format == "html" && !grepl("\\.html$", output_file)) {
-    output_file <- gsub("\\.[^.]+$", ".html", output_file)
-  }
-}
-
-# Generate based on selected method
-result <- tryCatch({
-  
-  if (actual_format == "pdf" && method_used == "pagedown (Chrome-based)") {
-    # Use pagedown method
-    message("Generating PDF using pagedown...")
-    
-    generated_file <- generate_pdf_dictionary_pagedown(
-      dictionary_data = dictionary_data,
-      dataset_info = dataset_info,
-      output_file = output_file,
-      include_stats = include_stats
-    )
-    
-  } else if (actual_format == "pdf" && caps$has_rmarkdown) {
-    # Use standard rmarkdown/LaTeX method
-    message(paste0("Generating PDF using ", method_used, "..."))
-    
-    generated_file <- generate_pdf_dictionary(
-      dictionary_data = dictionary_data,
-      dataset_info = dataset_info,
-      output_file = output_file,
-      include_stats = include_stats
-    )
-    
-  } else if (caps$has_rmarkdown) {
-    # Generate nice HTML using rmarkdown
-    message("Generating HTML document using rmarkdown...")
-    
-    # Force HTML output in the standard generator
-    html_file <- gsub("\\.pdf$", ".html", output_file)
-    generated_file <- generate_pdf_dictionary(
-      dictionary_data = dictionary_data,
-      dataset_info = dataset_info,
-      output_file = html_file,
-      include_stats = include_stats
-    )
-    
-  } else {
-    # Use simple HTML generator
-    message("Generating HTML document...")
-    
-    generated_file <- generate_html_dictionary_simple(
-      dictionary_data = dictionary_data,
-      output_file = output_file
-    )
-  }
-  
-  list(
-    success = TRUE,
-    file = generated_file,
-    format = actual_format,
-    method = method_used
-  )
-  
-}, error = function(e) {
-  # If primary method fails, try fallback
-  if (actual_format == "pdf") {
-    message("PDF generation failed, falling back to HTML...")
-    
-    # Try simple HTML as last resort
-    tryCatch({
-      generated_file <- generate_html_dictionary_simple(
-        dictionary_data = dictionary_data,
-        output_file = gsub("\\.pdf$", ".html", output_file)
-      )
-      
-      list(
-        success = TRUE,
-        file = generated_file,
-        format = "html",
-        method = "HTML (fallback)",
-        warning = paste("PDF generation failed:", e$message)
-      )
-      
-    }, error = function(e2) {
-      list(
-        success = FALSE,
-        error = e2$message,
-        format = NULL,
-        method = NULL
-      )
-    })
-    
-  } else {
-    list(
-      success = FALSE,
-      error = e$message,
-      format = actual_format,
-      method = method_used
-    )
-  }
-})
-
-return(result)
-  }
-
-# Handler for download button (appears in success modal)
-output$download_dict <- downloadHandler(
-  filename = function() {
-    if (input$output_format == "pdf") {
-      paste0("data_dictionary_", format(Sys.Date(), "%Y%m%d"), ".pdf")
-    } else {
-      paste0("data_dictionary_", format(Sys.Date(), "%Y%m%d"), ".html")
-    }
-  },
-  content = function(file) {
-    # The file has already been generated, just copy it
-    generated_file <- if (input$output_format == "pdf") {
-      list.files(dictionary_state$dataset_path, 
-                pattern = "data_dictionary.*\\.pdf$", 
-                full.names = TRUE)[1]
-    } else {
-      list.files(dictionary_state$dataset_path, 
-                pattern = "data_dictionary.*\\.html$", 
-                full.names = TRUE)[1]
-    }
-    
-    if (file.exists(generated_file)) {
-      file.copy(generated_file, file, overwrite = TRUE)
-    }
-  }
-)
-
-# Handler for "Generate Another Format" button
-observeEvent(input$generate_another, {
-  removeModal()
-  # Trigger the generate dialog again
-  shinyjs::click("generate_dictionary")
-})
-
-# Handler for "Try HTML Instead" button (shown on PDF failure)
-observeEvent(input$try_html_instead, {
-  removeModal()
-  
-  # Update format to simple HTML and regenerate
-  updateRadioButtons(session, "output_format", selected = "simple_html")
-  
-  # Trigger generation with HTML format
-  shinyjs::delay(100, {
-    shinyjs::click("confirm_generate")
-  })
-})
 
 # Display dataset info
 output$dataset_info <- renderUI({
@@ -6377,25 +6349,39 @@ observe({
 loadExistingMetadata <- function(dataset_path, variables) {
   # Normalize to expanded absolute path so tilde paths match list.files() output
   dataset_path <- normalizePath(dataset_path, mustWork = FALSE)
-  message("\n=== LOAD EXISTING METADATA ===")
-  message("  dataset_path: ", dataset_path)
-  message("  variables to process: ", length(variables))
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("\n=== LOAD EXISTING METADATA ===")
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  dataset_path: ", dataset_path)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  variables to process: ", length(variables))
+  }
   
   # --- 1. Apply global metadata from dataset_description.json ---
   global_json <- file.path(dataset_path, "dataset_description.json")
-  message("  Global JSON path: ", global_json)
-  message("  Global JSON exists: ", file.exists(global_json))
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  Global JSON path: ", global_json)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  Global JSON exists: ", file.exists(global_json))
+  }
   if (file.exists(global_json)) {
     tryCatch({
       json_data <- jsonlite::read_json(global_json, simplifyVector = FALSE)
       vm_count <- length(json_data$variableMeasured)
-      message("  Global variableMeasured entries: ", vm_count)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  Global variableMeasured entries: ", vm_count)
+      }
       if (vm_count > 0) {
         vm_names <- sapply(json_data$variableMeasured, function(x) {
           if (is.character(x) || is.atomic(x)) as.character(x) else x$name %||% "<unnamed>"
         })
-        message("  Global variableMeasured names: ", paste(head(vm_names, 10), collapse = ", "),
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("  Global variableMeasured names: ", paste(head(vm_names, 10), collapse = ", "),
                 if (length(vm_names) > 10) paste0("... (", length(vm_names), " total)") else "")
+        }
       }
       variables <- applyVariableMeasured(variables, json_data$variableMeasured, "dataset_description.json",
                                          source_path = global_json)
@@ -6403,76 +6389,122 @@ loadExistingMetadata <- function(dataset_path, variables) {
       # Load global missing value codes if present
       if (!is.null(json_data$missingValueCodes)) {
         dictionary_state$missing_values <- unlist(json_data$missingValueCodes)
-        message("  Loaded ", length(json_data$missingValueCodes), " missing value codes")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("  Loaded ", length(json_data$missingValueCodes), " missing value codes")
+        }
       }
     }, error = function(e) {
-      message("  ERROR loading global metadata: ", e$message)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  ERROR loading global metadata: ", e$message)
+      }
       warning(paste("Error loading global metadata:", e$message))
     })
   }
   
   # --- 2. Discover and apply sidecar metadata ---
   data_dir <- file.path(dataset_path, "data")
-  message("\n  Data dir: ", data_dir)
-  message("  Data dir exists: ", dir.exists(data_dir))
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("\n  Data dir: ", data_dir)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  Data dir exists: ", dir.exists(data_dir))
+  }
   if (dir.exists(data_dir)) {
     sidecars <- discoverSidecarFiles(dataset_path)
     
-    message("\n  --- Applying directory-level sidecars (", length(sidecars$directory), " found) ---")
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("\n  --- Applying directory-level sidecars (", length(sidecars$directory), " found) ---")
+    }
     # Apply directory-level sidecars (shallowest first, so deeper dirs override)
     for (sc in sidecars$directory) {
-      message("  Processing dir sidecar: ", sc$label)
-      message("    Path: ", sc$path)
-      message("    Applies to dir: ", sc$applies_to_dir)
-      message("    Depth: ", sc$depth)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  Processing dir sidecar: ", sc$label)
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("    Path: ", sc$path)
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("    Applies to dir: ", sc$applies_to_dir)
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("    Depth: ", sc$depth)
+      }
       tryCatch({
         json_data <- jsonlite::read_json(sc$path, simplifyVector = FALSE)
         vm_count <- length(json_data$variableMeasured)
-        message("    variableMeasured entries in sidecar: ", vm_count)
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("    variableMeasured entries in sidecar: ", vm_count)
+        }
         if (vm_count > 0) {
           vm_names <- sapply(json_data$variableMeasured, function(x) { if (is.character(x) || is.atomic(x)) as.character(x) else x$name %||% "<unnamed>" })
-          message("    variableMeasured names: ", paste(vm_names, collapse = ", "))
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("    variableMeasured names: ", paste(vm_names, collapse = ", "))
+          }
         }
         # Only apply to variables that appear in files under this directory
         applicable_vars <- filterVariablesByDirectory(variables, sc$applies_to_dir, dataset_path)
-        message("    Applicable variables (in this dir): ", length(applicable_vars))
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("    Applicable variables (in this dir): ", length(applicable_vars))
+        }
         if (length(applicable_vars) > 0) {
-          message("    Applicable var names: ", paste(head(applicable_vars, 10), collapse = ", "),
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("    Applicable var names: ", paste(head(applicable_vars, 10), collapse = ", "),
                   if (length(applicable_vars) > 10) "..." else "")
+          }
         }
         variables <- applyVariableMeasured(variables, json_data$variableMeasured, sc$label,
                                            only_vars = applicable_vars, source_path = sc$path)
       }, error = function(e) {
-        message("    ERROR loading directory sidecar: ", e$message)
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("    ERROR loading directory sidecar: ", e$message)
+        }
         warning(paste("Error loading directory sidecar", sc$path, ":", e$message))
       })
     }
     
-    message("\n  --- Applying file-level sidecars (", length(sidecars$file_level), " found) ---")
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("\n  --- Applying file-level sidecars (", length(sidecars$file_level), " found) ---")
+    }
     # Apply file-level sidecars (highest precedence)
     for (sc in sidecars$file_level) {
-      message("  Processing file sidecar: ", sc$label)
-      message("    Path: ", sc$path)
-      message("    Applies to file: ", sc$applies_to_file)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  Processing file sidecar: ", sc$label)
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("    Path: ", sc$path)
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("    Applies to file: ", sc$applies_to_file)
+      }
       tryCatch({
         json_data <- jsonlite::read_json(sc$path, simplifyVector = FALSE)
         vm_count <- length(json_data$variableMeasured)
-        message("    variableMeasured entries in sidecar: ", vm_count)
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("    variableMeasured entries in sidecar: ", vm_count)
+        }
         if (vm_count > 0) {
           vm_names <- sapply(json_data$variableMeasured, function(x) { if (is.character(x) || is.atomic(x)) as.character(x) else x$name %||% "<unnamed>" })
-          message("    variableMeasured names: ", paste(vm_names, collapse = ", "))
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("    variableMeasured names: ", paste(vm_names, collapse = ", "))
+          }
         }
         # Only apply to variables that appear in the matched data file
         applicable_vars <- filterVariablesByFile(variables, sc$applies_to_file, dataset_path)
-        message("    Applicable variables (in this file): ", length(applicable_vars))
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("    Applicable variables (in this file): ", length(applicable_vars))
+        }
         if (length(applicable_vars) > 0) {
-          message("    Applicable var names: ", paste(head(applicable_vars, 10), collapse = ", "),
+          if (isTRUE(getOption("psychds.verbose"))) {
+            message("    Applicable var names: ", paste(head(applicable_vars, 10), collapse = ", "),
                   if (length(applicable_vars) > 10) "..." else "")
+          }
         }
         variables <- applyVariableMeasured(variables, json_data$variableMeasured, sc$label,
                                            only_vars = applicable_vars, source_path = sc$path)
       }, error = function(e) {
-        message("    ERROR loading file sidecar: ", e$message)
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("    ERROR loading file sidecar: ", e$message)
+        }
         warning(paste("Error loading file sidecar", sc$path, ":", e$message))
       })
     }
@@ -6481,24 +6513,38 @@ loadExistingMetadata <- function(dataset_path, variables) {
   # Summary of metadata sources
   sources <- unique(unlist(lapply(variables, function(v) v$metadata_source)))
   sources <- sources[!is.na(sources)]
-  message("\n  Final metadata sources: ", paste(sources, collapse = ", "))
-  message("  Variables with metadata_source set: ", 
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("\n  Final metadata sources: ", paste(sources, collapse = ", "))
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  Variables with metadata_source set: ", 
           sum(sapply(variables, function(v) !is.null(v$metadata_source))))
-  message("=== END LOAD EXISTING METADATA ===\n")
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("=== END LOAD EXISTING METADATA ===\n")
+  }
   
   return(variables)
 }
 
 # Apply a variableMeasured list to the variables, optionally restricted to certain variable names
 applyVariableMeasured <- function(variables, var_measured_list, source_label, only_vars = NULL, source_path = NULL) {
-  message("    applyVariableMeasured from '", source_label, "'")
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    applyVariableMeasured from '", source_label, "'")
+  }
   if (is.null(var_measured_list)) {
-    message("      variableMeasured is NULL — skipping")
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("      variableMeasured is NULL — skipping")
+    }
     return(variables)
   }
-  message("      Entries to process: ", length(var_measured_list))
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      Entries to process: ", length(var_measured_list))
+  }
   if (!is.null(only_vars)) {
-    message("      Restricted to ", length(only_vars), " variable(s)")
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("      Restricted to ", length(only_vars), " variable(s)")
+    }
   }
   
   applied_count <- 0
@@ -6509,23 +6555,31 @@ applyVariableMeasured <- function(variables, var_measured_list, source_label, on
   for (var_meta in var_measured_list) {
     # Handle simple string entries (just a variable name, no metadata to apply)
     if (is.character(var_meta) || is.atomic(var_meta)) {
-      message("      SKIP string entry: '", var_meta, "' (no metadata to apply)")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      SKIP string entry: '", var_meta, "' (no metadata to apply)")
+      }
       skipped_string_only <- skipped_string_only + 1
       next
     }
     
     var_name <- var_meta$name
     if (is.null(var_name)) {
-      message("      SKIP: entry has no 'name' field")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      SKIP: entry has no 'name' field")
+      }
       next
     }
     if (!(var_name %in% names(variables))) {
-      message("      SKIP '", var_name, "': not found in detected variables")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      SKIP '", var_name, "': not found in detected variables")
+      }
       skipped_not_found <- skipped_not_found + 1
       next
     }
     if (!is.null(only_vars) && !(var_name %in% only_vars)) {
-      message("      SKIP '", var_name, "': not in applicable vars for this scope")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      SKIP '", var_name, "': not in applicable vars for this scope")
+      }
       skipped_not_applicable <- skipped_not_applicable + 1
       next
     }
@@ -6547,7 +6601,9 @@ applyVariableMeasured <- function(variables, var_measured_list, source_label, on
         variables[[var_name]]$type  # default to auto-detected
       )
       variables[[var_name]]$type <- internal_type
-      message("      '", var_name, "': type -> ", internal_type, " (from schema '", schema_type, "')")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      '", var_name, "': type -> ", internal_type, " (from schema '", schema_type, "')")
+      }
     }
     
     # Override auto-detected values — only overwrite if the sidecar actually provides the field
@@ -6577,11 +6633,15 @@ applyVariableMeasured <- function(variables, var_measured_list, source_label, on
     variables[[var_name]]$metadata_source <- source_label
     variables[[var_name]]$metadata_source_path <- source_path
     applied_count <- applied_count + 1
-    message("      APPLIED '", var_name, "': fields=[", paste(fields_set, collapse = ", "), "] source='", source_label, "'")
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("      APPLIED '", var_name, "': fields=[", paste(fields_set, collapse = ", "), "] source='", source_label, "'")
+    }
   }
   
-  message("      Summary: applied=", applied_count, " skipped_not_found=", skipped_not_found, 
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      Summary: applied=", applied_count, " skipped_not_found=", skipped_not_found, 
           " skipped_not_applicable=", skipped_not_applicable, " skipped_string_only=", skipped_string_only)
+  }
   
   return(variables)
 }
@@ -6593,49 +6653,83 @@ discoverSidecarFiles <- function(dataset_path) {
   data_dir <- file.path(dataset_path, "data")
   result <- list(directory = list(), file_level = list())
   
-  message("\n  === DISCOVER SIDECAR FILES ===")
-  message("    data_dir: ", data_dir)
-  message("    data_dir exists: ", dir.exists(data_dir))
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("\n  === DISCOVER SIDECAR FILES ===")
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    data_dir: ", data_dir)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    data_dir exists: ", dir.exists(data_dir))
+  }
   
   if (!dir.exists(data_dir)) {
-    message("    Data dir missing — returning empty")
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("    Data dir missing — returning empty")
+    }
     return(result)
   }
   
   # Find all JSON files under data/
   all_json <- list.files(data_dir, pattern = "\\.json$", recursive = TRUE, full.names = TRUE)
-  message("    JSON files found under data/: ", length(all_json))
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    JSON files found under data/: ", length(all_json))
+  }
   for (jf in all_json) {
-    message("      ", jf)
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("      ", jf)
+    }
   }
   
   # Find all data files for matching
   all_data <- list.files(data_dir, pattern = "\\.(csv|tsv)$", recursive = TRUE, full.names = TRUE)
   data_basenames <- tools::file_path_sans_ext(all_data)
-  message("    Data files found: ", length(all_data))
-  for (df in all_data) {
-    message("      ", df)
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    Data files found: ", length(all_data))
   }
-  message("    Data basenames (sans ext): ", length(data_basenames))
+  for (df in all_data) {
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("      ", df)
+    }
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    Data basenames (sans ext): ", length(data_basenames))
+  }
   for (db in data_basenames) {
-    message("      ", db)
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("      ", db)
+    }
   }
   
   for (json_file in all_json) {
     json_basename <- basename(json_file)
     json_dir <- dirname(json_file)
-    message("\n    Evaluating: ", json_file)
-    message("      basename: ", json_basename)
-    message("      dirname: ", json_dir)
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("\n    Evaluating: ", json_file)
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("      basename: ", json_basename)
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("      dirname: ", json_dir)
+    }
     
     if (json_basename == "file_metadata.json") {
-      message("      -> DIRECTORY-LEVEL sidecar (file_metadata.json)")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      -> DIRECTORY-LEVEL sidecar (file_metadata.json)")
+      }
       # Directory-level sidecar
       data_dir_norm <- normalizePath(data_dir, mustWork = FALSE)
       json_dir_norm <- normalizePath(json_dir, mustWork = FALSE)
-      message("      data_dir normalized: ", data_dir_norm)
-      message("      json_dir normalized: ", json_dir_norm)
-      message("      dirs equal: ", json_dir_norm == data_dir_norm)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      data_dir normalized: ", data_dir_norm)
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      json_dir normalized: ", json_dir_norm)
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      dirs equal: ", json_dir_norm == data_dir_norm)
+      }
       
       rel_dir <- if (json_dir_norm == data_dir_norm) {
         "data"
@@ -6643,8 +6737,12 @@ discoverSidecarFiles <- function(dataset_path) {
         file.path("data", sub(paste0(data_dir_norm, "/"), "", json_dir_norm, fixed = TRUE))
       }
       depth <- length(strsplit(rel_dir, "/")[[1]])
-      message("      rel_dir: ", rel_dir)
-      message("      depth: ", depth)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      rel_dir: ", rel_dir)
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      depth: ", depth)
+      }
       
       result$directory <- c(result$directory, list(list(
         path = json_file,
@@ -6655,10 +6753,14 @@ discoverSidecarFiles <- function(dataset_path) {
     } else {
       # Check if this JSON matches a data file (file-level sidecar)
       json_sans_ext <- tools::file_path_sans_ext(json_file)
-      message("      json sans ext: ", json_sans_ext)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      json sans ext: ", json_sans_ext)
+      }
       match_idx <- which(data_basenames == json_sans_ext)
-      message("      match_idx: ", paste(match_idx, collapse = ", "), 
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      match_idx: ", paste(match_idx, collapse = ", "), 
               " (", length(match_idx), " match(es))")
+      }
       
       if (length(match_idx) > 0) {
         matched_data_file <- all_data[match_idx[1]]
@@ -6667,10 +6769,18 @@ discoverSidecarFiles <- function(dataset_path) {
         rel_data <- sub(paste0(dataset_path, "/"), "",
                          normalizePath(matched_data_file, mustWork = FALSE), fixed = TRUE)
         
-        message("      -> FILE-LEVEL sidecar")
-        message("      matched data file: ", matched_data_file)
-        message("      rel json path: ", rel_path)
-        message("      rel data path: ", rel_data)
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("      -> FILE-LEVEL sidecar")
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("      matched data file: ", matched_data_file)
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("      rel json path: ", rel_path)
+        }
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("      rel data path: ", rel_data)
+        }
         
         result$file_level <- c(result$file_level, list(list(
           path = json_file,
@@ -6678,7 +6788,9 @@ discoverSidecarFiles <- function(dataset_path) {
           label = rel_path
         )))
       } else {
-        message("      -> NO MATCH (not a sidecar)")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("      -> NO MATCH (not a sidecar)")
+        }
       }
     }
   }
@@ -6687,15 +6799,23 @@ discoverSidecarFiles <- function(dataset_path) {
   if (length(result$directory) > 0) {
     depths <- sapply(result$directory, function(x) x$depth)
     result$directory <- result$directory[order(depths)]
-    message("\n    Directory sidecars after sorting by depth:")
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("\n    Directory sidecars after sorting by depth:")
+    }
     for (sc in result$directory) {
-      message("      depth=", sc$depth, " ", sc$label)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("      depth=", sc$depth, " ", sc$label)
+      }
     }
   }
   
-  message("    RESULT: ", length(result$directory), " directory sidecar(s), ", 
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    RESULT: ", length(result$directory), " directory sidecar(s), ", 
           length(result$file_level), " file-level sidecar(s)")
-  message("  === END DISCOVER SIDECAR FILES ===\n")
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  === END DISCOVER SIDECAR FILES ===\n")
+  }
   
   return(result)
 }
@@ -6709,11 +6829,21 @@ filterVariablesByDirectory <- function(variables, dir_path, dataset_path) {
     dir_norm <- paste0(dir_norm, .Platform$file.sep)
   }
   
-  message("    filterVariablesByDirectory:")
-  message("      dir_path: ", dir_path)
-  message("      dir_norm (with sep): ", dir_norm)
-  message("      dataset_path (normalized): ", dataset_path)
-  message("      Total variables to check: ", length(variables))
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    filterVariablesByDirectory:")
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      dir_path: ", dir_path)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      dir_norm (with sep): ", dir_norm)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      dataset_path (normalized): ", dataset_path)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      Total variables to check: ", length(variables))
+  }
   
   matching_vars <- character(0)
   for (var_name in names(variables)) {
@@ -6727,14 +6857,18 @@ filterVariablesByDirectory <- function(variables, dir_path, dataset_path) {
       }
       if (startsWith(full_path, dir_norm)) {
         matching_vars <- c(matching_vars, var_name)
-        message("      MATCH: '", var_name, "' via file '", f, "' -> '", full_path, "'")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("      MATCH: '", var_name, "' via file '", f, "' -> '", full_path, "'")
+        }
         break
       }
     }
   }
   
   result <- unique(matching_vars)
-  message("      Result: ", length(result), " matching variables")
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      Result: ", length(result), " matching variables")
+  }
   return(result)
 }
 
@@ -6744,12 +6878,24 @@ filterVariablesByFile <- function(variables, file_path, dataset_path) {
   file_norm <- normalizePath(file_path, mustWork = FALSE)
   rel_path <- sub(paste0(dataset_path, "/"), "", file_norm, fixed = TRUE)
   
-  message("    filterVariablesByFile:")
-  message("      file_path: ", file_path)
-  message("      file_norm: ", file_norm)
-  message("      dataset_path (normalized): ", dataset_path)
-  message("      rel_path: ", rel_path)
-  message("      Total variables to check: ", length(variables))
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    filterVariablesByFile:")
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      file_path: ", file_path)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      file_norm: ", file_norm)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      dataset_path (normalized): ", dataset_path)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      rel_path: ", rel_path)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      Total variables to check: ", length(variables))
+  }
   
   matching_vars <- character(0)
   for (var_name in names(variables)) {
@@ -6763,14 +6909,18 @@ filterVariablesByFile <- function(variables, file_path, dataset_path) {
       }
       if (f_norm == file_norm || f == rel_path) {
         matching_vars <- c(matching_vars, var_name)
-        message("      MATCH: '", var_name, "' via stored file '", f, "' (norm: '", f_norm, "')")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("      MATCH: '", var_name, "' via stored file '", f, "' (norm: '", f_norm, "')")
+        }
         break
       }
     }
   }
   
   result <- unique(matching_vars)
-  message("      Result: ", length(result), " matching variables")
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("      Result: ", length(result), " matching variables")
+  }
   return(result)
 }
 
@@ -7565,7 +7715,6 @@ generateSidecarPreview <- function(sc_path, sc_var_names, global_missing_values)
 
 
 observeEvent(input$continue, {
-  message("Save dictionary button clicked\n")
   
   # Save current variable before proceeding
   saveCurrentVariable()
@@ -7836,13 +7985,21 @@ observeEvent(input$confirm_save_dictionary, {
       }
       
       # Copy entire dataset directory
-      message("\n=== COPYING DATASET ===")
-      message("  From: ", dataset_path_norm)
-      message("  To:   ", copy_dir_norm)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("\n=== COPYING DATASET ===")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  From: ", dataset_path_norm)
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  To:   ", copy_dir_norm)
+      }
       
       if (dir.exists(copy_dir_norm)) {
         # Directory exists — warn but proceed (files will be overwritten)
-        message("  Target directory already exists, files will be merged/overwritten")
+        if (isTRUE(getOption("psychds.verbose"))) {
+          message("  Target directory already exists, files will be merged/overwritten")
+        }
       }
       
       dir.create(copy_dir_norm, recursive = TRUE, showWarnings = FALSE)
@@ -7855,8 +8012,12 @@ observeEvent(input$confirm_save_dictionary, {
         dir.create(dirname(dest_file), recursive = TRUE, showWarnings = FALSE)
         file.copy(src_file, dest_file, overwrite = TRUE)
       }
-      message("  Copied ", length(all_files), " files")
-      message("=== END COPYING DATASET ===\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  Copied ", length(all_files), " files")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("=== END COPYING DATASET ===\n")
+      }
       
       target_dir <- copy_dir_norm
     } else {
@@ -7879,12 +8040,24 @@ observeEvent(input$confirm_save_dictionary, {
     sidecar_groups <- groups[names(groups) != global_json_norm]
     global_var_names <- groups[[global_json_norm]] %||% character(0)
     
-    message("\n=== SAVING DATA DICTIONARY ===")
-    message("  Mode: ", if(save_to_copy) "copy" else "overwrite in place")
-    message("  Target dir: ", target_dir)
-    message("  Global save path: ", json_path)
-    message("  Global variables: ", length(global_var_names))
-    message("  Sidecar targets: ", length(sidecar_groups))
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("\n=== SAVING DATA DICTIONARY ===")
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("  Mode: ", if(save_to_copy) "copy" else "overwrite in place")
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("  Target dir: ", target_dir)
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("  Global save path: ", json_path)
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("  Global variables: ", length(global_var_names))
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("  Sidecar targets: ", length(sidecar_groups))
+    }
     
     # --- 1. Save sidecar-sourced variables back to their sidecar files ---
     sidecar_save_count <- 0
@@ -7892,7 +8065,9 @@ observeEvent(input$confirm_save_dictionary, {
       sc_var_names <- sidecar_groups[[sc_path]]
       sc_target <- remapPath(sc_path)
       rel_path <- sub(paste0(target_dir, "/"), "", sc_target, fixed = TRUE)
-      message("  Saving to sidecar: ", rel_path, " (", length(sc_var_names), " variables)")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("  Saving to sidecar: ", rel_path, " (", length(sc_var_names), " variables)")
+      }
       
       # Read from the target (which is the copy if copying, or original if overwriting)
       if (file.exists(sc_target)) {
@@ -7926,7 +8101,9 @@ observeEvent(input$confirm_save_dictionary, {
       sc_json$variableMeasured <- c(kept_entries, updated_entries)
       jsonlite::write_json(sc_json, sc_target, pretty = TRUE, auto_unbox = TRUE)
       sidecar_save_count <- sidecar_save_count + 1
-      message("    Saved ", length(sc_var_names), " variables to ", rel_path)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("    Saved ", length(sc_var_names), " variables to ", rel_path)
+      }
     }
     
     # --- 2. Save global variables to dataset_description.json ---
@@ -7944,8 +8121,12 @@ observeEvent(input$confirm_save_dictionary, {
     })
     
     jsonlite::write_json(dataset_desc, json_path, pretty = TRUE, auto_unbox = TRUE)
-    message("  Saved ", length(global_var_names), " variables to ", json_path)
-    message("=== END SAVING DATA DICTIONARY ===\n")
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("  Saved ", length(global_var_names), " variables to ", json_path)
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("=== END SAVING DATA DICTIONARY ===\n")
+    }
     
     # Store the dataset path in state for the explorer (point to the copy if we made one)
     state$dictionary_dataset_dir <- target_dir
@@ -8095,13 +8276,19 @@ observeEvent(input$load_dataset_btn, {
     # Use recursive = TRUE to find CSV and TSV files in subdirectories
     data_files <- list.files(data_dir, pattern = "\\.(csv|tsv)$", recursive = TRUE, full.names = TRUE, ignore.case = TRUE)
     
-    message("Looking for data files in: ", data_dir)
-    message("Found files: ", paste(data_files, collapse = ", "))
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("Looking for data files in: ", data_dir)
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("Found files: ", paste(data_files, collapse = ", "))
+    }
     
     if (length(data_files) == 0) {
       # Try looking without the recursive flag first to debug
       all_files <- list.files(data_dir, recursive = TRUE, full.names = TRUE)
-      message("All files in data dir: ", paste(all_files, collapse = ", "))
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("All files in data dir: ", paste(all_files, collapse = ", "))
+      }
       
       showNotification("No CSV or TSV files found in data directory", type = "warning")
       explorer_state$dataset_path <- dataset_path
@@ -8247,7 +8434,9 @@ extractKeywordsFromFilenames <- function(filenames) {
 loadCurrentFile <- function() {
   if (!is.null(explorer_state$current_file) && file.exists(explorer_state$current_file)) {
     tryCatch({
-      message("Loading file: ", explorer_state$current_file)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("Loading file: ", explorer_state$current_file)
+      }
       data <- read_data_file(explorer_state$current_file, stringsAsFactors = FALSE)
       explorer_state$current_data <- data
       explorer_state$available_columns <- names(data)
@@ -8258,7 +8447,9 @@ loadCurrentFile <- function() {
       updateSelectInput(session, "stats_variable", 
                        choices = c("Select variable..." = "", names(data)))
       
-      message("File loaded successfully with ", nrow(data), " rows and ", ncol(data), " columns")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("File loaded successfully with ", nrow(data), " rows and ", ncol(data), " columns")
+      }
       
     }, error = function(e) {
       message("Error reading file: ", e$message)
@@ -8580,12 +8771,18 @@ output$variable_statistics <- renderUI({
   }
 
   # Debug output
-  message("=== DEBUG: Variable '", input$stats_variable, "' ===\n", sep = "")
-  message("Metadata found:", !is.null(metadata), "\n")
-  if (!is.null(metadata)) {
-    message("valueType in metadata:", metadata$valueType, "\n")
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("=== DEBUG: Variable '", input$stats_variable, "' ===\n", sep = "")
+    message("Metadata found:", !is.null(metadata), "\n")
+    if (!is.null(metadata)) {
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("valueType in metadata:", metadata$valueType, "\n")
+      }
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      message("is.numeric(column_data):", is.numeric(column_data), "\n")
+    }
   }
-  message("is.numeric(column_data):", is.numeric(column_data), "\n")
 
   # Detect variable type from metadata or data
   var_type <- if (!is.null(metadata) && !is.null(metadata$valueType)) {
@@ -8596,8 +8793,12 @@ output$variable_statistics <- renderUI({
     "string"
   }
 
-  message("Final var_type:", var_type, "\n")
-  message("================\n")
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("Final var_type:", var_type, "\n")
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("================\n")
+  }
   
   # Base statistics (always shown)
   base_stats <- div(
@@ -8909,23 +9110,22 @@ observeEvent(input$test_auth, {
   
   showNotification("Testing OSF connection...", id = "auth_test", duration = NULL)
   
-  # Test token with direct HTTP call
   if (!requireNamespace("httr", quietly = TRUE)) {
-    install.packages("httr")
+    showNotification("The 'httr' package is required for OSF upload. Please install it.",
+                     type = "error", duration = 10)
+    return()
   }
   
-  library(httr)
-  
   response <- tryCatch({
-    GET(
+    httr::GET(
       "https://api.osf.io/v2/users/me/",
-      add_headers(Authorization = paste("Bearer", input$osf_token))
+      httr::add_headers(Authorization = paste("Bearer", input$osf_token))
     )
   }, error = function(e) {
     NULL
   })
   
-  if (!is.null(response) && status_code(response) == 200) {
+  if (!is.null(response) && httr::status_code(response) == 200) {
     # Token is valid!
     # Set it for osfr to use
     Sys.setenv(OSF_PAT = input$osf_token)
@@ -8933,7 +9133,7 @@ observeEvent(input$test_auth, {
     
     # Parse user info - need to handle the JSON properly
     user_data <- tryCatch({
-      content(response, "parsed", encoding = "UTF-8")
+      httr::content(response, "parsed", encoding = "UTF-8")
     }, error = function(e) {
       list(data = list(attributes = list(full_name = "OSF User")))
     })
@@ -8970,7 +9170,7 @@ observeEvent(input$test_auth, {
   } else {
     removeNotification(id = "auth_test")
     
-    status <- if (!is.null(response)) status_code(response) else "Network error"
+    status <- if (!is.null(response)) httr::status_code(response) else "Network error"
     showNotification(
       paste("Authentication failed. Status:", status), 
       type = "error",
@@ -9011,7 +9211,6 @@ output$auth_status_display <- renderUI({
 observeEvent(input$check_dataset, {
   req(input$dataset_dir)
   
-  message("DEBUG: check_dataset triggered with dir: ", input$dataset_dir)
   
   # Mark that we triggered this validation
   osf_state$validation_triggered_here <- TRUE
@@ -9030,18 +9229,14 @@ observeEvent(input$check_dataset, {
   tryCatch({
     # Build file tree for the validator
     file_tree <- build_file_tree(dataset_path, dataset_path)
-    message("DEBUG: File tree built successfully")
     
     removeNotification(id = "validate_progress")
     showNotification("Running validation...", id = "validate_progress2", duration = NULL)
     
     # Send to JavaScript validator
-    message("DEBUG: Sending file tree to JavaScript validator")
     session$sendCustomMessage("run_validation", file_tree)
-    message("DEBUG: Custom message sent to JS")
     
   }, error = function(e) {
-    message("DEBUG: Error building file tree: ", e$message)
     removeNotification(id = "validate_progress")
     removeNotification(id = "validate_progress2")
     showNotification(paste("Error building file tree:", e$message), type = "error")
@@ -9079,13 +9274,11 @@ observe({
       # Reset the flag since we've now processed this validation
       osf_state$validation_triggered_here <- FALSE
       
-      message("DEBUG: validation_results found in parent session, valid = ", validation_result$valid)
       
       removeNotification(id = "validate_progress")
       removeNotification(id = "validate_progress2")
       
       if (validation_result$valid == TRUE) {
-        message("DEBUG: Dataset is valid, proceeding...")
         
         # Dataset is valid - extract info from the validation results
         tryCatch({
@@ -9101,7 +9294,6 @@ observe({
           )
           
           osf_state$dataset_valid <- TRUE
-          message("DEBUG: osf_state$dataset_valid set to TRUE")
           
           showNotification(
             paste("Dataset is valid! Found", validation_result$summary$totalFiles, "files."), 
@@ -9118,7 +9310,6 @@ observe({
           
           # Force show the element multiple ways
           section_id <- session$ns("osf_project_section")
-          message("DEBUG: Attempting to show section with ID: ", section_id)
           
           # Method 1: shinyjs show
           shinyjs::show(section_id)
@@ -9132,10 +9323,8 @@ observe({
           # Method 4: Remove the style attribute entirely
           shinyjs::runjs(paste0("$('#", section_id, "').removeAttr('style');"))
           
-          message("DEBUG: Tried multiple show methods")
           
         }, error = function(e) {
-          message("DEBUG: Error reading dataset description: ", e$message)
           
           # Validation passed but couldn't read details - still allow upload
           osf_state$dataset_info <- list(
@@ -9155,7 +9344,6 @@ observe({
         })
         
       } else {
-        message("DEBUG: Dataset is invalid")
         
         # Dataset is invalid
         osf_state$dataset_valid <- FALSE
@@ -9305,13 +9493,24 @@ loadProjects <- function() {
 
 # Control upload summary visibility based on readiness
 observe({
-  message("DEBUG: Upload summary observer triggered")
-  message("  authenticated: ", osf_state$authenticated)
-  message("  dataset_valid: ", osf_state$dataset_valid)
-  message("  project_select: ", input$project_select)
-  message("  project_id_manual: ", input$project_id_manual)
-  message("  project_option: ", input$project_option)
-  message("  new_project_title: ", input$new_project_title)
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  authenticated: ", osf_state$authenticated)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  dataset_valid: ", osf_state$dataset_valid)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  project_select: ", input$project_select)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  project_id_manual: ", input$project_id_manual)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  project_option: ", input$project_option)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  new_project_title: ", input$new_project_title)
+  }
   
   # Check each condition separately for debugging
   cond1 <- osf_state$authenticated
@@ -9321,18 +9520,33 @@ observe({
   cond3c <- (input$project_option == "new" && !is.null(input$new_project_title) && input$new_project_title != "")
   cond3 <- (cond3a || cond3b || cond3c)
   
-  message("  Condition breakdown:")
-  message("    authenticated: ", cond1)
-  message("    dataset_valid: ", cond2)
-  message("    project selected: ", cond3a)
-  message("    manual ID entered: ", cond3b)
-  message("    new project with title: ", cond3c)
-  message("    any project condition: ", cond3)
-  message("  SHOULD SHOW: ", cond1 && cond2 && cond3)
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  Condition breakdown:")
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    authenticated: ", cond1)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    dataset_valid: ", cond2)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    project selected: ", cond3a)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    manual ID entered: ", cond3b)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    new project with title: ", cond3c)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("    any project condition: ", cond3)
+  }
+  if (isTRUE(getOption("psychds.verbose"))) {
+    message("  SHOULD SHOW: ", cond1 && cond2 && cond3)
+  }
   
   if (cond1 && cond2 && cond3) {
     summary_id <- session$ns("upload_summary_section")
-    message("DEBUG: Showing upload summary section with ID: ", summary_id)
     
     # Try multiple methods to show it
     shinyjs::show(summary_id)
@@ -9345,7 +9559,6 @@ observe({
     ))
   } else {
     summary_id <- session$ns("upload_summary_section")
-    message("DEBUG: Hiding upload summary section with ID: ", summary_id)
     shinyjs::hide(summary_id)
   }
 })
@@ -9413,8 +9626,11 @@ observeEvent(input$start_upload, {
   # Show progress div
   shinyjs::show("upload_progress")
   
-  library(httr)
-  library(jsonlite)
+  if (!requireNamespace("httr", quietly = TRUE)) {
+    showNotification("The 'httr' package is required for OSF upload. Please install it.",
+                     type = "error", duration = 10)
+    return()
+  }
   
   tryCatch({
     token <- input$osf_token
@@ -9434,9 +9650,9 @@ observeEvent(input$start_upload, {
         )
       ), auto_unbox = TRUE)
       
-      response <- POST(
+      response <- httr::POST(
         "https://api.osf.io/v2/nodes/",
-        add_headers(
+        httr::add_headers(
           Authorization = paste("Bearer", token),
           `Content-Type` = "application/vnd.api+json"
         ),
@@ -9444,17 +9660,17 @@ observeEvent(input$start_upload, {
         encode = "raw"
       )
       
-      if (status_code(response) != 201) {
+      if (httr::status_code(response) != 201) {
         error_msg <- tryCatch({
-          err_content <- content(response, "text", encoding = "UTF-8")
+          err_content <- httr::content(response, "text", encoding = "UTF-8")
           err_content
         }, error = function(e) {
-          paste("Status code:", status_code(response))
+          paste("Status code:", httr::status_code(response))
         })
         stop(paste("Failed to create project.", error_msg))
       }
       
-      project_data <- content(response, "text", encoding = "UTF-8")
+      project_data <- httr::content(response, "text", encoding = "UTF-8")
       project_json <- fromJSON(project_data)
       project_id <- project_json$data$id
       
@@ -9471,16 +9687,16 @@ observeEvent(input$start_upload, {
     
     # For file upload, we need to use OSF's waterbutler API
     # First, get the upload URL for the project
-    storage_response <- GET(
+    storage_response <- httr::GET(
       paste0("https://api.osf.io/v2/nodes/", project_id, "/files/"),
-      add_headers(Authorization = paste("Bearer", token))
+      httr::add_headers(Authorization = paste("Bearer", token))
     )
     
-    if (status_code(storage_response) != 200) {
-      stop(paste("Failed to get storage info. Status:", status_code(storage_response)))
+    if (httr::status_code(storage_response) != 200) {
+      stop(paste("Failed to get storage info. Status:", httr::status_code(storage_response)))
     }
     
-    storage_text <- content(storage_response, "text", encoding = "UTF-8")
+    storage_text <- httr::content(storage_response, "text", encoding = "UTF-8")
     storage_data <- fromJSON(storage_text)
     
     # Find the osfstorage provider
@@ -9545,32 +9761,27 @@ observeEvent(input$start_upload, {
                                  URLencode(folder, reserved = TRUE))
             }
             
-            message("DEBUG: Creating folder: ", full_path)
             if (!is.null(parent_folder_id)) {
-              message("DEBUG: Parent folder ID: ", parent_folder_id)
             }
             
-            folder_response <- PUT(
+            folder_response <- httr::PUT(
               folder_url,
-              add_headers(Authorization = paste("Bearer", token))
+              httr::add_headers(Authorization = paste("Bearer", token))
             )
             
-            status <- status_code(folder_response)
+            status <- httr::status_code(folder_response)
             if (status %in% c(200, 201)) {
               # Parse response to get folder ID
-              folder_content <- content(folder_response)
+              folder_content <- httr::content(folder_response)
               if (!is.null(folder_content$data$id)) {
                 folder_id <- folder_content$data$id
                 created_folders[[full_path]] <- folder_id
                 parent_folder_id <- folder_id  # This becomes parent for next level
-                message("DEBUG: Folder created: ", full_path, " with ID: ", folder_id)
               } else {
                 created_folders[[full_path]] <- TRUE
-                message("DEBUG: Folder created but no ID found: ", full_path)
               }
             } else if (status == 409) {
               # Folder exists - need to get its ID
-              message("DEBUG: Folder already exists: ", full_path)
               
               # List the parent directory to find this folder
               list_url <- if (is.null(parent_folder_id)) {
@@ -9583,13 +9794,13 @@ observeEvent(input$start_upload, {
                        "/providers/osfstorage/", clean_parent_id, "/")
               }
               
-              list_response <- GET(
+              list_response <- httr::GET(
                 list_url,
-                add_headers(Authorization = paste("Bearer", token))
+                httr::add_headers(Authorization = paste("Bearer", token))
               )
               
-              if (status_code(list_response) == 200) {
-                list_content <- content(list_response)
+              if (httr::status_code(list_response) == 200) {
+                list_content <- httr::content(list_response)
                 # Find our folder in the listing
                 if (!is.null(list_content$data)) {
                   for (item in list_content$data) {
@@ -9599,7 +9810,6 @@ observeEvent(input$start_upload, {
                       folder_id <- item$id
                       created_folders[[full_path]] <- folder_id
                       parent_folder_id <- folder_id  # Set as parent for next level
-                      message("DEBUG: Found existing folder: ", full_path, " with ID: ", folder_id)
                       break
                     }
                   }
@@ -9608,23 +9818,20 @@ observeEvent(input$start_upload, {
               
               if (!(full_path %in% names(created_folders)) || is.null(created_folders[[full_path]])) {
                 created_folders[[full_path]] <- TRUE
-                message("DEBUG: Folder exists but couldn't get ID: ", full_path)
               }
             } else {
               warning("Failed to create folder: ", full_path, " (status: ", status, ")")
               
               # Log error response for debugging
               error_content <- tryCatch({
-                content(folder_response, "text", encoding = "UTF-8")
+                httr::content(folder_response, "text", encoding = "UTF-8")
               }, error = function(e) "")
               if (nchar(error_content) > 0) {
-                message("DEBUG: Folder creation error: ", error_content)
               }
             }
           } else {
             # Folder already created, use its ID as parent for next level
             parent_folder_id <- created_folders[[full_path]]
-            message("DEBUG: Using existing folder: ", full_path, " with ID: ", parent_folder_id)
           }
           
           current_path <- full_path
@@ -9670,10 +9877,8 @@ observeEvent(input$start_upload, {
                                       "/providers/osfstorage/", clean_folder_id, "/",
                                       "?kind=file&name=", 
                                       URLencode(file_name, reserved = TRUE))
-              message("DEBUG: Uploading to folder ID ", clean_folder_id, ": ", rel_path)
             } else {
               # Fallback: try uploading with path in name (though this may fail)
-              message("DEBUG: Warning - no folder ID found for ", file_dir, ", trying path-based upload")
               full_file_path <- paste0(file_dir, "/", file_name)
               file_upload_url <- paste0(upload_base_url, 
                                       "?kind=file&name=", 
@@ -9686,59 +9891,51 @@ observeEvent(input$start_upload, {
                                     URLencode(file_name, reserved = TRUE))
           }
           
-          message("DEBUG: Uploading ", rel_path, " to ", file_upload_url)
           
           # Try to upload file
-          file_response <- PUT(
+          file_response <- httr::PUT(
             file_upload_url,
-            add_headers(Authorization = paste("Bearer", token)),
+            httr::add_headers(Authorization = paste("Bearer", token)),
             body = file_content,
             encode = "raw"
           )
           
-          status <- status_code(file_response)
-          message("DEBUG: Upload response status for ", rel_path, ": ", status)
+          status <- httr::status_code(file_response)
           
           if (status %in% c(200, 201)) {
             success_count <- success_count + 1
-            message("DEBUG: Successfully uploaded ", rel_path)
           } else if (status == 409) {
             # File exists - extract the upload URL from the error response
-            message("DEBUG: File exists, attempting to update: ", rel_path)
             
-            error_content <- content(file_response)
+            error_content <- httr::content(file_response)
             
             # Extract the upload URL from the error response
             update_url <- NULL
             if (!is.null(error_content$data$links$upload)) {
               update_url <- error_content$data$links$upload
-              message("DEBUG: Found update URL: ", update_url)
             }
             
             if (!is.null(update_url)) {
               # Use the file's specific upload endpoint to update it
-              update_response <- PUT(
+              update_response <- httr::PUT(
                 update_url,
-                add_headers(Authorization = paste("Bearer", token)),
+                httr::add_headers(Authorization = paste("Bearer", token)),
                 body = file_content,
                 encode = "raw"
               )
               
-              update_status <- status_code(update_response)
-              message("DEBUG: Update response status for ", rel_path, ": ", update_status)
+              update_status <- httr::status_code(update_response)
               
               if (update_status %in% c(200, 201)) {
                 success_count <- success_count + 1
-                message("DEBUG: Successfully updated ", rel_path)
               } else {
                 failed_files <- c(failed_files, rel_path)
                 warning("Failed to update ", rel_path, ", status: ", update_status)
                 
                 # Get error details
                 update_error <- tryCatch({
-                  content(update_response, "text", encoding = "UTF-8")
+                  httr::content(update_response, "text", encoding = "UTF-8")
                 }, error = function(e) "")
-                message("DEBUG: Update error: ", update_error)
               }
             } else {
               # Couldn't find update URL in error response
@@ -9751,11 +9948,10 @@ observeEvent(input$start_upload, {
             
             # Try to get error message
             error_content <- tryCatch({
-              content(file_response, "text", encoding = "UTF-8")
+              httr::content(file_response, "text", encoding = "UTF-8")
             }, error = function(e) "")
             
             if (nchar(error_content) > 0) {
-              message("DEBUG: Error response: ", substr(error_content, 1, 500))
             }
           }
           
@@ -9770,7 +9966,6 @@ observeEvent(input$start_upload, {
       
       # Generate and upload README if requested
       if (input$create_readme) {
-        message("DEBUG: Checking for README generation")
         
         # First check if README already exists in the dataset
         existing_readme <- FALSE
@@ -9779,7 +9974,6 @@ observeEvent(input$start_upload, {
         for (readme_name in readme_files) {
           if (file.exists(file.path(dataset_path, readme_name))) {
             existing_readme <- TRUE
-            message("DEBUG: Found existing README: ", readme_name)
             break
           }
         }
@@ -9792,53 +9986,46 @@ observeEvent(input$start_upload, {
           readme_upload_url <- paste0(upload_base_url, 
                                      "?kind=file&name=README.md")
           
-          message("DEBUG: Uploading generated README.md")
           
-          readme_response <- PUT(
+          readme_response <- httr::PUT(
             readme_upload_url,
-            add_headers(Authorization = paste("Bearer", token)),
+            httr::add_headers(Authorization = paste("Bearer", token)),
             body = charToRaw(readme_content),
             encode = "raw"
           )
           
-          readme_status <- status_code(readme_response)
+          readme_status <- httr::status_code(readme_response)
           
           if (readme_status %in% c(200, 201)) {
             showNotification("README.md generated and uploaded successfully", type = "message")
-            message("DEBUG: README uploaded successfully")
           } else if (readme_status == 409) {
             # README exists in OSF, try to update it
-            message("DEBUG: README exists in OSF, attempting update")
             
-            error_content <- content(readme_response)
+            error_content <- httr::content(readme_response)
             update_url <- NULL
             if (!is.null(error_content$data$links$upload)) {
               update_url <- error_content$data$links$upload
             }
             
             if (!is.null(update_url)) {
-              update_response <- PUT(
+              update_response <- httr::PUT(
                 update_url,
-                add_headers(Authorization = paste("Bearer", token)),
+                httr::add_headers(Authorization = paste("Bearer", token)),
                 body = charToRaw(readme_content),
                 encode = "raw"
               )
               
-              if (status_code(update_response) %in% c(200, 201)) {
+              if (httr::status_code(update_response) %in% c(200, 201)) {
                 showNotification("README.md updated successfully", type = "message")
-                message("DEBUG: README updated successfully")
               } else {
                 showNotification("Could not update README.md", type = "warning")
-                message("DEBUG: Failed to update README, status: ", status_code(update_response))
               }
             }
           } else {
             showNotification("Failed to upload README.md", type = "warning")
-            message("DEBUG: Failed to upload README, status: ", readme_status)
           }
         } else {
           showNotification("Existing README found - preserving original", type = "message")
-          message("DEBUG: Skipping README generation - existing README found")
         }
       }
       
