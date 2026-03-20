@@ -10,6 +10,7 @@
 <url><loc>https://psych-ds.github.io/psychds-r/index.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/news/index.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/check_dependencies.html</loc></url>
+<url><loc>https://psych-ds.github.io/psychds-r/reference/check_known_conflicts.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/check_psychds_deps.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/copy_data_files.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/create_datapackage.html</loc></url>
@@ -17,12 +18,14 @@
 <url><loc>https://psych-ds.github.io/psychds-r/reference/create_psych_ds_structure.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/extract_csv_structure.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/generate_data_dictionary.html</loc></url>
-<url><loc>https://psych-ds.github.io/psychds-r/reference/generate_pdf_dictionary.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/index.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/is_valid_psych_ds_dir.html</loc></url>
+<url><loc>https://psych-ds.github.io/psychds-r/reference/offer_installation_help.html</loc></url>
+<url><loc>https://psych-ds.github.io/psychds-r/reference/report_dependency_status.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/run_app_safe.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/run_psych_ds_app.html</loc></url>
-<url><loc>https://psych-ds.github.io/psychds-r/reference/setup_pdf_generation.html</loc></url>
+<url><loc>https://psych-ds.github.io/psychds-r/reference/safe_load_package.html</loc></url>
+<url><loc>https://psych-ds.github.io/psychds-r/reference/startup_check.html</loc></url>
 <url><loc>https://psych-ds.github.io/psychds-r/reference/validate_dataset.html</loc></url>
 </urlset>
 

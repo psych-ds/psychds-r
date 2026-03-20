@@ -6,26 +6,35 @@ installed and meet minimum version requirements.
 ## Usage
 
 ``` r
-check_psychds_deps(install_missing = interactive())
+check_psychds_deps(
+  install_missing = interactive(),
+  detailed = FALSE,
+  check_pdf = TRUE
+)
 ```
 
 ## Arguments
 
+- install_missing:
+
+  Logical. If `TRUE` (and session is interactive), prompts the user to
+  install any missing packages. Defaults to
+  [`interactive()`](https://rdrr.io/r/base/interactive.html).
+
 - detailed:
 
-  Logical. If `TRUE`, displays detailed information about installed
-  package versions, R environment, and PDF generation capabilities.
-  Default is `FALSE`.
+  Logical. If `TRUE`, displays additional information about the R
+  environment. Default is `FALSE`.
 
 - check_pdf:
 
-  Logical. If `TRUE` (and `detailed = TRUE`), also checks PDF generation
-  capabilities. Default is `TRUE`.
+  Logical. Ignored. Retained for backwards compatibility. Default is
+  `TRUE`.
 
 ## Value
 
-Invisibly returns `TRUE` if all required dependencies are satisfied,
-`FALSE` otherwise.
+Invisibly returns a list with `missing_required` and
+`missing_recommended` character vectors.
 
 ## Details
 
@@ -34,19 +43,12 @@ This function checks for:
 - Required packages: shiny, shinydashboard, shinyjs, shinyFiles, DT,
   jsonlite
 
-- Optional packages: sortable, zip, pointblank, osfr
+- Optional packages: httr, rmarkdown, knitr
 
 - Minimum version requirements for each package
 
-- PDF generation capabilities (rmarkdown, TinyTeX, pagedown)
-
 If dependencies are missing, the function provides installation
 instructions.
-
-## See also
-
-[`setup_pdf_generation()`](https://psych-ds.github.io/psychds-r/reference/setup_pdf_generation.md)
-for setting up PDF capabilities.
 
 ## Examples
 
@@ -70,13 +72,30 @@ check_psychds_deps()
 #> ✓ rmarkdown (2.30)
 #> ✓ knitr (1.51)
 #> 
-#> PDF Generation:
-#> ○ No PDF generation available
-#>   Run setup_pdf_generation() to enable
-#> 
 #> ✓ All required dependencies are installed!
 
-# Detailed check with all version info
+# Detailed check with environment info
 check_psychds_deps(detailed = TRUE)
-#> Error in check_psychds_deps(detailed = TRUE): unused argument (detailed = TRUE)
+#> Checking psychds dependencies...
+#> ✓ shiny (1.13.0)
+#> ✓ shinydashboard (0.7.3)
+#> ✓ shinyjs (2.1.1)
+#> ✓ shinyFiles (0.9.3)
+#> ✓ DT (0.34.0)
+#> ✓ jsonlite (2.0.0)
+#> ✓ jsonvalidate (1.5.0)
+#> ✓ dplyr (1.2.0)
+#> ✓ tidyr (1.3.2)
+#> ✓ readr (2.2.0)
+#> 
+#> Recommended packages:
+#> ✓ httr (1.4.8)
+#> ✓ rmarkdown (2.30)
+#> ✓ knitr (1.51)
+#> 
+#> Environment:
+#>   R version: 4.5.3
+#>   Platform: unix
+#> 
+#> ✓ All required dependencies are installed!
 ```
