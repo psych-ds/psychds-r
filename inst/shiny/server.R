@@ -2,7 +2,7 @@
 #'
 #' This file defines the server-side logic for the Psych-DS app.
 #' It handles the main app flow, state management, and module coordination.
-source("modules/server_modules.R")
+source("modules/server_modules.R", local = FALSE)
 
 step_navigation <- function(id, state, session) {
   moduleServer(id, function(input, output, session) {
