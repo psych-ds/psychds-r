@@ -403,7 +403,7 @@ check_dependencies <- function(
 #' Check for Known Package Conflicts
 #' @param status Current status list
 #' @return Updated status list
-#' @noRd
+#' @keywords internal
 check_known_conflicts <- function(status) {
   # Check for shiny namespace conflicts
   if ("package:shiny" %in% search()) {
@@ -445,7 +445,7 @@ check_known_conflicts <- function(status) {
 #' Report Dependency Check Results
 #' @param status Status list from check_dependencies
 #' @param mode Startup mode
-#' @noRd
+#' @keywords internal
 report_dependency_status <- function(status, mode) {
   
   # Use cli package for nice output if available, otherwise basic messages
@@ -513,10 +513,10 @@ report_dependency_status <- function(status, mode) {
 #' Offer Installation Help
 #' @param status Status list
 #' @param min_versions Minimum version requirements
-#' @noRd
+#' @keywords internal
 offer_installation_help <- function(status, min_versions) {
   
-  cat("\n")
+  message("")
   message("=== Installation Instructions ===")
   
   # Combine missing and outdated packages
@@ -533,14 +533,14 @@ offer_installation_help <- function(status, min_versions) {
   
   if (length(packages_to_install) > 0) {
     message("\nTo install missing/outdated packages, run:")
-    cat(sprintf('install.packages(c(%s))\n', 
+    message(sprintf('install.packages(c(%s))', 
                paste0('"', packages_to_install, '"', collapse = ", ")))
     
     message("\nOr for specific versions from CRAN archives:")
     for (pkg in packages_to_install) {
       if (pkg %in% names(min_versions)) {
-        cat(sprintf('# For %s >= %s:\n', pkg, min_versions[[pkg]]))
-        cat(sprintf('remotes::install_version("%s", version = "%s")\n', 
+        message(sprintf('# For %s >= %s:', pkg, min_versions[[pkg]]))
+        message(sprintf('remotes::install_version("%s", version = "%s")', 
                    pkg, min_versions[[pkg]]))
       }
     }
@@ -548,7 +548,7 @@ offer_installation_help <- function(status, min_versions) {
   
   if (length(status$missing_optional) > 0) {
     message("\nOptional packages for full functionality:")
-    cat(sprintf('install.packages(c(%s))\n',
+    message(sprintf('install.packages(c(%s))',
                paste0('"', status$missing_optional, '"', collapse = ", ")))
   }
   
@@ -565,7 +565,7 @@ offer_installation_help <- function(status, min_versions) {
 #' @param required_version Minimum version required (optional)
 #' @param unload_conflicts Attempt to unload conflicting packages
 #' @return Logical indicating success
-#' @noRd
+#' @keywords internal
 safe_load_package <- function(package_name, 
                               required_version = NULL,
                               unload_conflicts = FALSE) {
@@ -641,7 +641,7 @@ run_app_safe <- function(app_dir = system.file("app", package = "psychds"),
   in_rstudio <- Sys.getenv("RSTUDIO") == "1"
   if (in_rstudio) {
     rs_version <- tryCatch(
-      RStudio.Version()$version,
+      rstudioapi::versionInfo()$version,
       error = function(e) NULL
     )
     
@@ -735,164 +735,3 @@ run_app_safe <- function(app_dir = system.file("app", package = "psychds"),
   })
 }
 
-check_pdf_capabilities <- function() {
-  
-  capabilities <- list(
-    has_rmarkdown = FALSE,
-    has_tinytex = FALSE,
-    has_system_latex = FALSE,
-    has_pagedown = FALSE,
-    can_generate_pdf = FALSE,
-    messages = character()
-  )
-  
-  # Check for rmarkdown
-  if (requireNamespace("rmarkdown", quietly = TRUE)) {
-    capabilities$has_rmarkdown <- TRUE
-  } else {
-    capabilities$messages <- c(capabilities$messages,
-      "Package 'rmarkdown' not installed (needed for formatted output)")
-  }
-  
-  # Check for LaTeX
-  if (Sys.which("pdflatex") != "") {
-    capabilities$has_system_latex <- TRUE
-    
-    # Check if it's TinyTeX specifically
-    if (requireNamespace("tinytex", quietly = TRUE)) {
-      if (tinytex::is_tinytex()) {
-        capabilities$has_tinytex <- TRUE
-      }
-    }
-  } else {
-    capabilities$messages <- c(capabilities$messages,
-      "LaTeX not found (needed for PDF generation)")
-  }
-  
-  # Check for pagedown (alternative PDF method)
-  if (requireNamespace("pagedown", quietly = TRUE)) {
-    capabilities$has_pagedown <- TRUE
-  }
-  
-  # Determine if we can generate PDFs
-  capabilities$can_generate_pdf <- 
-    capabilities$has_rmarkdown && 
-    (capabilities$has_system_latex || capabilities$has_pagedown)
-  
-  return(capabilities)
-}
-
-#' Setup PDF Generation Capabilities
-#' 
-#' Interactive function to help users set up PDF generation
-#' @param force Logical. Force setup even if already capable
-#' @export
-setup_pdf_generation <- function(force = FALSE) {
-  
-  caps <- check_pdf_capabilities()
-  
-  if (caps$can_generate_pdf && !force) {
-    message("✓ PDF generation is already set up!")
-    
-    if (caps$has_tinytex) {
-      message("  Using: TinyTeX")
-    } else if (caps$has_system_latex) {
-      message("  Using: System LaTeX")
-    } else if (caps$has_pagedown) {
-      message("  Using: pagedown (Chrome-based)")
-    }
-    
-    return(invisible(TRUE))
-  }
-  
-  # Interactive setup
-  message("Setting up PDF generation capabilities for psychds...")
-  message("")
-  
-  # Step 1: rmarkdown
-  if (!caps$has_rmarkdown) {
-    message("Step 1: Installing rmarkdown package...")
-    
-    if (interactive()) {
-      response <- readline("Install rmarkdown? (y/n): ")
-      if (tolower(response) == "y") {
-        install.packages("rmarkdown")
-        caps$has_rmarkdown <- TRUE
-      }
-    } else {
-      message("Run: install.packages('rmarkdown')")
-    }
-  } else {
-    message("✓ Step 1: rmarkdown already installed")
-  }
-  
-  # Step 2: PDF engine
-  if (!caps$has_system_latex && !caps$has_pagedown) {
-    message("")
-    message("Step 2: Choose PDF generation method:")
-    message("  1. TinyTeX (recommended, ~100MB, auto-manages LaTeX packages)")
-    message("  2. pagedown (uses Chrome, no LaTeX needed)")
-    message("  3. Skip (use HTML output only)")
-    
-    if (interactive()) {
-      choice <- readline("Enter choice (1/2/3): ")
-      
-      if (choice == "1") {
-        # Install TinyTeX
-        message("Installing TinyTeX...")
-        
-        if (!requireNamespace("tinytex", quietly = TRUE)) {
-          install.packages("tinytex")
-        }
-        
-        # Install TinyTeX distribution
-        tinytex::install_tinytex()
-        
-        # Verify installation
-        if (tinytex::is_tinytex()) {
-          message("✓ TinyTeX installed successfully!")
-          caps$has_tinytex <- TRUE
-          caps$has_system_latex <- TRUE
-        } else {
-          message("⚠ TinyTeX installation may have failed. Try manually:")
-          message("  tinytex::install_tinytex()")
-        }
-        
-      } else if (choice == "2") {
-        # Install pagedown
-        message("Installing pagedown...")
-        install.packages("pagedown")
-        caps$has_pagedown <- TRUE
-        message("✓ pagedown installed successfully!")
-        
-      } else {
-        message("Skipping PDF setup. HTML output will be available.")
-      }
-      
-    } else {
-      message("For PDF generation, run one of:")
-      message("  Option 1: tinytex::install_tinytex()")
-      message("  Option 2: install.packages('pagedown')")
-    }
-    
-  } else if (caps$has_tinytex) {
-    message("✓ Step 2: TinyTeX already installed")
-  } else if (caps$has_system_latex) {
-    message("✓ Step 2: System LaTeX detected")
-  } else if (caps$has_pagedown) {
-    message("✓ Step 2: pagedown already installed")
-  }
-  
-  # Final check
-  caps <- check_pdf_capabilities()
-  
-  message("")
-  if (caps$can_generate_pdf) {
-    message("✅ PDF generation setup complete!")
-  } else {
-    message("⚠ PDF generation not fully configured.")
-    message("  HTML output will be available instead.")
-  }
-  
-  return(invisible(caps$can_generate_pdf))
-}
