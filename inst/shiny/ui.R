@@ -37,8 +37,8 @@ ui <- dashboardPage(
     # External resources
     tags$head(
       # Include the external CSS file with cache-busting
-      tags$link(rel = "stylesheet", type = "text/css", 
-               href = paste0("css/styles.css?v=", format(Sys.time(), "%Y%m%d%H%M%S"))),
+      tags$link(rel = "stylesheet", type = "text/css",
+               href = "css/styles.css"),
       # Change pop-up positioning
       tags$style(HTML("
         #shiny-notification-panel {
@@ -110,18 +110,18 @@ ui <- dashboardPage(
           font-size: 10px;
         }
       ")),
-      # Include SortableJS library for drag-and-drop functionality
-      tags$script(src = "https://cdn.jsdelivr.net/npm/sortablejs@1.14.0/Sortable.min.js"),
+      # Include SortableJS library for drag-and-drop functionality (bundled locally)
+      tags$script(src = "js/sortable.min.js"),
       
-      # Include EventEmitter for validator event handling
-      tags$script(src = "https://cdn.jsdelivr.net/npm/eventemitter3@4.0.7/umd/eventemitter3.min.js"),
+      # Include EventEmitter for validator event handling (bundled locally)
+      tags$script(src = "js/eventemitter3.min.js"),
       
       # Include jsonld library for validation
       tags$script(src = "js/jsonld.min.js"),
 
       # Include the validator.js module
-      tags$script(src = paste0("js/validator.js?v=", as.numeric(Sys.time())), type = "module"),
-      tags$script(src = paste0("js/validator-utils.js?v=", as.numeric(Sys.time())))
+      tags$script(src = "js/validator.js", type = "module"),
+      tags$script(src = "js/validator-utils.js")
     ),
 
     # JavaScript handlers for UI interactions
