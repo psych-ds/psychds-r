@@ -1,0 +1,18 @@
+{
+  "name": "25 Personality items representing 5 factors",
+  "description": "25 personality ",
+  "identifier": "https://dx.doi.org/10.17605/OSF.IO/K39BG",
+  "creator": "William Revelle",
+  "citation": "Revelle, W., Wilt, J., and Rosenthal, A. (2010) Individual Differences in Cognition: New Methods for examining the Personality-Cognition Link In Gruszka, A. and Matthews, G. and Szymura, B. (Eds.) Handbook of Individual Differences in Cognition: Attention, Memory and Executive Control, Springer.",
+  "url": "https://cran.r-project.org/web/packages/psych/index.html",
+  "datePublished": "2010-01-01",
+  "temporalCoverage": "Spring 2010",
+  "spatialCoverage": "Online",
+  "@context": "https://schema.org/",
+  "@type": "Dataset",
+  "author":{
+    "@type":"Person",
+    "name":"Person"
+  },
+  "variableMeasured": ["A1","A2","A3","A4","A5","C1","C2","C3","C4","C5","E1","E2","E3","E4","E5","N1","N2","N3","N4","N5","O1","O2","O3","O4","O5","gender","education","age"]
+}

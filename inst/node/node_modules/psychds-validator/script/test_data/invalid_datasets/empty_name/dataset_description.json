@@ -1,0 +1,73 @@
+{
+  "@context": "https://schema.org/",
+  "@type": "Dataset",
+  "name": "test",
+  "description": "test",
+  "author": [],
+  "variableMeasured": {
+    "data/framedata-per-response/study-e358fab9_response-009aeff7_data.csv": [
+      {
+        "@type": "PropertyValue",
+        "name": "response_uuid",
+        "description": ""
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "child_hashed_id",
+        "description": ""
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "frame_id",
+        "description": ""
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "event_number",
+        "description": ""
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "key",
+        "description": ""
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "value",
+        "description": ""
+      }
+    ],
+    "data/framedata-per-response/study-e358fab9_response-07b6eff6_data.csv": [
+      {
+        "@type": "PropertyValue",
+        "name": "response_uuid",
+        "description": ""
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "child_hashed_id",
+        "description": ""
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "frame_id",
+        "description": ""
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "event_number",
+        "description": ""
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "key",
+        "description": ""
+      },
+      {
+        "@type": "PropertyValue",
+        "name": "value",
+        "description": ""
+      }
+    ]
+  }
+}

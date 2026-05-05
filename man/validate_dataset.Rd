@@ -2,17 +2,46 @@
 % Please edit documentation in R/utils.R
 \name{validate_dataset}
 \alias{validate_dataset}
-\title{Validate a Psych-DS dataset}
+\title{Validate a Psych-DS Dataset}
 \usage{
-validate_dataset(dir_path)
+validate_dataset(dir_path, json = FALSE, verbose = FALSE, use_events = FALSE)
 }
 \arguments{
-\item{dir_path}{Path to the Psych-DS dataset directory}
+\item{dir_path}{Path to the 'Psych-DS' dataset directory to validate.}
+
+\item{json}{Logical. If \code{TRUE}, output results as JSON instead of
+formatted text. Default is \code{FALSE}.}
+
+\item{verbose}{Logical. If \code{TRUE}, show verbose output including
+warnings. Default is \code{FALSE}.}
+
+\item{use_events}{Logical. If \code{TRUE}, show live checklist progress
+output. Default is \code{FALSE}.}
 }
 \value{
-List containing validation results
+Invisibly returns the exit status. Called for its side effect
+of printing validation results to the console.
 }
 \description{
-Validate a Psych-DS dataset
+Validates a dataset directory against the full 'Psych-DS' specification
+using the same validator used by the 'psychds-validator' command-line tool.
 }
-\keyword{internal}
+\details{
+Requires 'Node.js' to be installed and available on the system PATH.
+Install 'Node.js' from \url{https://nodejs.org}.
+}
+\examples{
+\dontrun{
+# Standard text output
+validate_dataset("path/to/my-study")
+
+# JSON output for programmatic use
+validate_dataset("path/to/my-study", json = TRUE)
+
+# Verbose with warnings
+validate_dataset("path/to/my-study", verbose = TRUE)
+
+# Live checklist
+validate_dataset("path/to/my-study", use_events = TRUE)
+}
+}
