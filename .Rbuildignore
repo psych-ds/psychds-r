@@ -13,3 +13,12 @@
 ^fix_r_functions\.R$
 ^test_cran_changes\.R$
 ^psychds-r\.Rproj$
+^psychds-r\cran-comments\.md
+^inst/node/node_modules/\.bin$
+^inst/node/node_modules/\.package-lock\.json$
+^inst/node/package-lock\.json$
+^inst/node/package\.json$
+^inst/node/node_modules/.*test_data.*$
+^inst/node/node_modules/.*\.nyc_output.*$
+^inst/node/node_modules/psychds-validator/script/src/.*\.test\..*$
+^inst/node/node_modules/psychds-validator/esm/src/.*\.test\..*$

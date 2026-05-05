@@ -244,33 +244,199 @@ generate_data_dictionary <- function(files) {
   dict_list
 }
 
-#' Validate a Psych-DS dataset
+#' Validate a Psych-DS Dataset
 #'
-#' @param dir_path Path to the Psych-DS dataset directory
-#' @return List containing validation results
-#' @keywords internal
-validate_dataset <- function(dir_path) {
-  # Placeholder for validation logic
-  # In a real implementation, this would check:
-  # 1. Required files exist
-  # 2. JSON files validate against schemas
-  # 3. CSV files match the data dictionary
+#' Validates a dataset directory against the full 'Psych-DS' specification
+#' using the same validator used by the 'psychds-validator' command-line tool.
+#'
+#' @param dir_path Path to the 'Psych-DS' dataset directory to validate.
+#' @param json Logical. If \code{TRUE}, output results as JSON instead of
+#'   formatted text. Default is \code{FALSE}.
+#' @param verbose Logical. If \code{TRUE}, show verbose output including
+#'   warnings. Default is \code{FALSE}.
+#' @param use_events Logical. If \code{TRUE}, show live checklist progress
+#'   output. Default is \code{FALSE}.
+#'
+#' @return Invisibly returns the exit status. Called for its side effect
+#'   of printing validation results to the console.
+#'
+#' @details
+#' Requires 'Node.js' to be installed and available on the system PATH.
+#' Install 'Node.js' from \url{https://nodejs.org}.
+#'
+#' @examples
+#' \dontrun{
+#' # Standard text output
+#' validate_dataset("path/to/my-study")
+#'
+#' # JSON output for programmatic use
+#' validate_dataset("path/to/my-study", json = TRUE)
+#'
+#' # Verbose with warnings
+#' validate_dataset("path/to/my-study", verbose = TRUE)
+#'
+#' # Live checklist
+#' validate_dataset("path/to/my-study", use_events = TRUE)
+#' }
+#' @export
+validate_dataset <- function(dir_path,
+                             json       = FALSE,
+                             verbose    = FALSE,
+                             use_events = FALSE) {
 
-  results <- list(
-    valid = is_valid_psych_ds_dir(dir_path),
-    messages = character(0),
-    warnings = character(0),
-    errors = character(0)
-  )
-
-  # If not valid, add error message
-  if (!results$valid) {
-    results$errors <- c(results$errors, "Directory is not a valid Psych-DS dataset")
+  node <- Sys.which("node")
+  if (!nchar(node)) {
+    stop(
+      "validate_dataset() requires Node.js to be installed.\n",
+      "Install it from https://nodejs.org\n",
+      "Then restart R and try again."
+    )
   }
 
-  results
+  dir_path <- normalizePath(dir_path, mustWork = TRUE)
+
+  validator_script <- system.file(
+    "node", "validate.js",
+    package = "psychds"
+  )
+  if (!nchar(validator_script)) {
+    stop("Bundled validator script not found. Is the psychds package installed correctly?")
+  }
+
+  # Build CLI args the same way the npm CLI does
+   args <- c(shQuote(validator_script), shQuote(dir_path))
+  if (json)       args <- c(args, "--json")
+  if (verbose)    args <- c(args, "--verbose")
+  if (use_events) args <- c(args, "--useEvents")
+
+  status <- system2(
+    node,
+    args   = args,
+    stdout = "",
+    stderr = ""
+  )
+
+  invisible(status)
 }
 
+
+# Build a file tree structure matching what the JS validator expects.
+# Mirrors the logic of buildFileTree() in inst/shiny/global.R but
+# runs entirely in R without a Shiny session.
+#' @keywords internal
+.build_validation_tree <- function(dir_path) {
+
+  insert_node <- function(tree, parts, info) {
+    if (length(parts) == 0) return(tree)
+    key <- parts[[1]]
+    if (length(parts) == 1) {
+      tree[[key]] <- info
+    } else {
+      if (is.null(tree[[key]])) {
+        tree[[key]] <- list(type = "directory", name = key, contents = list())
+      }
+      tree[[key]]$contents <- insert_node(tree[[key]]$contents, parts[-1], info)
+    }
+    tree
+  }
+
+  all_files <- list.files(dir_path, recursive = TRUE,
+                          full.names = FALSE, all.files = FALSE)
+  all_dirs  <- list.dirs(dir_path,  recursive = TRUE,
+                         full.names = FALSE)
+  all_dirs  <- all_dirs[nchar(all_dirs) > 0]
+
+  tree <- list()
+
+  # Insert directories first
+  for (d in all_dirs) {
+    parts <- strsplit(d, .Platform$file.sep, fixed = TRUE)[[1]]
+    tree <- insert_node(tree, parts,
+                        list(type = "directory", name = parts[length(parts)],
+                             contents = list()))
+  }
+
+  # Insert files with content for JSON/text files
+  for (f in all_files) {
+    full <- file.path(dir_path, f)
+    parts <- strsplit(f, .Platform$file.sep, fixed = TRUE)[[1]]
+    ext <- tolower(tools::file_ext(f))
+
+    file_info <- list(
+      type    = "file",
+      name    = basename(f),
+      path    = f,
+      content = if (ext %in% c("json", "csv", "tsv", "txt")) {
+        tryCatch(paste(readLines(full, warn = FALSE), collapse = "\n"),
+                 error = function(e) "")
+      } else {
+        ""
+      }
+    )
+    tree <- insert_node(tree, parts, file_info)
+  }
+
+  list(type = "directory", name = basename(dir_path), contents = tree)
+}
+
+
+# Parse a raw validation result list into clean R structure.
+#' @keywords internal
+.parse_validation_result <- function(raw, verbose = FALSE) {
+
+  errors   <- character()
+  warnings <- character()
+  steps    <- list()
+
+  step_status <- raw$stepStatus
+
+  if (!is.null(step_status)) {
+    for (entry in step_status) {
+      # Each entry is a two-element list: [step_key, step_info]
+      if (length(entry) < 2) next
+      key  <- entry[[1]]
+      info <- entry[[2]]
+
+      complete <- isTRUE(info$complete)
+      success  <- isTRUE(info$success)
+      issue    <- info$issue  # NULL if no issue
+
+      steps[[key]] <- list(
+        complete = complete,
+        success  = success,
+        issue    = issue
+      )
+
+      if (complete && !success && !is.null(issue)) {
+        reason <- issue$reason %||% "Unknown error"
+        errors <- c(errors, paste0("[", key, "] ", reason))
+      }
+
+      if (verbose) {
+        status_label <- if (!complete) "SKIP"
+                        else if (success) "PASS"
+                        else "FAIL"
+        message(sprintf("  %-6s %s", status_label, key))
+        if (!success && !is.null(issue)) {
+          message("         ", issue$reason %||% "")
+        }
+      }
+    }
+  }
+
+  valid <- isTRUE(raw$valid) && length(errors) == 0
+
+  if (verbose) {
+    message(if (valid) "\nResult: VALID" else "\nResult: INVALID")
+  }
+
+  list(
+    valid        = valid,
+    errors       = errors,
+    warnings     = warnings,
+    step_results = steps
+  )
+}
 
 #' Check and Load Package Dependencies
 #' 
@@ -403,7 +569,7 @@ check_dependencies <- function(
 #' Check for Known Package Conflicts
 #' @param status Current status list
 #' @return Updated status list
-#' @keywords internal
+#' @noRd
 check_known_conflicts <- function(status) {
   # Check for shiny namespace conflicts
   if ("package:shiny" %in% search()) {
@@ -445,7 +611,7 @@ check_known_conflicts <- function(status) {
 #' Report Dependency Check Results
 #' @param status Status list from check_dependencies
 #' @param mode Startup mode
-#' @keywords internal
+#' @noRd
 report_dependency_status <- function(status, mode) {
   
   # Use cli package for nice output if available, otherwise basic messages
@@ -513,10 +679,10 @@ report_dependency_status <- function(status, mode) {
 #' Offer Installation Help
 #' @param status Status list
 #' @param min_versions Minimum version requirements
-#' @keywords internal
+#' @noRd
 offer_installation_help <- function(status, min_versions) {
   
-  message("")
+  cat("\n")
   message("=== Installation Instructions ===")
   
   # Combine missing and outdated packages
@@ -533,14 +699,14 @@ offer_installation_help <- function(status, min_versions) {
   
   if (length(packages_to_install) > 0) {
     message("\nTo install missing/outdated packages, run:")
-    message(sprintf('install.packages(c(%s))', 
+    cat(sprintf('install.packages(c(%s))\n', 
                paste0('"', packages_to_install, '"', collapse = ", ")))
     
     message("\nOr for specific versions from CRAN archives:")
     for (pkg in packages_to_install) {
       if (pkg %in% names(min_versions)) {
-        message(sprintf('# For %s >= %s:', pkg, min_versions[[pkg]]))
-        message(sprintf('remotes::install_version("%s", version = "%s")', 
+        cat(sprintf('# For %s >= %s:\n', pkg, min_versions[[pkg]]))
+        cat(sprintf('remotes::install_version("%s", version = "%s")\n', 
                    pkg, min_versions[[pkg]]))
       }
     }
@@ -548,7 +714,7 @@ offer_installation_help <- function(status, min_versions) {
   
   if (length(status$missing_optional) > 0) {
     message("\nOptional packages for full functionality:")
-    message(sprintf('install.packages(c(%s))',
+    cat(sprintf('install.packages(c(%s))\n',
                paste0('"', status$missing_optional, '"', collapse = ", ")))
   }
   
@@ -565,7 +731,7 @@ offer_installation_help <- function(status, min_versions) {
 #' @param required_version Minimum version required (optional)
 #' @param unload_conflicts Attempt to unload conflicting packages
 #' @return Logical indicating success
-#' @keywords internal
+#' @noRd
 safe_load_package <- function(package_name, 
                               required_version = NULL,
                               unload_conflicts = FALSE) {
@@ -685,12 +851,13 @@ run_app_safe <- function(app_dir = system.file("app", package = "psychds"),
     }
   }
   
-  # 5. Set recommended options
-  options(
+  # 5. Set recommended options, restoring originals on exit
+  old_opts <- options(
     shiny.maxRequestSize = 100 * 1024^2,  # 100MB upload limit
     shiny.sanitize.errors = FALSE,        # Show detailed errors during development
     shiny.reactlog = FALSE                # Disable reactlog unless debugging
   )
+  on.exit(options(old_opts), add = TRUE)
   
   # 6. Browser handling for RStudio viewer issues
   if (in_rstudio) {
@@ -700,7 +867,8 @@ run_app_safe <- function(app_dir = system.file("app", package = "psychds"),
     # Detect potential viewer issues
     if (rs_version < "2023.06.0" || force_browser) {
       message("Opening in external browser for better compatibility...")
-      options(shiny.launch.browser = TRUE)
+      old_browser_opt <- options(shiny.launch.browser = TRUE)
+      on.exit(options(old_browser_opt), add = TRUE)
     }
   }
   

@@ -259,6 +259,13 @@ function isShinyReady() {
                   }
                 },
                 {
+                  key: "csv-header-repeat",
+                  message: {
+                    imperative: "Check for redundant column names",
+                    pastTense: "No redundant column names found"
+                  }
+                },
+                {
                   key: "csv-nomismatch",
                   message: {
                     imperative: 'Check all lines for equal number of cells',

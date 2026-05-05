@@ -1096,6 +1096,9 @@ generate_variable_card_html <- function(var_name, var_info, index, var_id, inclu
   if (!is.null(var_info$source) && var_info$source != "") {
     props[["Data Source/Instrument"]] <- var_info$source
   }
+  if (!is.null(var_info$measurement_technique) && var_info$measurement_technique != "") {
+    props[["Measurement Technique"]] <- var_info$measurement_technique
+  }
   if (!is.null(var_info$min_value) && var_info$min_value != "") {
     props[["Minimum Value"]] <- list(v = var_info$min_value, mono = TRUE)
   }
@@ -1926,7 +1929,9 @@ step1Server <- function(id, state, session) {
     # Log directory path changes for debugging
     observe({
       path <- dir_path()
-      cat("Step1: Directory path updated to:", path, "\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("Step1: Directory path updated to: ", path)
+      }
     })
     
     # Restore inputs from state when returning to step 1
@@ -4530,7 +4535,7 @@ step3Server <- function(id, state, session) {
             textInput(
               session$ns("save_dataset_dir"),
               label = NULL,
-              value = path.expand("~/Documents"),
+              value = "",
               placeholder = "Choose destination folder",
               width = "100%"
             ),
@@ -4570,7 +4575,9 @@ step3Server <- function(id, state, session) {
     # This is the FIX for the subdirectory issue
     #
     observeEvent(input$confirm_save_location, {
-      cat("Create Dataset button clicked\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        message("confirm_save_location triggered")
+      }
       
       # Validate inputs
       if (is.null(input$save_dataset_name) || input$save_dataset_name == "") {
@@ -4737,11 +4744,9 @@ step3Server <- function(id, state, session) {
 
     # Validate created dataset
     observeEvent(input$validate_dataset, {
-      cat("Validate dataset button clicked\n")
+      message("Navigating to validate tab for dataset: ", state$created_dataset_dir)
 
-      full_dataset_dir <- state$created_dataset_dir
-      downloads_dir <- path.expand("~/Downloads")
-      destination_dir <- file.path(downloads_dir, basename(full_dataset_dir))
+      destination_dir <- state$created_dataset_dir
 
       output$dataset_preview <- renderUI({
         div(
@@ -5126,7 +5131,9 @@ validateServer <- function(id, state, session) {
 
     # Replace your existing observeEvent with this:
     observeEvent(input$validation_step_status, {
-      print_validation_status(input$validation_step_status)
+      if (isTRUE(getOption("psychds.verbose"))) {
+        print_validation_status(input$validation_step_status)
+      }
       
       # Continue with existing logic for updating validation_status
       if (!is.null(input$validation_step_status) && 
@@ -5265,7 +5272,9 @@ validateServer <- function(id, state, session) {
     # Replace the existing observeEvent for validation_step_status with this:
 
     observeEvent(input$validation_step_status, {
-      cat("*** STEP STATUS EVENT RECEIVED ***\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("*** STEP STATUS EVENT RECEIVED ***\n")
+      }
       
       if (!is.null(input$validation_step_status)) {
         # Convert the validation data to pretty JSON for display
@@ -5413,16 +5422,22 @@ validateServer <- function(id, state, session) {
 
     # Add debugging for all validation-related events
     observeEvent(input$validation_complete, {
-      cat("VALIDATION COMPLETE EVENT - Value:", input$validation_complete, "\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("VALIDATION COMPLETE EVENT - Value:", input$validation_complete, "\n")
+      }
     }, ignoreNULL = TRUE)
 
     observeEvent(input$validation_halted, {
-      cat("VALIDATION HALTED EVENT - Value:", input$validation_halted, "\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("VALIDATION HALTED EVENT - Value:", input$validation_halted, "\n")
+      }
     }, ignoreNULL = TRUE)
 
     # Add a test message handler to verify communication
     observeEvent(input$test_js_communication, {
-      cat("Test JS communication received:", input$test_js_communication, "\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("Test JS communication received:", input$test_js_communication, "\n")
+      }
     }, ignoreNULL = TRUE)
   })
 }
@@ -5862,6 +5877,7 @@ saveCurrentVariable <- function() {
     dictionary_state$variables[[var_name]]$unique <- input$var_unique %||% FALSE
     dictionary_state$variables[[var_name]]$pattern <- input$var_pattern %||% ""
     dictionary_state$variables[[var_name]]$source <- input$var_source %||% ""
+    dictionary_state$variables[[var_name]]$measurement_technique <- input$var_measurement_technique %||% ""
     dictionary_state$variables[[var_name]]$notes <- input$var_notes %||% ""
     
     # Save categorical values
@@ -6209,20 +6225,32 @@ observeEvent(input$load_dataset_btn, {
     if (!is.null(parent_session) && !is.null(parent_session$input$validation_results)) {
       old_result <- isolate(parent_session$input$validation_results)
       dict_validation$last_validation_result <- old_result
-      cat("=== Data dictionary starting validation ===\n")
-      cat("  Stored old validation result to ignore it\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("=== Data dictionary starting validation ===\n")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("  Stored old validation result to ignore it\n")
+      }
     } else {
       dict_validation$last_validation_result <- NULL
-      cat("=== Data dictionary starting validation ===\n")
-      cat("  No old validation result to ignore\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("=== Data dictionary starting validation ===\n")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("  No old validation result to ignore\n")
+      }
     }
     
     # Run validation using JavaScript validator
     dict_validation$is_validating <- TRUE
     dict_validation$is_complete <- FALSE
     dict_validation$validation_start_time <- Sys.time()
-    cat("  Set dict_validation$is_validating to TRUE\n")
-    cat("  Dataset path:", dataset_path, "\n")
+    if (isTRUE(getOption("psychds.verbose"))) {
+      cat("  Set dict_validation$is_validating to TRUE\n")
+    }
+    if (isTRUE(getOption("psychds.verbose"))) {
+      cat("  Dataset path:", dataset_path, "\n")
+    }
     
     tryCatch({
       # Use the GLOBAL buildFileTree function (not buildFileTreeForValidation)
@@ -6231,9 +6259,13 @@ observeEvent(input$load_dataset_btn, {
       
       # Send to JavaScript validator using the SAME handler as Validate tab
       session$sendCustomMessage("run_validation", file_tree)
-      cat("  Sent run_validation message\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("  Sent run_validation message\n")
+      }
     }, error = function(e) {
-      cat("Error building file tree for validation:", e$message, "\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("Error building file tree for validation:", e$message, "\n")
+      }
       dict_validation$is_validating <- FALSE
       showNotification(
         paste("Validation failed:", e$message), 
@@ -6294,12 +6326,22 @@ observe({
     # (the timeout handles re-validating the same dataset)
     if (is_different_result) {
       # This is a NEW result - process it!
-      cat("=== Data dictionary validation_results observer triggered ===\n")
-      cat("  dict_validation$is_validating:", dict_validation$is_validating, "\n")
-      cat("  validation result valid:", validation_result$valid, "\n")
-      cat("  Processing NEW validation result (result changed)\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("=== Data dictionary validation_results observer triggered ===\n")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("  dict_validation$is_validating:", dict_validation$is_validating, "\n")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("  validation result valid:", validation_result$valid, "\n")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("  Processing NEW validation result (result changed)\n")
+      }
       
-      cat("Dictionary validation complete:", validation_result$valid, "\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("Dictionary validation complete:", validation_result$valid, "\n")
+      }
       
       dict_validation$is_validating <- FALSE
       dict_validation$is_complete <- TRUE
@@ -6313,12 +6355,22 @@ observe({
       }
     } else if (time_waiting > 3) {
       # Result is same, but we've waited long enough - assume it's a re-validation of same dataset
-      cat("=== Data dictionary validation_results observer triggered ===\n")
-      cat("  dict_validation$is_validating:", dict_validation$is_validating, "\n")
-      cat("  validation result valid:", validation_result$valid, "\n")
-      cat("  Processing result after timeout (same dataset re-validated)\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("=== Data dictionary validation_results observer triggered ===\n")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("  dict_validation$is_validating:", dict_validation$is_validating, "\n")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("  validation result valid:", validation_result$valid, "\n")
+      }
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("  Processing result after timeout (same dataset re-validated)\n")
+      }
       
-      cat("Dictionary validation complete:", validation_result$valid, "\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("Dictionary validation complete:", validation_result$valid, "\n")
+      }
       
       dict_validation$is_validating <- FALSE
       dict_validation$is_complete <- TRUE
@@ -6335,7 +6387,9 @@ observe({
     # No result in parent session yet, check if we've been waiting too long
     time_waiting <- as.numeric(difftime(Sys.time(), dict_validation$validation_start_time, units = "secs"))
     if (time_waiting > 5) {
-      cat("=== Validation timeout - no results received ===\n")
+      if (isTRUE(getOption("psychds.verbose"))) {
+        cat("=== Validation timeout - no results received ===\n")
+      }
       dict_validation$is_validating <- FALSE
       showNotification("Validation timed out. Please try again.", type = "warning")
     }
@@ -6615,7 +6669,7 @@ applyVariableMeasured <- function(variables, var_measured_list, source_label, on
     if (!is.null(var_meta$required))     { variables[[var_name]]$required <- var_meta$required; fields_set <- c(fields_set, "required") }
     if (!is.null(var_meta$unique))       { variables[[var_name]]$unique <- var_meta$unique; fields_set <- c(fields_set, "unique") }
     if (!is.null(var_meta$pattern))      { variables[[var_name]]$pattern <- var_meta$pattern; fields_set <- c(fields_set, "pattern") }
-    
+    if (!is.null(var_meta$measurementTechnique)) { variables[[var_name]]$measurement_technique <- var_meta$measurementTechnique; fields_set <- c(fields_set, "measurementTechnique") }
     # Load categorical values from valueReference
     if (!is.null(var_meta$valueReference) && length(var_meta$valueReference) > 0) {
       cat_vals <- lapply(var_meta$valueReference, function(vr) {
@@ -7162,7 +7216,8 @@ extractVariablesFromDataset <- function(dataset_path) {
               categorical_values = var_analysis$categorical_values,  # Store initial values
               required = FALSE,
               unique = FALSE,
-              pattern = ""
+              pattern = "",
+              measurement_technique = ""
             )
           }
         }
@@ -7307,8 +7362,9 @@ observeEvent(input$select_variable, {
     updateTextAreaInput(session, "var_value_reference", value = var_info$value_reference %||% "")
     updateTextInput(session, "var_default", value = var_info$default_value %||% "")
 
-    updateCheckboxInput(session, "var_use_minmax", value = FALSE)
-    
+    has_minmax <- nchar(var_info$min_value %||% "") > 0 || 
+                  nchar(var_info$max_value %||% "") > 0
+    updateCheckboxInput(session, "var_use_minmax", value = has_minmax)
     # Update new fields
     updateTextInput(session, "var_source", value = var_info$source %||% "")
     updateTextAreaInput(session, "var_notes", value = var_info$notes %||% "")
@@ -7578,7 +7634,9 @@ buildPropertyValue <- function(var_name, var_info, global_missing_values = NULL)
   prop_value$required <- var_info$required %||% FALSE
   prop_value$unique <- var_info$unique %||% FALSE
   if (nchar(var_info$pattern) > 0) prop_value$pattern <- var_info$pattern
-  
+  if (!is.null(var_info$measurement_technique) && nchar(var_info$measurement_technique %||% "") > 0) {
+    prop_value$measurementTechnique <- var_info$measurement_technique
+  }
   prop_value[!sapply(prop_value, is.null)]
 }
 

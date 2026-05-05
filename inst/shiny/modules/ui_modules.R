@@ -1460,6 +1460,19 @@ div(
                       width = "100%"
                     )
                   )
+                ),
+                div(
+                  class = "form-group",
+                  textInput(
+                    ns("var_measurement_technique"),
+                    "Measurement Technique",
+                    placeholder = "e.g., https://schema.org/Questionnaire, Likert scale, eye tracker",
+                    width = "100%"
+                  ),
+                  tags$small(
+                    style = "color: #6c757d; display: block; margin-top: 5px;",
+                    "Schema.org URL or plain description of how this variable was measured (e.g., a questionnaire citation URL)"
+                  )
                 )
               )
             ),
