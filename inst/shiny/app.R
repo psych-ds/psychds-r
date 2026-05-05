@@ -52,7 +52,7 @@ check_app_dependencies <- function() {
   missing_packages <- character()
   version_issues <- character()
   optional_missing <- character()
-  
+
   # Check required packages
   for (pkg_name in names(required_packages)) {
     if (!requireNamespace(pkg_name, quietly = TRUE)) {
@@ -62,39 +62,39 @@ check_app_dependencies <- function() {
       # Check version
       current_ver <- utils::packageVersion(pkg_name)
       required_ver <- required_packages[[pkg_name]]
-      
+
       if (current_ver < required_ver) {
-        version_issues <- c(version_issues, 
-                          sprintf("%s (have %s, need >= %s)", 
+        version_issues <- c(version_issues,
+                          sprintf("%s (have %s, need >= %s)",
                                  pkg_name, current_ver, required_ver))
         all_ok <- FALSE
       }
     }
   }
-  
+
   # Check optional packages (just warn, don't fail)
   for (pkg_name in names(optional_packages)) {
     if (!requireNamespace(pkg_name, quietly = TRUE)) {
       optional_missing <- c(optional_missing, pkg_name)
     }
   }
-  
+
   # Report issues
   if (!all_ok) {
     message("\n========================================")
     message("  DEPENDENCY CHECK FAILED")
     message("========================================\n")
-    
+
     if (length(missing_packages) > 0) {
       message("Missing required packages:")
       for (pkg in missing_packages) {
         message("  - ", pkg)
       }
       message("\nTo install missing packages, run:")
-      message('install.packages(c(', 
+      message('install.packages(c(',
              paste0('"', missing_packages, '"', collapse = ", "), '))\n')
     }
-    
+
     if (length(version_issues) > 0) {
       message("Package version issues:")
       for (issue in version_issues) {
@@ -103,14 +103,14 @@ check_app_dependencies <- function() {
       message("\nTo update packages, run:")
       message('update.packages(ask = FALSE)\n')
     }
-    
+
     message("After installing/updating, restart R and try again:")
     message('  - In RStudio: Session -> Restart R')
     message('  - Or run: .rs.restartR()\n')
-    
+
     stop("Cannot start app due to missing dependencies", call. = FALSE)
   }
-  
+
   # Warn about optional packages
   if (length(optional_missing) > 0) {
     message("\nNote: Optional packages not installed (some features may be unavailable):")
@@ -118,10 +118,10 @@ check_app_dependencies <- function() {
       message("  - ", pkg)
     }
     message("To enable all features, consider installing:")
-    message('install.packages(c(', 
+    message('install.packages(c(',
            paste0('"', optional_missing, '"', collapse = ", "), '))\n')
   }
-  
+
   return(TRUE)
 }
 
@@ -134,7 +134,7 @@ safe_library <- function(package_name, required = TRUE) {
   success <- suppressPackageStartupMessages(
     requireNamespace(package_name, quietly = TRUE)
   )
-  
+
   if (success) {
     # Check if already attached to avoid conflicts
     if (!paste0("package:", package_name) %in% search()) {
@@ -144,7 +144,7 @@ safe_library <- function(package_name, required = TRUE) {
     }
     return(TRUE)
   } else if (required) {
-    stop(sprintf("Required package '%s' could not be loaded", package_name), 
+    stop(sprintf("Required package '%s' could not be loaded", package_name),
          call. = FALSE)
   } else {
     message(sprintf("Optional package '%s' not available", package_name))
@@ -158,18 +158,18 @@ safe_library <- function(package_name, required = TRUE) {
 
 # Only run if this is the main file being sourced
 if (!interactive() || !exists("PSYCHDS_LOADING", envir = .GlobalEnv)) {
-  
+
   # Set flag to prevent recursive loading
   assign("PSYCHDS_LOADING", TRUE, envir = .GlobalEnv)
   on.exit(rm("PSYCHDS_LOADING", envir = .GlobalEnv))
-  
+
   tryCatch({
     # Step 1: Check dependencies (no auto-install)
     check_app_dependencies()
-    
+
     # Step 2: Load packages in specific order to minimize conflicts
     message("Loading packages...")
-    
+
     # Core packages (required)
     safe_library("shiny", required = TRUE)
     safe_library("shinydashboard", required = TRUE)
@@ -177,26 +177,26 @@ if (!interactive() || !exists("PSYCHDS_LOADING", envir = .GlobalEnv)) {
     safe_library("shinyFiles", required = TRUE)
     safe_library("DT", required = TRUE)
     safe_library("jsonlite", required = TRUE)
-    
+
     # Base R packages (should always be available)
     safe_library("tools", required = TRUE)
     safe_library("utils", required = TRUE)
-    
+
     # Optional packages (don't fail if missing)
     has_sortable <- safe_library("sortable", required = FALSE)
     has_zip <- safe_library("zip", required = FALSE)
     has_pointblank <- safe_library("pointblank", required = FALSE)
-    
+
     # Store feature availability in options for the app to check
     options(
       psychds.has_sortable = has_sortable,
       psychds.has_zip = has_zip,
       psychds.has_pointblank = has_pointblank
     )
-    
+
     # Step 3: Source app components
     message("Loading app components...")
-    
+
     # Check if files exist
     required_files <- c("global.R", "ui.R", "server.R")
     for (file in required_files) {
@@ -205,18 +205,18 @@ if (!interactive() || !exists("PSYCHDS_LOADING", envir = .GlobalEnv)) {
              call. = FALSE)
       }
     }
-    
+
     # Source in correct order
-    source("global.R", local = TRUE)
-    source("ui.R", local = TRUE)
-    source("server.R", local = TRUE)
-    
+    source("global.R", local = FALSE)
+    source("ui.R", local = FALSE)
+    source("server.R", local = FALSE)
+
     # Step 4: Configure Shiny options
     options(
       shiny.maxRequestSize = 100 * 1024^2,  # 100MB upload limit
       shiny.sanitize.errors = FALSE         # Show detailed errors during development
     )
-    
+
     # Step 5: Handle RStudio viewer issues
     if (Sys.getenv("RSTUDIO") == "1") {
       # Check RStudio version if possible
@@ -227,7 +227,7 @@ if (!interactive() || !exists("PSYCHDS_LOADING", envir = .GlobalEnv)) {
           NULL
         }
       }, error = function(e) NULL)
-      
+
       # Warn about potential viewer issues
       if (!is.null(rs_version) && rs_version < "2023.06.0") {
         message("\n========================================")
@@ -240,11 +240,11 @@ if (!interactive() || !exists("PSYCHDS_LOADING", envir = .GlobalEnv)) {
         message("========================================\n")
       }
     }
-    
+
     # Step 6: Launch the application
     message("Starting Psych-DS application...")
     shinyApp(ui = ui, server = server)
-    
+
   }, error = function(e) {
     # Clean error reporting
     message("\n========================================")

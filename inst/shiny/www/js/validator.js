@@ -7537,8 +7537,9 @@ async function validateWeb(fileTree, options) {
 }
 export {
   ValidationProgressTracker,
+  validate as validateSync,
   validateWeb
 };
 //# sourceMappingURL=psychds-validator.js.map
 
-if (typeof window !== "undefined") { window.psychDSValidator = { validateWeb, ValidationProgressTracker}; }
+if (typeof window !== "undefined") { window.psychDSValidator = { validateWeb,validateSync: validate, ValidationProgressTracker }; }
