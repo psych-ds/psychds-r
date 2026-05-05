@@ -62,17 +62,20 @@ check_psychds_deps()
 #> ✓ shinyFiles (0.9.3)
 #> ✓ DT (0.34.0)
 #> ✓ jsonlite (2.0.0)
-#> ✓ jsonvalidate (1.5.0)
-#> ✓ dplyr (1.2.0)
-#> ✓ tidyr (1.3.2)
-#> ✓ readr (2.2.0)
+#> ✗ jsonvalidate - MISSING (required)
+#> ✗ dplyr - MISSING (required)
+#> ✗ tidyr - MISSING (required)
+#> ✗ readr - MISSING (required)
 #> 
 #> Recommended packages:
 #> ✓ httr (1.4.8)
-#> ✓ rmarkdown (2.30)
+#> ✓ rmarkdown (2.31)
 #> ✓ knitr (1.51)
 #> 
-#> ✓ All required dependencies are installed!
+#> ⚠ Missing required packages: jsonvalidate, dplyr, tidyr, readr
+#> 
+#> To install missing packages, run:
+#> install.packages(c("jsonvalidate", "dplyr", "tidyr", "readr"))
 
 # Detailed check with environment info
 check_psychds_deps(detailed = TRUE)
@@ -83,19 +86,22 @@ check_psychds_deps(detailed = TRUE)
 #> ✓ shinyFiles (0.9.3)
 #> ✓ DT (0.34.0)
 #> ✓ jsonlite (2.0.0)
-#> ✓ jsonvalidate (1.5.0)
-#> ✓ dplyr (1.2.0)
-#> ✓ tidyr (1.3.2)
-#> ✓ readr (2.2.0)
+#> ✗ jsonvalidate - MISSING (required)
+#> ✗ dplyr - MISSING (required)
+#> ✗ tidyr - MISSING (required)
+#> ✗ readr - MISSING (required)
 #> 
 #> Recommended packages:
 #> ✓ httr (1.4.8)
-#> ✓ rmarkdown (2.30)
+#> ✓ rmarkdown (2.31)
 #> ✓ knitr (1.51)
 #> 
 #> Environment:
-#>   R version: 4.5.3
+#>   R version: 4.6.0
 #>   Platform: unix
 #> 
-#> ✓ All required dependencies are installed!
+#> ⚠ Missing required packages: jsonvalidate, dplyr, tidyr, readr
+#> 
+#> To install missing packages, run:
+#> install.packages(c("jsonvalidate", "dplyr", "tidyr", "readr"))
 ```

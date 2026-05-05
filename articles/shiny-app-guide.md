@@ -9,6 +9,7 @@ section of the application.
 ## Launching the App
 
 ``` r
+
 library(psychds)
 run_psych_ds_app()
 ```
@@ -237,6 +238,7 @@ Auto-generate README file - Set folder path on OSF
 ### App won’t start
 
 ``` r
+
 # Check dependencies
 check_psychds_deps(detailed = TRUE)
 

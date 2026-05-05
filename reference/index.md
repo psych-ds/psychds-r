@@ -10,3 +10,5 @@
   : Initialize Shiny App with Robust Package Management
 - [`run_psych_ds_app()`](https://psych-ds.github.io/psychds-r/reference/run_psych_ds_app.md)
   : Run the Psych-DS Shiny Application
+- [`validate_dataset()`](https://psych-ds.github.io/psychds-r/reference/validate_dataset.md)
+  : Validate a Psych-DS Dataset

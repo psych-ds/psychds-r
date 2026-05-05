@@ -16,6 +16,7 @@ The easiest way to create a data dictionary is through the psychds Shiny
 app:
 
 ``` r
+
 library(psychds)
 run_psych_ds_app()
 ```

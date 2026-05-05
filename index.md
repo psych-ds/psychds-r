@@ -18,12 +18,14 @@ standard](https://psych-ds.github.io/). The package includes:
 ### From CRAN (not currently available)
 
 ``` r
+
 install.packages("psychds")
 ```
 
 ### Development version from GitHub
 
 ``` r
+
 # install.packages("remotes")
 remotes::install_github("psych-ds/psychds-r", dependencies = TRUE)
 ```
@@ -35,6 +37,7 @@ remotes::install_github("psych-ds/psychds-r", dependencies = TRUE)
 The easiest way to use psychds is through the interactive Shiny app:
 
 ``` r
+
 library(psychds)
 run_psych_ds_app()
 ```

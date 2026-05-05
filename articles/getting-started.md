@@ -17,12 +17,14 @@ through:
 ### From CRAN
 
 ``` r
+
 install.packages("psychds")
 ```
 
 ### Development Version
 
 ``` r
+
 # install.packages("remotes")
 remotes::install_github("psych-ds/psychds-r", dependencies = TRUE)
 ```
@@ -33,6 +35,7 @@ Before using psychds, verify that all dependencies are properly
 installed:
 
 ``` r
+
 library(psychds)
 
 # Basic check
@@ -53,6 +56,7 @@ The detailed check will show:
 The primary interface for psychds is an interactive Shiny application:
 
 ``` r
+
 run_psych_ds_app()
 ```
 
@@ -61,6 +65,7 @@ This opens a browser window with the dataset builder wizard.
 ### Launch Options
 
 ``` r
+
 # Force external browser (useful if RStudio viewer has issues)
 run_psych_ds_app(force_browser = TRUE)
 
