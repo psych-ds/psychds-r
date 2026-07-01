@@ -15,12 +15,12 @@
 Source:
 [`DESCRIPTION`](https://github.com/psych-ds/psychds-r/blob/main/DESCRIPTION)
 
-Leonard B, Kline Struhl M (2026). *psychds: "Dashboard for Creating and
-Validating 'Psych-DS' Datasets"*. R package version 0.1.0,
+Leonard B, Kline Struhl M (2026). *psychds: Tools for Creating and
+Validating 'Psych-DS' Datasets*. R package version 0.1.0,
 <https://github.com/psych-ds/psychds-r>.
 
     @Manual{,
-      title = {psychds: "Dashboard for Creating and Validating 'Psych-DS' Datasets"},
+      title = {psychds: Tools for Creating and Validating 'Psych-DS' Datasets},
       author = {Brian Leonard and Melissa {Kline Struhl}},
       year = {2026},
       note = {R package version 0.1.0},

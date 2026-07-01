@@ -56,7 +56,7 @@ instructions.
 # Quick check
 check_psychds_deps()
 #> Checking psychds dependencies...
-#> ✓ shiny (1.13.0)
+#> ✓ shiny (1.14.0)
 #> ✓ shinydashboard (0.7.3)
 #> ✓ shinyjs (2.1.1)
 #> ✓ shinyFiles (0.9.3)
@@ -80,7 +80,7 @@ check_psychds_deps()
 # Detailed check with environment info
 check_psychds_deps(detailed = TRUE)
 #> Checking psychds dependencies...
-#> ✓ shiny (1.13.0)
+#> ✓ shiny (1.14.0)
 #> ✓ shinydashboard (0.7.3)
 #> ✓ shinyjs (2.1.1)
 #> ✓ shinyFiles (0.9.3)
@@ -97,7 +97,7 @@ check_psychds_deps(detailed = TRUE)
 #> ✓ knitr (1.51)
 #> 
 #> Environment:
-#>   R version: 4.6.0
+#>   R version: 4.6.1
 #>   Platform: unix
 #> 
 #> ⚠ Missing required packages: jsonvalidate, dplyr, tidyr, readr
