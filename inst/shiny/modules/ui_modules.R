@@ -109,31 +109,6 @@ stepProgressUI <- function(current_step, id) {
   )
 }
 
-#' Create Directory Selection Input
-#'
-#' @param id Base ID for the input elements
-#' @param value Initial value for the directory path
-#' @param placeholder Placeholder text for the input
-#' @return UI element for directory selection
-directoryInputUI <- function(id, value = "", placeholder = "Project directory path") {
-  div(
-    class = "directory-input",
-    textInput(
-      NS(id, "path"),
-      label = NULL,
-      value = value,
-      placeholder = placeholder,
-      width = "100%"
-    ),
-    shinyDirButton(
-      NS(id, "select"),
-      label = "...",
-      title = "Select a project directory",
-      class = "browse-btn"
-    )
-  )
-}
-
 #' File Browser UI Component
 #' 
 #' @param id Module ID

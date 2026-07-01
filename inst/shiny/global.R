@@ -5,6 +5,7 @@
 #' It's loaded before both ui.R and server.R.
 
 # Load required packages
+source("modules/directory_picker.R")
 library(shiny)
 library(shinydashboard)
 library(shinyjs)

@@ -1303,88 +1303,7 @@ generate_dictionary_html <- function(dictionary_data,
   return(result)
 }
 
-#' Directory Input Server Module - Fixed Version
-#'
-#' Handles directory selection and validation
-#'
-#' @param id The module ID
-#' @param state Global state reactive values
-#' @param session The current session object
-directoryInputServer <- function(id, state, session) {
-  moduleServer(id, function(input, output, session) {
-    # Create a reactive value to store the current path
-    path_value <- reactiveVal("")
 
-    # Set up directory selection
-    volumes <- c(Home = "~")
-    if (.Platform$OS.type == "windows") {
-      volumes <- c(volumes, getVolumes()())
-    }
-
-    shinyDirChoose(
-      input,
-      "select",
-      roots = volumes,
-      session = session,
-      restrictions = system.file(package = "base")
-    )
-    
-    # Restore path from state when module initializes or when returning to step
-    observe({
-      # Restore from state if available and current value is empty
-      if (!is.null(state$project_dir) && state$project_dir != "" && path_value() == "") {
-        updateTextInput(session, "path", value = state$project_dir)
-        path_value(state$project_dir)
-        if (isTRUE(getOption("psychds.verbose"))) {
-          message("Restored directory path from state: ", state$project_dir)
-        }
-      }
-    })
-
-    # Update the project directory input when a directory is selected
-    observeEvent(input$select, {
-      tryCatch({
-        if (!is.null(input$select)) {
-          selected_dir <- parseDirPath(volumes, input$select)
-          if (isTRUE(getOption("psychds.verbose"))) {
-            message("Directory selected: ", selected_dir)
-          }
-
-          if (length(selected_dir) > 0 && selected_dir != "") {
-            # Update input field
-            updateTextInput(session, "path", value = selected_dir)
-
-            # Update our reactive value
-            path_value(selected_dir)
-
-            # Update global state
-            state$project_dir <- selected_dir
-          }
-        }
-      }, error = function(e) {
-        message("Error selecting directory: ", e$message)
-      })
-    })
-
-    # Also monitor manual changes to the path input
-    observeEvent(input$path, {
-      if (isTRUE(getOption("psychds.verbose"))) {
-        message("Path input changed to: ", input$path)
-      }
-
-      if (input$path != "" && input$path != path_value()) {
-        # Update reactive value
-        path_value(input$path)
-
-        # Update global state
-        state$project_dir <- input$path
-      }
-    })
-
-    # Return reactive that provides current path
-    return(path_value)
-  })
-}
 
 #' List Data Files (CSV and TSV)
 #'
@@ -1396,17 +1315,24 @@ list_data_files <- function(dir_path) {
   if (is.null(dir_path) || dir_path == "" || !dir.exists(dir_path)) {
     return(character(0))
   }
-  
-  # Find all CSV and TSV files recursively
-  files <- list.files(
-    dir_path,
-    pattern = "\\.(csv|tsv)$",
-    recursive = TRUE,
-    full.names = FALSE,
-    ignore.case = TRUE
+  # CSV/TSV recursively. Use fs (faster classification via readdir d_type,
+  # avoids a stat() per entry) with a case-insensitive extension regexp;
+  # fall back to base list.files() if fs is unavailable.
+  root <- path.expand(dir_path)
+  pat  <- "\\.([cC][sS][vV]|[tT][sS][vV])$"
+  tryCatch(
+    {
+      if (requireNamespace("fs", quietly = TRUE)) {
+        hits <- fs::dir_ls(root, recurse = TRUE, type = "file",
+                           regexp = pat, fail = FALSE)
+        as.character(fs::path_rel(hits, start = root))
+      } else {
+        list.files(dir_path, pattern = "\\.(csv|tsv)$", recursive = TRUE,
+                   full.names = FALSE, ignore.case = TRUE)
+      }
+    },
+    error = function(e) character(0)
   )
-  
-  return(files)
 }
 
 #' Organize Directory Hierarchy
@@ -1481,6 +1407,17 @@ fileBrowserServer <- function(id, state, dir_path, session) {
   moduleServer(id, function(input, output, session) {
     # Store selected files
     selected <- reactiveVal(character(0))
+
+    # Cache the recursive scan: runs once per directory and is reused by every
+    # handler and the renderUI, so clicking a file never re-walks the disk.
+    files_r <- reactive({
+      d <- dir_path()
+      if (is.null(d) || d == "") return(character(0))
+      list_data_files(d)
+    })
+    hierarchy_r <- reactive({
+      organize_directory_hierarchy(files_r())
+    })
     
     # Track the last directory to detect changes
     last_dir <- reactiveVal(NULL)
@@ -1551,7 +1488,7 @@ fileBrowserServer <- function(id, state, dir_path, session) {
       }
 
       # Get all files
-      all_files <- list_data_files(dir_path())
+      all_files <- all_files <- files_r()
 
       # Find files in this directory
       dir_files <- all_files[startsWith(all_files, dir_prefix)]
@@ -1579,7 +1516,7 @@ fileBrowserServer <- function(id, state, dir_path, session) {
       }
       
       # Get all files in the current directory
-      all_files <- list_data_files(dir_path())
+      all_files <- all_files <- files_r()
       
       # Select all files
       selected(all_files)
@@ -1601,14 +1538,9 @@ fileBrowserServer <- function(id, state, dir_path, session) {
       state$data_files <- selected()
     })
 
-    # Render the file browser with complete hierarchy
+    # Render the file browser (cached scan + O(n) build)
     output$file_container <- renderUI({
       current_dir <- dir_path()
-      if (isTRUE(getOption("psychds.verbose"))) {
-        message("Rendering file container for: ", current_dir)
-      }
-
-      # If no directory selected
       if (is.null(current_dir) || current_dir == "") {
         return(div(
           style = "text-align: center; padding-top: 30px; color: #999;",
@@ -1616,10 +1548,7 @@ fileBrowserServer <- function(id, state, dir_path, session) {
         ))
       }
 
-      # Get data files (CSV/TSV)
-      files <- list_data_files(current_dir)
-
-      # If no files found
+      files <- files_r()
       if (length(files) == 0) {
         return(div(
           style = "text-align: center; padding-top: 30px; color: #999;",
@@ -1627,133 +1556,96 @@ fileBrowserServer <- function(id, state, dir_path, session) {
         ))
       }
 
-      # Create a hierarchical directory structure
-      hierarchy <- organize_directory_hierarchy(files)
-
-      # Sort directories by their full path to maintain hierarchy order (only if there are directories)
+      hierarchy <- hierarchy_r()
       dir_paths <- names(hierarchy)
       if (length(dir_paths) > 0) {
-        dir_paths <- dir_paths[order(sapply(dir_paths, function(d) {
-          # Count the number of path components to sort by depth
-          length(strsplit(d, "/")[[1]])
-        }), dir_paths)]
+        dir_paths <- dir_paths[order(
+          sapply(dir_paths, function(d) length(strsplit(d, "/")[[1]])),
+          dir_paths
+        )]
       }
 
-      # Get current selection count
       current_selection <- selected()
       num_selected <- length(current_selection)
-      
-      # Build the UI
-      ui_elements <- tagList(
-        # File count with selection count
-        div(style = "color: #999; font-size: 12px; margin-bottom: 10px;",
-            paste0("Found ", length(files), " data files, selected ", num_selected))
-      )
+      ns <- session$ns
 
-      # Track previously rendered directories to avoid duplicates
-      rendered_dirs <- character(0)
+      # One block per directory (header + its files), built with lapply (O(n)).
+      dir_blocks <- lapply(dir_paths, function(dp) {
+        dir_info <- hierarchy[[dp]]
+        if (isTRUE(dir_info$is_file)) return(NULL)
 
-      # Process directories and files
-      for (dir_path in dir_paths) {
-        dir_info <- hierarchy[[dir_path]]
-
-        # Skip files (we'll handle them with their parent directories)
-        if (dir_info$is_file) {
-          next
-        }
-
-        # Display the directory header
         dir_indentation <- paste0(rep("&nbsp;", dir_info$level * 3), collapse = "")
-
-        # Get files in this directory (with full paths for selection)
         dir_file_paths <- if (length(dir_info$files) > 0) {
-          paste0(dir_path, "/", dir_info$files)
+          paste0(dp, "/", dir_info$files)
         } else {
           character(0)
         }
-
-        # Check if any files in this directory are selected
-        current_selection <- selected()
         dir_selected <- any(dir_file_paths %in% current_selection)
-        all_selected <- length(dir_file_paths) > 0 && all(dir_file_paths %in% current_selection)
+        all_selected <- length(dir_file_paths) > 0 &&
+          all(dir_file_paths %in% current_selection)
 
-        # Add directory
-        ui_elements <- tagAppendChild(ui_elements,
-                                      div(
-                                        style = paste0(
-                                          "margin-top: 5px; font-weight: bold; cursor: pointer; ",
-                                          if (all_selected) "color: #2196F3;" else if (dir_selected) "color: #64B5F6;" else ""
-                                        ),
-                                        # Directory indentation and name
-                                        HTML(paste0(dir_indentation, dir_info$name, "/")),
-                                        onclick = paste0("Shiny.setInputValue('", session$ns("select_dir"), "', '",
-                                                         dir_path, "', {priority: 'event'})")
-                                      )
+        header <- div(
+          style = paste0(
+            "margin-top: 5px; font-weight: bold; cursor: pointer; ",
+            if (all_selected) "color: #2196F3;" else if (dir_selected) "color: #64B5F6;" else ""
+          ),
+          HTML(paste0(dir_indentation, dir_info$name, "/")),
+          onclick = paste0("Shiny.setInputValue('", ns("select_dir"), "', '",
+                           dp, "', {priority: 'event'})")
         )
 
-        # Add files in this directory
-        if (length(dir_info$files) > 0) {
-          # Sort files alphabetically
-          sorted_files <- sort(dir_info$files)
-
-          for (filename in sorted_files) {
-            file_path <- paste0(dir_path, "/", filename)
+        file_rows <- if (length(dir_info$files) > 0) {
+          lapply(sort(dir_info$files), function(filename) {
+            file_path <- paste0(dp, "/", filename)
             is_selected <- file_path %in% current_selection
-
-            ui_elements <- tagAppendChild(ui_elements,
-                                          div(
-                                            style = paste0(
-                                              "padding: 2px 5px; margin: 1px 0; cursor: pointer; ",
-                                              if (is_selected) "background-color: #e3f2fd; border-radius: 3px;" else ""
-                                            ),
-                                            # File indentation and name
-                                            HTML(paste0(dir_indentation, "&nbsp;&nbsp;&nbsp;", filename)),
-                                            onclick = paste0("Shiny.setInputValue('", session$ns("toggle_file"), "', '",
-                                                             file_path, "', {priority: 'event'})")
-                                          )
+            div(
+              style = paste0(
+                "padding: 2px 5px; margin: 1px 0; cursor: pointer; ",
+                if (is_selected) "background-color: #e3f2fd; border-radius: 3px;" else ""
+              ),
+              HTML(paste0(dir_indentation, "&nbsp;&nbsp;&nbsp;", filename)),
+              onclick = paste0("Shiny.setInputValue('", ns("toggle_file"), "', '",
+                               file_path, "', {priority: 'event'})")
             )
-          }
+          })
+        } else {
+          list()
         }
-      }
 
-      # Add root files (if any)
-      root_files <- files[!grepl("/", files)]
+        tagList(header, file_rows)
+      })
+      dir_blocks <- Filter(Negate(is.null), dir_blocks)
+
+      # Root-level files (no "/" in the relative path).
+      root_files <- sort(files[!grepl("/", files)])
+      root_block <- list()
       if (length(root_files) > 0) {
-        # Sort root files alphabetically
-        root_files <- sort(root_files)
-
-        # Add a header for root files only if there are also subdirectories
-        # (otherwise it's redundant to say "Root files" when there are no subdirs)
         if (length(dir_paths) > 0) {
-          ui_elements <- tagAppendChild(ui_elements,
-                                        div(
-                                          style = "margin-top: 8px; font-weight: bold;",
-                                          "Root files:"
-                                        )
-          )
+          root_block <- c(root_block, list(
+            div(style = "margin-top: 8px; font-weight: bold;", "Root files:")
+          ))
         }
-
-        # Add each root file
-        current_selection <- selected()
-        for (file in root_files) {
+        root_rows <- lapply(root_files, function(file) {
           is_selected <- file %in% current_selection
-
-          ui_elements <- tagAppendChild(ui_elements,
-                                        div(
-                                          style = paste0(
-                                            "padding: 2px 5px; margin: 1px 0; cursor: pointer; ",
-                                            if (is_selected) "background-color: #e3f2fd; border-radius: 3px;" else ""
-                                          ),
-                                          # File indentation and name (no indentation if no subdirs)
-                                          HTML(if (length(dir_paths) > 0) paste0("&nbsp;&nbsp;&nbsp;", file) else file),
-                                          onclick = paste0("Shiny.setInputValue('", session$ns("toggle_file"), "', '",
-                                                           file, "', {priority: 'event'})")
-                                        )
+          div(
+            style = paste0(
+              "padding: 2px 5px; margin: 1px 0; cursor: pointer; ",
+              if (is_selected) "background-color: #e3f2fd; border-radius: 3px;" else ""
+            ),
+            HTML(if (length(dir_paths) > 0) paste0("&nbsp;&nbsp;&nbsp;", file) else file),
+            onclick = paste0("Shiny.setInputValue('", ns("toggle_file"), "', '",
+                             file, "', {priority: 'event'})")
           )
-        }
+        })
+        root_block <- c(root_block, root_rows)
       }
 
-      return(ui_elements)
+      count_div <- div(
+        style = "color: #999; font-size: 12px; margin-bottom: 10px;",
+        paste0("Found ", length(files), " data files, selected ", num_selected)
+      )
+
+      do.call(tagList, c(list(count_div), dir_blocks, root_block))
     })
 
     # Return selected files
