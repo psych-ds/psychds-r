@@ -391,6 +391,11 @@ step3UI <- function(id) {
       p("Psych-DS has specific naming conventions that your data files need to follow. This naming system is going to make you explain what each piece of a filename means: you can't just say \"347B\". Instead you have to use keywords to describe what that refers to. Is that participant 347B? Session 347B? Or even participant 347, session B?"),
       p("We encourage you to use keywords from the suggested list below, but you can add your own if needed.")
     ),
+
+    uiOutput(ns("single_file_panel")),
+
+    conditionalPanel(
+      condition = sprintf("output['%s'] != true", ns("single_file_mode")),
     
     # Optional: check if existing filenames already match
     div(
@@ -601,6 +606,7 @@ step3UI <- function(id) {
     uiOutput(ns("duplicate_warning")),
     
     commonNavigation(ns, show_back = TRUE, continue_text = "Continue to save your dataset - no files will be saved yet")
+    )
   )
 }
 
