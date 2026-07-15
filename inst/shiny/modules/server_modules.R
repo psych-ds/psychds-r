@@ -4666,6 +4666,10 @@ step3Server <- function(id, state, session) {
       session$sendCustomMessage("changeTab", list(tabName = "validate"))
     })
 
+    # Simplified single-file experience (guided naming for one CSV/TSV)
+    step3SingleFileServer(input, output, session, state, file_mappings, proceedToFinalStep)
+
+
     # Return reactive file mappings
     return(reactive({ file_mappings() }))
   })

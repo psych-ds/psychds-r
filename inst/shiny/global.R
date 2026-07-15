@@ -6,6 +6,7 @@
 
 # Load required packages
 source("modules/directory_picker.R")
+source("modules/step3_single_file.R")
 library(shiny)
 library(shinydashboard)
 library(shinyjs)
