@@ -66,15 +66,10 @@ step3SingleFileUI <- function(ns, ext = "csv") {
       style = "padding:16px 18px; background:#f0f9ff; border:1px solid #bee5eb; border-radius:8px; margin-bottom:16px;",
       h4(icon("wand-magic-sparkles"), " You've selected one data file \u2014 let's name it",
          style = "margin-top:0;"),
-      p("Psych-DS filenames are built from ", tags$strong("keyword-value pairs"),
-        " so that every part of the name means something. Instead of a name like ",
-        tags$code("347B.csv"), ", you describe the file, e.g. ",
-        tags$code(paste0("study-memory_data.", ext)), "."),
-      p("Each pair is ", tags$code("keyword-value"), ", pairs are joined with ",
-        tags$code("_"), ", and the name always ends in ",
-        tags$code(paste0("_data.", ext)),
-        ". Keywords are lowercase letters; values are letters and numbers only ",
-        "(no spaces or punctuation).")
+      p("If you have all the data you will ever have for this dataset, we ",
+        "suggest naming the file after the study \u2014 for example ",
+        tags$code("memory"), ", ", tags$code("stroop"), ", or ",
+        tags$code("faceRatings"), ".")
     ),
 
     # The first keyword-value pair. "study" is the usual (and default)
@@ -84,11 +79,8 @@ step3SingleFileUI <- function(ns, ext = "csv") {
       tags$label("Your first keyword",
                  style = "font-weight:bold; display:block; margin-bottom:4px;"),
       div(style = "font-size:13px; color:#555; margin-bottom:6px;",
-          "Most datasets start with the ", tags$code("study"),
-          " keyword \u2014 give the study a short name, for example ",
-          tags$code("memory"), ", ", tags$code("stroop"), ", or ",
-          tags$code("faceRatings"),
-          ". You can pick a different first keyword if that fits your data better."),
+          "You can pick a different first keyword than ", tags$code("study"),
+          " if that fits your data better."),
       div(
         style = "display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;",
         div(style = "min-width:160px;",
@@ -114,12 +106,21 @@ step3SingleFileUI <- function(ns, ext = "csv") {
       style = "margin-bottom:14px; background:#fafafa; border:1px solid #e5e5e5; border-radius:6px; padding:12px 14px;",
       tags$strong("Add more keywords (optional)"),
       div(style = "font-size:13px; color:#555; margin:6px 0;",
-          "Planning to add more data files later? Think about what will be ",
-          tags$strong("different"), " between this file and the next one \u2014 that ",
-          "difference becomes a keyword. Common ones: ",
+          "Planning to add more data files later? (If the name you entered ",
+          "above contains a number, like \u201cexperiment1\u201d, that's a clue!)"),
+      div(style = "font-size:13px; color:#555; margin:6px 0;",
+          "If the next file will simply be the next study in this series, enter ",
+          "just \u201c1\u201d in the value box above to make a name like ",
+          tags$code(paste0("study-1_data.", ext)),
+          ". Otherwise, think about what will be ", tags$strong("different"),
+          " between this file and the next one \u2014 that difference becomes a ",
+          "keyword. Common ones: ",
           tags$code("condition"), ", ", tags$code("session"), ", ", tags$code("task"),
           ", ", tags$code("location"), ", ", tags$code("subject"),
-          ". Add one row per keyword; later files just change the value."),
+          ". In general, \u201cbigger\u201d groupings should come earlier in the ",
+          "keyword list: ", tags$code("task-A_question-1_data.csv"),
+          " is probably easier to understand than ",
+          tags$code("question-1_task-A_data.csv"), "."),
       # Rows get inserted here.
       div(id = ns("single_extra_container")),
       actionButton(ns("single_add_keyword"),
@@ -137,7 +138,7 @@ step3SingleFileUI <- function(ns, ext = "csv") {
       style = "display:flex; justify-content:space-between; margin-top:10px;",
       actionButton(ns("single_back"), "Back", class = "btn btn-default"),
       actionButton(ns("single_continue"),
-                   "Continue to save your dataset \u2014 no files will be saved yet",
+                   "Continue to review your dataset \u2014 no files will be saved yet",
                    class = "btn btn-primary")
     )
   )
