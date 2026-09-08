@@ -68,9 +68,9 @@ check_psychds_deps()
 #> ✗ readr - MISSING (required)
 #> 
 #> Recommended packages:
-#> ✓ httr (1.4.8)
-#> ✓ rmarkdown (2.31)
-#> ✓ knitr (1.51)
+#> ✓ httr (1.4.9)
+#> ✓ rmarkdown (2.32)
+#> ✓ knitr (1.52)
 #> 
 #> ⚠ Missing required packages: jsonvalidate, dplyr, tidyr, readr
 #> 
@@ -92,9 +92,9 @@ check_psychds_deps(detailed = TRUE)
 #> ✗ readr - MISSING (required)
 #> 
 #> Recommended packages:
-#> ✓ httr (1.4.8)
-#> ✓ rmarkdown (2.31)
-#> ✓ knitr (1.51)
+#> ✓ httr (1.4.9)
+#> ✓ rmarkdown (2.32)
+#> ✓ knitr (1.52)
 #> 
 #> Environment:
 #>   R version: 4.6.1

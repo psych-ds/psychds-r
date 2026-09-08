@@ -1,4 +1,4 @@
 # License
 
     YEAR: 2026
-    COPYRIGHT HOLDER: Psych-DS
+    COPYRIGHT HOLDER: Massachusetts Institute of Technology
