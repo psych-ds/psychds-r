@@ -12,7 +12,7 @@ Authors@R:
              email = "mekline@mit.edu",
              role = "aut",
              comment = c(ORCID = "0000-0003-2217-9331")))
-Description: Provides a 'Shiny' application and helper functions for adopting 'Psych-DS' (<https://psych-ds.github.io/>), a community data standard for organizing and documenting datasets in the psychological and behavioral sciences inspired by the Brain Imaging Data Standard ('BIDS'). A guided interface walks researchers through the dataset creation process, organizing tabular data files into proper 'Psych-DS' directory structures, generating new, compliant, keyword-based filenames, and generating machine-readable 'JSON' metadata. Additional tools support building and editing data dictionaries with variable-level descriptions, validating datasets against the full 'Psych-DS' specification via an embedded JavaScript validator, exploring dataset contents interactively, and uploading completed datasets to the Open Science Framework ('OSF').
+Description: Provides a 'Shiny' application and helper functions for adopting 'Psych-DS' (<https://psych-ds.github.io/>), a community data standard for organizing and documenting datasets in the psychological and behavioral sciences inspired by the Brain Imaging Data Structure ('BIDS'). A guided interface walks researchers through the dataset creation process, organizing tabular data files into proper 'Psych-DS' directory structures, generating new, compliant, keyword-based filenames, and generating machine-readable 'JSON' metadata. Additional tools support building and editing data dictionaries with variable-level descriptions, validating datasets against the full 'Psych-DS' specification via an embedded JavaScript validator, exploring dataset contents interactively, and uploading completed datasets to the Open Science Framework ('OSF').
 License: MIT + file LICENSE
 URL: https://github.com/psych-ds/psychds-r
 BugReports: https://github.com/psych-ds/psychds-r/issues
@@ -38,6 +38,7 @@ Suggests:
     rmarkdown,
     shinydashboard,
     fs,
+    spelling,
     shinyjs,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

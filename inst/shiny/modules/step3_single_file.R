@@ -77,20 +77,35 @@ step3SingleFileUI <- function(ns, ext = "csv") {
         "(no spaces or punctuation).")
     ),
 
-    # The one piece every dataset needs: a study name.
+    # The first keyword-value pair. "study" is the usual (and default)
+    # choice, but any keyword is allowed.
     div(
       style = "margin-bottom:14px;",
-      tags$label("Name your study", `for` = ns("single_study"),
+      tags$label("Your first keyword",
                  style = "font-weight:bold; display:block; margin-bottom:4px;"),
       div(style = "font-size:13px; color:#555; margin-bottom:6px;",
-          "The one keyword every dataset should have is ", tags$code("study"),
-          ". Give this study a short name \u2014 for example ", tags$code("memory"),
-          ", ", tags$code("stroop"), ", or ", tags$code("faceRatings"), "."),
-      div(style = "display:flex; align-items:center; gap:8px;",
-          span(tags$code("study-"), style = "font-family:monospace;"),
-          div(style = "flex:1;",
-              textInput(ns("single_study"), label = NULL, value = "",
-                        placeholder = "YourStudyName", width = "100%"))
+          "Most datasets start with the ", tags$code("study"),
+          " keyword \u2014 give the study a short name, for example ",
+          tags$code("memory"), ", ", tags$code("stroop"), ", or ",
+          tags$code("faceRatings"),
+          ". You can pick a different first keyword if that fits your data better."),
+      div(
+        style = "display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;",
+        div(style = "min-width:160px;",
+            selectInput(ns("single_first_key"), "Keyword",
+                        choices = c("study", "condition", "session", "task",
+                                    "location", "subject", "run",
+                                    "custom\u2026" = "__custom__"),
+                        selected = "study", width = "100%")),
+        conditionalPanel(
+          condition = sprintf("input['%s'] == '__custom__'", ns("single_first_key")),
+          div(style = "min-width:150px;",
+              textInput(ns("single_first_keycustom"), "Custom keyword",
+                        value = "", placeholder = "lowercase", width = "100%"))
+        ),
+        div(style = "min-width:150px; flex:1;",
+            textInput(ns("single_first_val"), "Value", value = "",
+                      placeholder = "e.g. memory", width = "100%"))
       )
     ),
 
@@ -194,8 +209,18 @@ step3SingleFileServer <- function(input, output, session, state, file_mappings, 
     ext <- single_ext()
 
     pairs <- list()
-    study <- .clean_value(input$single_study)
-    if (nzchar(study)) pairs <- c(pairs, list(list(name = "study", value = study)))
+    first_key <- input$single_first_key
+    if (is.null(first_key)) {
+      first_key <- "study"
+    } else if (identical(first_key, "__custom__")) {
+      first_key <- .clean_keyword(input$single_first_keycustom)
+    } else {
+      first_key <- .clean_keyword(first_key)
+    }
+    first_val <- .clean_value(input$single_first_val)
+    if (nzchar(first_key) && nzchar(first_val)) {
+      pairs <- c(pairs, list(list(name = first_key, value = first_val)))
+    }
 
     for (rid in rows()) {
       key <- input[[paste0(rid, "_key")]]
@@ -212,7 +237,7 @@ step3SingleFileServer <- function(input, output, session, state, file_mappings, 
 
     if (length(pairs) == 0) {
       return(list(ok = FALSE, name = "", ext = ext, pairs = list(),
-                  msg = "Enter a study name to build your filename."))
+                  msg = "Fill in your first keyword and value to build your filename."))
     }
 
     names_vec <- vapply(pairs, function(p) p$name, character(1))
@@ -258,10 +283,10 @@ step3SingleFileServer <- function(input, output, session, state, file_mappings, 
         title = "Check your keywords",
         div(
           p(if (!is.null(res$msg) &&
-                !identical(res$msg, "Enter a study name to build your filename."))
+                !identical(res$msg, "Fill in your first keyword and value to build your filename."))
               res$msg
             else
-              "Give your study a short name so we can build a valid Psych-DS filename."),
+              "Fill in your first keyword-value pair so we can build a valid Psych-DS filename."),
           p(style = "color:#666;",
             "A dataset only needs the ", tags$code("study"), " keyword to be valid \u2014 for example ",
             tags$code(paste0("study-memory_data.", res$ext)), ".")

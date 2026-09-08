@@ -2509,12 +2509,6 @@ step2Server <- function(id, state, session) {
 step3Server <- function(id, state, session) {
   moduleServer(id, function(input, output, session) {
 
-    # Initialize file system volumes for directory selection
-    volumes <- c(Home = "~")
-    if (.Platform$OS.type == "windows") {
-      volumes <- c(volumes, getVolumes()())
-    }
-    
     # Handle Back button - go back to step 2
     observeEvent(input$back, {
       # Save current state before going back
@@ -2918,22 +2912,17 @@ step3Server <- function(id, state, session) {
       )
     })
     
-    # Configure directory selection widget
-    shinyDirChoose(
-      input,
-      "save_dataset_dir_select",
-      roots = volumes,
-      session = session
+    # Shared files-free directory browser (see directory_picker.R)
+    bindDirectoryBrowser(
+      input, output, session,
+      browse_button = "save_dataset_dir_select",
+      target_input  = "save_dataset_dir",
+      title = "Select a destination folder",
+      easy_close = FALSE,
+      host_modal = TRUE,
+      on_commit = function(p) { save_dir_value(p); show_save_modal() },
+      on_cancel = function() show_save_modal()
     )
-
-    observeEvent(input$save_dataset_dir_select, {
-      if (!is.null(input$save_dataset_dir_select) && !is.integer(input$save_dataset_dir_select)) {
-        selected_dir <- parseDirPath(volumes, input$save_dataset_dir_select)
-        if (length(selected_dir) > 0 && selected_dir != "") {
-          updateTextInput(session, "save_dataset_dir", value = selected_dir)
-        }
-      }
-    })
     
     output$save_full_path <- renderText({
       req(input$save_dataset_name, input$save_dataset_dir)
@@ -4366,9 +4355,20 @@ step3Server <- function(id, state, session) {
       )
     }
 
-    proceedToFinalStep <- function() {
-      state$file_mappings <- file_mappings()
-      
+    # The save-location dialog below is a modal, and the shared directory
+    # browser is ALSO a modal; Shiny displays only one at a time. So the
+    # browser replaces this dialog while open, and must reopen it on
+    # commit/cancel. The chosen path is held in save_dir_value() and injected
+    # when the dialog is (re)built -- an updateTextInput() sent while the
+    # dialog is torn down never reaches the client.
+    save_dir_value <- reactiveVal("")
+
+    # Manual edits in the field stay authoritative too
+    observeEvent(input$save_dataset_dir, {
+      if (!is.null(input$save_dataset_dir)) save_dir_value(input$save_dataset_dir)
+    })
+
+    show_save_modal <- function() {
       # Use project_name from step 1 if available, otherwise fall back to dataset_info$name
       base_name <- if (!is.null(state$project_name) && state$project_name != "") {
         state$project_name
@@ -4379,6 +4379,8 @@ step3Server <- function(id, state, session) {
       }
       dataset_name <- gsub("[^a-zA-Z0-9_-]", "_", base_name)
       suggested_name <- dataset_name
+      prior_name <- isolate(input$save_dataset_name)
+      if (is.null(prior_name) || !nzchar(prior_name)) prior_name <- suggested_name
       
       # Create preview HTML with proper subdirectory structure
       preview_html <- tagList(
@@ -4409,7 +4411,7 @@ step3Server <- function(id, state, session) {
           textInput(
             session$ns("save_dataset_name"),
             label = NULL,
-            value = suggested_name,
+            value = prior_name,
             placeholder = "my_dataset_psychds",
             width = "100%"
           ),
@@ -4427,11 +4429,11 @@ step3Server <- function(id, state, session) {
             textInput(
               session$ns("save_dataset_dir"),
               label = NULL,
-              value = "",
+              value = save_dir_value(),
               placeholder = "Choose destination folder",
               width = "100%"
             ),
-            shinyDirButton(
+            actionButton(
               session$ns("save_dataset_dir_select"),
               label = "...",
               title = "Select destination folder",
@@ -4460,6 +4462,11 @@ step3Server <- function(id, state, session) {
           actionButton(session$ns("confirm_save_location"), "Create Dataset", class = "btn-primary")
         )
       ))
+    }
+
+    proceedToFinalStep <- function() {
+      state$file_mappings <- file_mappings()
+      show_save_modal()
     }
 
     #
@@ -4751,36 +4758,13 @@ validateServer <- function(id, state, session) {
       step_statuses = list()
     )
     
-    # Setup directory chooser
-    volumes <- c(Home = "~")
-    if (.Platform$OS.type == "windows") {
-      volumes <- c(volumes, getVolumes()())
-    }
-    
-    shinyDirChoose(
-      input,
-      "validate_dir_select",
-      roots = volumes,
-      session = session
+    # Shared files-free directory browser (see directory_picker.R)
+    bindDirectoryBrowser(
+      input, output, session,
+      browse_button = "validate_dir_select",
+      target_input  = "validate_dir",
+      title = "Select a dataset directory"
     )
-    
-    # Update the validate_dir text input when directory is selected via button
-    observeEvent(input$validate_dir_select, {
-      tryCatch({
-        dir_info <- parseDirPath(volumes, input$validate_dir_select)
-        if (length(dir_info) > 0) {
-          selected_path <- as.character(dir_info)
-          if (isTRUE(getOption("psychds.verbose"))) {
-            message("Directory selected via button: ", selected_path)
-          }
-          updateTextInput(session, "validate_dir", value = selected_path)
-        }
-      }, error = function(e) {
-        if (isTRUE(getOption("psychds.verbose"))) {
-          message("Error parsing directory path: ", e$message)
-        }
-      })
-    })
     
     # Define steps for the UI rendering
     validation_steps <- list(
@@ -6052,28 +6036,13 @@ output$dataset_info <- renderUI({
   }
 })
 
-# Set up directory selection for modal
-volumes <- c(Home = "~")
-if (.Platform$OS.type == "windows") {
-  volumes <- c(volumes, getVolumes()())
-}
-
-shinyDirChoose(
-  input,
-  "dataset_dir_select", 
-  roots = volumes,
-  session = session,
-  restrictions = system.file(package = "base")
+# Shared files-free directory browser (see directory_picker.R)
+bindDirectoryBrowser(
+  input, output, session,
+  browse_button = "dataset_dir_select",
+  target_input  = "dataset_dir",
+  title = "Select a dataset directory"
 )
-
-observeEvent(input$dataset_dir_select, {
-  if (!is.null(input$dataset_dir_select)) {
-    selected_dir <- parseDirPath(volumes, input$dataset_dir_select)
-    if (length(selected_dir) > 0 && selected_dir != "") {
-      updateTextInput(session, "dataset_dir", value = selected_dir)
-    }
-  }
-})
 
 # Load dataset when button clicked
 observeEvent(input$load_dataset_btn, {
@@ -8143,18 +8112,12 @@ output$dataset_loaded <- reactive({
 })
 outputOptions(output, "dataset_loaded", suspendWhenHidden = FALSE)
 
-# Set up directory selection
-volumes <- c(Home = "~")
-if (.Platform$OS.type == "windows") {
-  volumes <- c(volumes, getVolumes()())
-}
-
-shinyDirChoose(
-  input,
-  "dataset_dir_select", 
-  roots = volumes,
-  session = session,
-  restrictions = system.file(package = "base")
+# Shared files-free directory browser (see directory_picker.R)
+bindDirectoryBrowser(
+  input, output, session,
+  browse_button = "dataset_dir_select",
+  target_input  = "dataset_dir",
+  title = "Select a dataset directory"
 )
 
 extractKeywordValues <- function(keyword) {
@@ -8172,15 +8135,6 @@ extractKeywordValues <- function(keyword) {
   
   return(unique(sort(values)))
 }
-
-observeEvent(input$dataset_dir_select, {
-  if (!is.null(input$dataset_dir_select)) {
-    selected_dir <- parseDirPath(volumes, input$dataset_dir_select)
-    if (length(selected_dir) > 0 && selected_dir != "") {
-      updateTextInput(session, "dataset_dir", value = selected_dir)
-    }
-  }
-})
 
 # Display dataset info
 output$dataset_info <- renderUI({
@@ -9017,27 +8971,13 @@ output$ready_to_upload <- reactive({
 })
 outputOptions(output, "ready_to_upload", suspendWhenHidden = FALSE)
 
-# Directory selection
-volumes <- c(Home = "~")
-if (.Platform$OS.type == "windows") {
-  volumes <- c(volumes, getVolumes()())
-}
-
-shinyDirChoose(
-  input,
-  "dataset_dir_select",
-  roots = volumes,
-  session = session
+# Shared files-free directory browser (see directory_picker.R)
+bindDirectoryBrowser(
+  input, output, session,
+  browse_button = "dataset_dir_select",
+  target_input  = "dataset_dir",
+  title = "Select a dataset directory"
 )
-
-observeEvent(input$dataset_dir_select, {
-  if (!is.null(input$dataset_dir_select)) {
-    selected_dir <- parseDirPath(volumes, input$dataset_dir_select)
-    if (length(selected_dir) > 0 && selected_dir != "") {
-      updateTextInput(session, "dataset_dir", value = selected_dir)
-    }
-  }
-})
 
 # Auto-populate from validation module if a validated dataset is available
 observe({

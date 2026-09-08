@@ -946,7 +946,7 @@ validateUI <- function(id) {
           placeholder = "Path to Psych-DS dataset",
           width = "100%"
         ),
-        shinyDirButton(
+        actionButton(
           ns("validate_dir_select"),  # Added ns() wrapper
           label = "...",
           title = "Select a dataset directory",
@@ -1078,7 +1078,7 @@ dataDictionaryUI <- function(id) {
           placeholder = "Path to Psych-DS dataset",
           width = "100%"
         ),
-        shinyDirButton(
+        actionButton(
           ns("dataset_dir_select"),
           label = "...",
           title = "Select a dataset directory",
@@ -1554,7 +1554,7 @@ datasetExplorerUI <- function(id) {
           placeholder = "Path to Psych-DS dataset",
           width = "100%"
         ),
-        shinyDirButton(
+        actionButton(
           ns("dataset_dir_select"),
           label = "...",
           title = "Select a dataset directory",
@@ -1809,7 +1809,7 @@ osfUploadUI <- function(id) {
             placeholder = "Path to validated Psych-DS dataset",
             width = "100%"
           ),
-          shinyDirButton(
+          actionButton(
             ns("dataset_dir_select"),
             label = "...",
             title = "Select dataset directory",
