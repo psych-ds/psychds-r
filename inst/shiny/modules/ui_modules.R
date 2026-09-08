@@ -388,8 +388,15 @@ step3UI <- function(id) {
     div(
       class = "section-description",
       style = "margin-bottom: 20px;",
-      p("Psych-DS has specific naming conventions that your data files need to follow. This naming system is going to make you explain what each piece of a filename means: you can't just say \"347B\". Instead you have to use keywords to describe what that refers to. Is that participant 347B? Session 347B? Or even participant 347, session B?"),
-      p("We encourage you to use keywords from the suggested list below, but you can add your own if needed.")
+      p("Psych-DS filenames are built from ", tags$strong("keyword-value pairs"),
+        ", like ", tags$code("participant-347_session-B_data.csv"),
+        ", so that every part of the name means something. This way, \"347B.csv\" ",
+        "doesn't leave anyone guessing whether that's participant 347B, ",
+        "session 347B, or participant 347's session B."),
+      p("Each pair is ", tags$code("keyword-value"), ", pairs are joined with ",
+        tags$code("_"), ", and the name always ends in ", tags$code("_data.csv"),
+        ". Keywords are lowercase letters; values are letters and numbers only ",
+        "(no spaces or punctuation).")
     ),
 
     uiOutput(ns("single_file_panel")),
@@ -477,46 +484,56 @@ step3UI <- function(id) {
                 style = "margin-bottom: 10px;",
                 uiOutput(ns("current_file_text"))
               ),
-              # Auto-name section (compact)
+              # (Auto-name helper moved below the Select Files section)
               div(
-                style = "padding: 10px; background-color: #f8f9fa; border: 1px solid #ddd; border-radius: 4px;",
-                strong("Auto-Name from Data"),
+                style = "display:none;",
                 div(
-                  style = "font-size: 12px; color: #666; margin-bottom: 10px;",
-                  "Fill keyword values from columns in your data"
-                ),
-                div(
-                  id = ns("auto_name_section"),
-                  conditionalPanel(
-                    condition = paste0("output['", ns("has_constant_columns"), "']"),
-                    selectInput(
-                      ns("auto_keyword"),
-                      "Keyword:",
-                      choices = NULL,
-                      width = "100%"
-                    ),
-                    selectInput(
-                      ns("auto_column"),
-                      "From column:",
-                      choices = NULL,
-                      width = "100%"
-                    ),
-                    actionButton(
-                      ns("apply_auto_name"),
-                      "Apply Auto-Name",
-                      icon = icon("magic"),
-                      class = "btn btn-success btn-sm",
-                      style = "width: 100%;"
-                    )
-                  ),
-                  conditionalPanel(
-                    condition = paste0("!output['", ns("has_constant_columns"), "']"),
-                    div(
-                      style = "padding: 10px; text-align: center; color: #999; font-size: 12px;",
-                      "No constant-value columns detected in selected files."
-                    )
-                  )
+                  id = ns("auto_name_placeholder_unused")
                 )
+              )
+            )
+          )
+        )
+      )
+    ),
+
+    # Auto-name helper, demoted below Select Files: an optional shortcut,
+    # not a required part of everyone's workflow.
+    fluidRow(
+      column(
+        width = 12,
+        div(
+          style = paste0("margin-bottom: 20px; padding: 12px 14px; ",
+                         "background-color: #fafafa; border: 1px solid #e5e5e5; ",
+                         "border-radius: 6px;"),
+          tags$strong("Auto-name from the data?"),
+          div(
+            style = "font-size: 12px; color: #666; margin: 6px 0 10px;",
+            "If you have a set of data files containing an ID column with a ",
+            "fixed value, we can try to use it as part of the filename:"
+          ),
+          div(
+            id = ns("auto_name_section"),
+            conditionalPanel(
+              condition = paste0("output['", ns("has_constant_columns"), "']"),
+              div(
+                style = "display:flex; gap:10px; align-items:flex-end; flex-wrap:wrap;",
+                div(style = "min-width:160px;",
+                    selectInput(ns("auto_keyword"), "Keyword:",
+                                choices = NULL, width = "100%")),
+                div(style = "min-width:160px;",
+                    selectInput(ns("auto_column"), "From column:",
+                                choices = NULL, width = "100%")),
+                actionButton(ns("apply_auto_name"), "Apply Auto-Name",
+                             icon = icon("magic"),
+                             class = "btn btn-success btn-sm")
+              )
+            ),
+            conditionalPanel(
+              condition = paste0("!output['", ns("has_constant_columns"), "']"),
+              div(
+                style = "padding: 6px 0; color: #999; font-size: 12px;",
+                "No constant-value columns detected in selected files."
               )
             )
           )
@@ -605,7 +622,7 @@ step3UI <- function(id) {
     # Warning for duplicate destination filepaths
     uiOutput(ns("duplicate_warning")),
     
-    commonNavigation(ns, show_back = TRUE, continue_text = "Continue to save your dataset - no files will be saved yet")
+    commonNavigation(ns, show_back = TRUE, continue_text = "Continue to review your dataset - no files will be saved yet")
     )
   )
 }
@@ -946,7 +963,7 @@ validateUI <- function(id) {
           placeholder = "Path to Psych-DS dataset",
           width = "100%"
         ),
-        shinyDirButton(
+        actionButton(
           ns("validate_dir_select"),  # Added ns() wrapper
           label = "...",
           title = "Select a dataset directory",
@@ -1078,7 +1095,7 @@ dataDictionaryUI <- function(id) {
           placeholder = "Path to Psych-DS dataset",
           width = "100%"
         ),
-        shinyDirButton(
+        actionButton(
           ns("dataset_dir_select"),
           label = "...",
           title = "Select a dataset directory",
@@ -1554,7 +1571,7 @@ datasetExplorerUI <- function(id) {
           placeholder = "Path to Psych-DS dataset",
           width = "100%"
         ),
-        shinyDirButton(
+        actionButton(
           ns("dataset_dir_select"),
           label = "...",
           title = "Select a dataset directory",
@@ -1809,7 +1826,7 @@ osfUploadUI <- function(id) {
             placeholder = "Path to validated Psych-DS dataset",
             width = "100%"
           ),
-          shinyDirButton(
+          actionButton(
             ns("dataset_dir_select"),
             label = "...",
             title = "Select dataset directory",

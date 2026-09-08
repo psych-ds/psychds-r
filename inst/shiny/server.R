@@ -292,33 +292,12 @@ server <- function(input, output, session) {
   validateServer("validate_dataset", state, session)
 
 
-  # Handle Validate Dataset tab
-  volumes <- c(Home = "~")
-  if (.Platform$OS.type == "windows") {
-    volumes <- c(volumes, getVolumes()())
-  }
-
-  # Set up directory selection for validate tab
-  shinyDirChoose(
-    input,
-    "validate_dir_select",
-    roots = volumes,
-    session = session,
-    restrictions = system.file(package = "base")
-  )
+  # Directory pickers now live inside each module via bindDirectoryBrowser()
+  # (see modules/directory_picker.R); no shinyFiles setup is needed here.
 
   dataDictionaryServer("data_dictionary", state, session)
   datasetExplorerServer("dataset_explorer", state, session)
   osfUploadServer("osf_upload", state, session)
-
-  observeEvent(input$validate_dir_select, {
-    if (!is.null(input$validate_dir_select)) {
-      selected_dir <- parseDirPath(volumes, input$validate_dir_select)
-      if (length(selected_dir) > 0 && selected_dir != "") {
-        updateTextInput(session, "validate_dir", value = selected_dir)
-      }
-    }
-  })
 
   # Modify your validate_btn event handler
 observeEvent(input$validate_btn, {
@@ -400,23 +379,6 @@ observeEvent(input$validation_results, {
   )
 }, ignoreNULL = TRUE)
 
-  # Handle Update Dictionary tab
-  # Set up directory selection for dictionary tab
-  shinyDirChoose(
-    input,
-    "dictionary_dir_select",
-    roots = volumes,
-    session = session,
-    restrictions = system.file(package = "base")
-  )
-
-  observeEvent(input$dictionary_dir_select, {
-    if (!is.null(input$dictionary_dir_select)) {
-      selected_dir <- parseDirPath(volumes, input$dictionary_dir_select)
-      updateTextInput(session, "dictionary_dir", value = selected_dir)
-    }
-  })
-
   observeEvent(input$dictionary_btn, {
     if (input$dictionary_dir == "") {
       showModal(modalDialog(
@@ -441,23 +403,6 @@ observeEvent(input$validation_results, {
     }
   })
 
-  # Handle Dataset Explorer tab
-  # Set up directory selection for explorer tab
-  shinyDirChoose(
-    input,
-    "explorer_dir_select",
-    roots = volumes,
-    session = session,
-    restrictions = system.file(package = "base")
-  )
-
-  observeEvent(input$explorer_dir_select, {
-    if (!is.null(input$explorer_dir_select)) {
-      selected_dir <- parseDirPath(volumes, input$explorer_dir_select)
-      updateTextInput(session, "explorer_dir", value = selected_dir)
-    }
-  })
-
   observeEvent(input$explorer_btn, {
     if (input$explorer_dir == "") {
       showModal(modalDialog(
@@ -479,23 +424,6 @@ observeEvent(input$validation_results, {
         easyClose = TRUE,
         footer = modalButton("Close")
       ))
-    }
-  })
-
-  # Handle Upload to OSF tab
-  # Set up directory selection for upload tab
-  shinyDirChoose(
-    input,
-    "upload_dir_select",
-    roots = volumes,
-    session = session,
-    restrictions = system.file(package = "base")
-  )
-
-  observeEvent(input$upload_dir_select, {
-    if (!is.null(input$upload_dir_select)) {
-      selected_dir <- parseDirPath(volumes, input$upload_dir_select)
-      updateTextInput(session, "upload_dir", value = selected_dir)
     }
   })
 
