@@ -4,7 +4,7 @@
 \alias{run_app_safe}
 \title{Initialize Shiny App with Robust Package Management}
 \usage{
-run_app_safe(app_dir = system.file("app", package = "psychds"), ...)
+run_app_safe(app_dir = system.file("shiny", package = "psychds"), ...)
 }
 \arguments{
 \item{app_dir}{Directory containing the Shiny app}

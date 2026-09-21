@@ -30,7 +30,6 @@
 #'   \item Standardizing filenames with Psych-DS keywords
 #'   \item Generating data dictionaries
 #'   \item Validating datasets against the Psych-DS specification
-#'   \item Uploading to the Open Science Framework (OSF)
 #' }
 #'
 #' @seealso [check_psychds_deps()] for verifying dependencies before running.
@@ -131,8 +130,8 @@ run_psych_ds_app <- function(
 #' @details
 #' This function checks for:
 #' \itemize{
-#'   \item Required packages: shiny, shinydashboard, shinyjs, shinyFiles, DT, jsonlite
-#'   \item Optional packages: httr, rmarkdown, knitr
+#'   \item Required packages: shiny, shinydashboard, shinyjs, DT, jsonlite
+#'   \item Optional packages: sortable, zip, pointblank
 #'   \item Minimum version requirements for each package
 #' }
 #'
@@ -153,16 +152,15 @@ check_psychds_deps <- function(install_missing = interactive(),
   
   # Core required packages
   required_packages <- c(
-    "shiny", "shinydashboard", "shinyjs", "shinyFiles",
-    "DT", "jsonlite", "jsonvalidate", 
-    "dplyr", "tidyr", "readr"
+    "shiny", "shinydashboard", "shinyjs",
+    "DT", "jsonlite"
   )
   
   # Optional but recommended
   recommended_packages <- c(
-    "httr",       # For OSF upload
-    "rmarkdown",  # For better formatting
-    "knitr"       # For documentation
+    "sortable",   # Drag-and-drop file ordering
+    "zip",        # Dataset download bundles
+    "pointblank"  # Data validation reports
   )
   
   message("Checking psychds dependencies...\n")

@@ -4,7 +4,7 @@ Thank you for your interest in contributing to psychds! This document provides g
 
 ## Code of Conduct
 
-Please note that the psychds project is released with a [Contributor Code of Conduct](CODE_OF_CONDUCT.md). By contributing to this project you agree to abide by its terms.
+Please be respectful and constructive in all project interactions.
 
 ## How to Contribute
 

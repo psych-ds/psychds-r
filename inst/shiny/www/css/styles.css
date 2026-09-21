@@ -1,24 +1,68 @@
-/* Main layout - FIXED for proper width calculation */
+/* ============================================================================
+   psychds Shiny app stylesheet
+   ----------------------------------------------------------------------------
+   Single source of truth for all app styling. ui.R contains NO inline CSS;
+   if you are tempted to add a tags$style() there, add a rule here instead.
+
+   Contents
+     1. Layout shell (page frame, fixed header & sidebar, responsiveness)
+     2. Theme (header/sidebar colors, typography)
+     3. Buttons
+     4. Forms & inputs (incl. directory picker)
+     5. Sidebar step indicators & progress
+     6. File browsers & file-mapping lists
+     7. Keywords & sortable chips
+     8. Tables (DataTables)
+     9. JSON preview
+    10. Panels, modals & notifications
+    11. Validation displays
+   ========================================================================= */
+
+/* ============================================================================
+   1. LAYOUT SHELL
+   The app uses AdminLTE's "fixed" body layout (added in ui.R via one line of
+   JS) with a LOGO-ONLY header: the navbar is hidden, so the only header
+   element is the 200px Psych-DS logo pinned to the top-left, visually
+   capping the sidebar. Content starts at the very top of the viewport;
+   only the sidebar menu is offset below the 50px logo.
+   ========================================================================= */
+
 html, body {
   height: 100%;
   margin: 0;
   overflow-x: hidden; /* Prevent horizontal scroll */
 }
 
+/* --- Sidebar: fixed, 200px wide (must match titleWidth/width in ui.R) --- */
 .main-sidebar {
   position: fixed;
   height: 100%;
   width: 200px;
 }
 
-/* Critical fix - proper width calculation accounting for sidebar */
+/* --- Content area: sits right of the sidebar --- */
 .content-wrapper, .right-side {
   background-color: #ffffff;
   margin-left: 200px !important; /* Match sidebar width */
   width: calc(100% - 200px) !important; /* Subtract sidebar width */
-  padding: 0 !important; /* Reset padding */
+  padding: 0 !important; /* Reset padding (see .fixed override below) */
 }
 
+/* --- Logo-only header offsets ---
+   The navbar is hidden (below), so content needs no top offset; only the
+   sidebar menu starts below the 50px pinned logo. */
+.fixed .main-sidebar    { padding-top: 50px; }
+
+/* --- Header: logo only, no bar across the page ---
+   The navbar (which carried the sidebar-toggle) is hidden entirely, and the
+   fixed header is narrowed to the 200px logo so the invisible header element
+   doesn't overlay -- and steal clicks from -- the top of the content. */
+.main-header { margin-left: 0 !important; max-height: 50px; }
+.main-header .logo { height: 50px; line-height: 50px; }
+.main-header .navbar { display: none; }
+.fixed .main-header { width: 200px; }
+
+/* --- Grid plumbing --- */
 .container-fluid {
   padding-right: 15px !important;
   padding-left: 15px !important;
@@ -26,36 +70,301 @@ html, body {
   margin-left: 0 !important;
 }
 
-/* Remove min-width that's causing issues */
 .content {
   padding: 15px;
   /* min-width removed - was causing horizontal scroll */
 }
 
-/* Fix column widths */
 .col-sm-1, .col-sm-2, .col-sm-3, .col-sm-4, .col-sm-5, .col-sm-6,
 .col-sm-7, .col-sm-8, .col-sm-9, .col-sm-10, .col-sm-11, .col-sm-12 {
   padding-right: 15px;
   padding-left: 15px;
 }
 
-/* Fix row margins */
 .row {
   margin-right: -15px;
   margin-left: -15px;
 }
 
-/* Header fixes */
-.main-header {
-  margin-left: 0 !important;
+/* Ensure all tab content is reachable above the fold logic */
+.tab-content {
+  padding-bottom: 15px;
+  min-height: calc(100vh - 100px);
 }
 
-.main-header .navbar {
-  margin-left: 200px !important;
-  width: calc(100% - 200px) !important;
+/* Misc layout fixes */
+div[style*="text-align: right"] {
+  padding-right: 15px;
 }
 
-/* Progress indicator - fixed positioning */
+.nav, .navbar-right {
+  margin-right: 0;
+}
+
+/* --- Small screens: keep the layout pinned ---
+   This app isn't expected to run at phone widths, and AdminLTE's default
+   off-canvas sidebar collapse looked clunky. So below 768px we do NOT
+   collapse: the sidebar and logo stay put (overriding AdminLTE's
+   translate(-230px) slide-away), and the content area simply narrows.
+   If a usable floor is ever wanted instead, replace this with a
+   min-width on body and overflow-x: auto. */
+@media (max-width: 767px) {
+  .main-sidebar, .left-side {
+    -webkit-transform: translate(0, 0) !important;
+    -ms-transform: translate(0, 0) !important;
+    transform: translate(0, 0) !important;
+  }
+}
+
+/* ============================================================================
+   2. THEME (colors & typography)
+   ========================================================================= */
+
+.skin-blue .main-header .logo { background-color: #2c3e50; font-weight: bold; }
+.skin-blue .main-header .logo:hover { background-color: #2c3e50; }
+.skin-blue .main-header .navbar { background-color: #2c3e50; }
+.skin-blue .main-sidebar { background-color: #2c3e50; }
+.skin-blue .main-sidebar .sidebar-menu li.active > a {
+  background-color: #3498db !important;
+  border-left-color: #3498db !important;
+}
+
+h2 { margin-top: 0; margin-bottom: 10px; font-size: 24px; }
+h3 { margin-top: 0; margin-bottom: 15px; font-size: 18px; font-weight: normal; }
+
+.blue-link {
+  color: #3498db;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* Content section boxes */
+.section-box {
+  background-color: #f8f9fa;
+  border: 1px solid #ddd;
+  border-radius: 5px;
+  padding: 12px;
+  margin-bottom: 15px;
+}
+.section-title {
+  font-size: 16px;
+  font-weight: bold;
+  margin-bottom: 8px;
+  color: #333;
+}
+.section-description {
+  font-size: 13px;
+  color: #555;
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+
+.step-header {
+  margin-bottom: 20px;
+}
+
+.step-header h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-weight: bold;
+  color: #333;
+}
+
+.step-header p {
+  color: #555;
+  line-height: 1.5;
+}
+
+/* ============================================================================
+   3. BUTTONS
+   ========================================================================= */
+
+.btn {
+  transition: background-color 0.2s, transform 0.1s;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn:active {
+  transform: translateY(1px);
+}
+
+.btn-primary {
+  background-color: #3498db;
+  border-color: #2980b9;
+}
+
+.btn-primary:hover {
+  background-color: #2980b9;
+  border-color: #2472a4;
+}
+
+.continue-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 20px;
+  font-size: 15px;
+  margin-top: 10px;
+}
+
+.back-btn {
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 20px;
+  font-size: 15px;
+  margin-top: 10px;
+  margin-right: 10px;
+}
+
+.add-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.add-btn:hover {
+  background-color: #2980b9;
+  color: white;
+}
+
+.save-btn {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.save-btn:hover {
+  background-color: #218838;
+  color: white;
+}
+
+.finish-btn {
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 20px;
+  font-size: 15px;
+  margin-top: 10px;
+  margin-left: 10px;
+}
+
+.finish-btn:hover {
+  background-color: #218838;
+  color: white;
+}
+
+/* ============================================================================
+   4. FORMS & INPUTS (incl. directory picker)
+   ========================================================================= */
+
+.form-group {
+  margin-bottom: 15px;
+}
+
+.control-label {
+  margin-bottom: 5px;
+  font-weight: bold;
+}
+
+/* Directory picker (modules/directory_picker.R) */
+.directory-input { display: flex; margin-top: 8px; }
+.browse-btn {
+  background-color: #3498db;
+  color: white;
+  border: none;
+  border-radius: 3px;
+  height: 34px;
+  width: 50px;
+  font-size: 14px;
+  margin-left: 5px;
+}
+.dir-input {
+  height: 34px;
+  border-radius: 3px;
+  border: 1px solid #ced4da;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.custom-dir-section {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+/* ============================================================================
+   5. SIDEBAR STEP INDICATORS & PROGRESS
+   ========================================================================= */
+
+/* Create-dataset step dots in the sidebar */
+#create-step-indicators {
+  padding: 8px 15px 12px 45px;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background-color: rgba(0,0,0,0.1);
+}
+
+.step-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background-color: #4a5568;
+  color: #a0aec0;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  cursor: not-allowed;
+  border: none;
+  padding: 0;
+}
+
+.step-indicator.clickable {
+  cursor: pointer;
+}
+
+.step-indicator.clickable:hover {
+  transform: scale(1.1);
+}
+
+.step-indicator.active {
+  background-color: #3498db;
+  color: white;
+}
+
+.step-indicator.completed {
+  background-color: #27ae60;
+  color: white;
+  cursor: pointer;
+}
+
+.step-indicator.completed:hover {
+  transform: scale(1.1);
+  background-color: #219a52;
+}
+
+.step-separator {
+  color: #b8c7ce;
+  font-size: 10px;
+}
+
+/* In-page progress indicator */
 .progress-container {
   display: flex;
   justify-content: flex-end;
@@ -70,20 +379,12 @@ html, body {
   flex-shrink: 0;
 }
 
-/* Compact header */
-.main-header { max-height: 50px; }
-.main-header .logo { height: 50px; line-height: 50px; }
-.main-header .navbar { min-height: 50px; }
-
-/* Dashboard styles */
-.skin-blue .main-header .logo { background-color: #2c3e50; font-weight: bold; }
-.skin-blue .main-header .logo:hover { background-color: #2c3e50; }
-.skin-blue .main-header .navbar { background-color: #2c3e50; }
-.skin-blue .main-sidebar { background-color: #2c3e50; }
-.skin-blue .main-sidebar .sidebar-menu li.active > a {
-  background-color: #3498db !important;
-  border-left-color: #3498db !important;
+.progress-bar-fill {
+  background-color: #3498db;
+  border-radius: 20px;
+  height: 100%;
 }
+
 .step-circle-btn {
   width: 30px !important;
   height: 30px !important;
@@ -111,7 +412,6 @@ html, body {
   box-shadow: 0 0 5px rgba(0,0,0,0.2);
 }
 
-/* Progress indicator */
 .step-circle {
   display: inline-block;
   width: 35px;
@@ -126,55 +426,11 @@ html, body {
   cursor: pointer;
   transition: transform 0.2s;
 }
-.progress-bar-fill {
-  background-color: #3498db;
-  border-radius: 20px;
-  height: 100%;
-}
 
-/* Content sections */
-.section-box {
-  background-color: #f8f9fa;
-  border: 1px solid #ddd;
-  border-radius: 5px;
-  padding: 12px;
-  margin-bottom: 15px;
-}
-.section-title {
-  font-size: 16px;
-  font-weight: bold;
-  margin-bottom: 8px;
-  color: #333;
-}
-.section-description {
-  font-size: 13px;
-  color: #555;
-  line-height: 1.4;
-  margin-bottom: 10px;
-}
+/* ============================================================================
+   6. FILE BROWSERS & FILE-MAPPING LISTS
+   ========================================================================= */
 
-/* Input elements */
-.directory-input { display: flex; margin-top: 8px; }
-.browse-btn {
-  background-color: #3498db;
-  color: white;
-  border: none;
-  border-radius: 3px;
-  height: 34px;
-  width: 50px;
-  font-size: 14px;
-  margin-left: 5px;
-}
-.dir-input {
-  height: 34px;
-  border-radius: 3px;
-  border: 1px solid #ced4da;
-  width: 100%;
-  padding: 6px 10px;
-  font-size: 13px;
-}
-
-/* File browser areas */
 .file-browser {
   background-color: white;
   border: 1px solid #ced4da;
@@ -195,52 +451,6 @@ html, body {
 }
 .folder-item { margin-left: 15px; }
 
-/* Custom directory section */
-.custom-dir-section {
-  margin-top: 8px;
-  font-size: 13px;
-}
-
-/* Button styles */
-.continue-btn {
-  background-color: #3498db;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 8px 20px;
-  font-size: 15px;
-  margin-top: 10px;
-}
-
-.back-btn {
-  background-color: #6c757d;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 8px 20px;
-  font-size: 15px;
-  margin-top: 10px;
-  margin-right: 10px;
-}
-
-/* Link styling */
-.blue-link {
-  color: #3498db;
-  text-decoration: underline;
-  cursor: pointer;
-}
-
-/* Fix height to ensure all content is visible */
-.tab-content {
-  padding-bottom: 15px;
-  min-height: calc(100vh - 100px);
-}
-
-/* Make header more compact */
-h2 { margin-top: 0; margin-bottom: 10px; font-size: 24px; }
-h3 { margin-top: 0; margin-bottom: 15px; font-size: 18px; font-weight: normal; }
-
-/* File selector styling */
 .selectable-file {
   cursor: pointer;
 }
@@ -248,301 +458,6 @@ h3 { margin-top: 0; margin-bottom: 15px; font-size: 18px; font-weight: normal; }
   background-color: #f0f7ff;
 }
 
-/* Additional fixes to ensure proper layout */
-div[style*="text-align: right"] {
-  padding-right: 15px;
-}
-
-/* Ensure proper layout for flex items */
-.nav, .navbar-right {
-  margin-right: 0;
-}
-
-/* DataTables specific styling */
-.dataTables_wrapper {
-  width: 100% !important;
-  min-height: 100px !important;
-  padding: 0;
-}
-
-.dataTables_wrapper .dataTables_length {
-  margin-bottom: 10px;
-  font-size: 12px;
-}
-
-.dataTables_wrapper .dataTables_info {
-  font-size: 12px;
-  color: #666;
-  padding-top: 8px;
-}
-
-.dataTables_wrapper .dataTables_paginate {
-  padding-top: 8px;
-  font-size: 12px;
-}
-
-/* Table styling */
-table.dataTable {
-  width: 100% !important;
-  margin: 0 !important;
-  border: 1px solid #ced4da;
-  border-radius: 3px;
-}
-
-table.dataTable thead th {
-  background-color: #f8f9fa !important;
-  color: #333 !important;
-  font-weight: bold !important;
-  border-bottom: 2px solid #dee2e6 !important;
-  padding: 8px !important;
-}
-
-table.dataTable tbody td {
-  padding: 8px !important;
-  vertical-align: top !important;
-}
-
-table.dataTable tbody tr:nth-child(even) {
-  background-color: #fcfcfc !important;
-}
-
-table.dataTable tbody tr:hover {
-  background-color: #f5f5f5 !important;
-}
-
-/* Variable table container */
-.variable-table-container {
-  margin: 15px 0;
-  border: 1px solid #dee2e6;
-  border-radius: 5px;
-  overflow: hidden;
-  min-height: 200px;
-  background-color: white;
-}
-
-/* Warning box */
-.warning-box {
-  padding: 10px;
-  background-color: #fff3cd;
-  border-radius: 3px;
-  margin-top: 15px;
-}
-
-.warning-text {
-  color: #856404;
-  margin-bottom: 0;
-}
-
-/* Confirmation checkbox */
-.confirmation-box {
-  margin: 20px 0;
-  padding: 10px;
-  background-color: #f8f9fa;
-  border-radius: 3px;
-}
-
-/* Add button */
-.add-btn {
-  background-color: #3498db;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 6px 12px;
-  font-size: 14px;
-}
-
-.add-btn:hover {
-  background-color: #2980b9;
-  color: white;
-}
-
-/* Save button */
-.save-btn {
-  background-color: #28a745;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 6px 12px;
-  font-size: 14px;
-}
-
-.save-btn:hover {
-  background-color: #218838;
-  color: white;
-}
-
-/* Finish button */
-.finish-btn {
-  background-color: #28a745;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 8px 20px;
-  font-size: 15px;
-  margin-top: 10px;
-  margin-left: 10px;
-}
-
-.finish-btn:hover {
-  background-color: #218838;
-  color: white;
-}
-
-/* Ensure DataTable outputs are visible */
-.shiny-datatable-output {
-  width: 100% !important;
-  min-height: 100px !important;
-  visibility: visible !important;
-  display: block !important;
-}
-
-/* Specific fix for the variables table */
-#step2-variables_table {
-  width: 100% !important;
-  min-height: 100px !important;
-  visibility: visible !important;
-  display: block !important;
-}
-
-.file-list-scrollable {
-  max-height: 80px;
-  overflow-y: auto;
-  border: 1px solid #ddd;
-  border-radius: 3px;
-}
-
-.file-list-scrollable div {
-  padding: 2px 5px;
-  border-bottom: 1px solid #eee;
-  font-size: 12px;
-}
-
-.file-list-scrollable div:last-child {
-  border-bottom: none;
-}
-
-.file-list-scrollable div:nth-child(odd) {
-  background-color: #f8f9fa;
-}
-
-.file-list-scrollable div:nth-child(even) {
-  background-color: white;
-}
-
-/* Custom scrollbar for file lists */
-.file-list-scrollable::-webkit-scrollbar {
-  width: 8px;
-}
-
-.file-list-scrollable::-webkit-scrollbar-track {
-  background: #f1f1f1;
-  border-radius: 4px;
-}
-
-.file-list-scrollable::-webkit-scrollbar-thumb {
-  background: #888;
-  border-radius: 4px;
-}
-
-.file-list-scrollable::-webkit-scrollbar-thumb:hover {
-  background: #555;
-}
-
-.dataTables_wrapper table.dataTable tbody tr:empty {
-  display: none;
-}
-
-/* Ensure proper spacing for table cells */
-.dataTables_wrapper table.dataTable td {
-  vertical-align: middle;
-}
-
-/* Remove any empty table rows */
-.dataTables_wrapper table.dataTable tbody tr td:empty {
-  padding: 0;
-  height: 0;
-  visibility: hidden;
-}
-
-/* Handle empty content in cells */
-.dataTables_wrapper table.dataTable tbody tr td:has(:empty) {
-  padding: 8px;
-}
-
-/* Add this to your styles.css file */
-
-.json-preview {
-  background-color: #f8f9fa;
-  padding: 15px;
-  border: 1px solid #dee2e6;
-  border-radius: 5px;
-  max-height: 400px;
-  overflow-y: auto;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.5;
-  white-space: pre;
-  color: #333;
-  margin: 0;  /* Remove default margins from pre tag */
-}
-
-/* Syntax highlighting for JSON */
-.json-key {
-  color: #0066cc;
-}
-
-.json-string {
-  color: #a31515;
-}
-
-.json-value {
-  color: #008800;
-}
-
-.json-punctuation {
-  color: #333;
-}
-
-/* Make sure nested JSON arrays display correctly */
-.json-preview span {
-  white-space: pre;
-  display: inline;
-}
-
-.panel {
-  border-radius: 5px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  margin-bottom: 20px;
-}
-
-.panel-heading {
-  background-color: #f5f5f5;
-  border-bottom: 1px solid #ddd;
-  padding: 10px 15px;
-}
-
-.panel-body {
-  padding: 15px;
-}
-
-/* Step header */
-.step-header {
-  margin-bottom: 20px;
-}
-
-.step-header h3 {
-  margin-top: 0;
-  margin-bottom: 10px;
-  font-weight: bold;
-  color: #333;
-}
-
-.step-header p {
-  color: #555;
-  line-height: 1.5;
-}
-
-/* File mapping list */
 .file-list-container {
   border: 1px solid #ced4da;
   border-radius: 4px;
@@ -556,7 +471,7 @@ table.dataTable tbody tr:hover {
   font-weight: bold;
 }
 
-/* Step 3 specific styles - File mapping list */
+/* Step 3: original -> new filename mapping */
 .file-mapping-list {
   max-height: 350px;
   overflow-y: auto;
@@ -596,17 +511,71 @@ table.dataTable tbody tr:hover {
   word-break: break-all;
 }
 
-/* Current file indicator */
-.alert-info {
-  background-color: #e3f2fd;
-  border-color: #b3e5fc;
-  color: #0288d1;
-  padding: 10px 15px;
-  border-radius: 4px;
-  margin-bottom: 15px;
+/* Compact scrollable file lists */
+.file-list-scrollable {
+  max-height: 80px;
+  overflow-y: auto;
+  border: 1px solid #ddd;
+  border-radius: 3px;
 }
 
-/* Keyword configuration */
+.file-list-scrollable div {
+  padding: 2px 5px;
+  border-bottom: 1px solid #eee;
+  font-size: 12px;
+}
+
+.file-list-scrollable div:last-child {
+  border-bottom: none;
+}
+
+.file-list-scrollable div:nth-child(odd) {
+  background-color: #f8f9fa;
+}
+
+.file-list-scrollable div:nth-child(even) {
+  background-color: white;
+}
+
+.file-list-scrollable::-webkit-scrollbar {
+  width: 8px;
+}
+
+.file-list-scrollable::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.file-list-scrollable::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.file-list-scrollable::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Filename preview */
+.filename-preview {
+  background-color: #f8f9fa;
+  border: 1px solid #ced4da;
+  padding: 10px;
+  text-align: center;
+  margin: 10px 0;
+  border-radius: 4px;
+  min-height: 50px;
+}
+
+.filename-preview-text {
+  word-break: break-all;
+  margin: 0;
+  font-size: 14px;
+}
+
+/* ============================================================================
+   7. KEYWORDS & SORTABLE CHIPS
+   ========================================================================= */
+
 .keyword-config-section,
 .custom-keyword-section,
 .keyword-values-section,
@@ -623,7 +592,6 @@ table.dataTable tbody tr:hover {
   margin-bottom: 10px;
 }
 
-/* Keyword chips container */
 .keyword-chips-container {
   margin-bottom: 15px;
 }
@@ -632,7 +600,6 @@ table.dataTable tbody tr:hover {
   margin-bottom: 10px;
 }
 
-/* Improved keyword styling */
 .keyword-chip {
   display: inline-block;
   margin-right: 5px;
@@ -656,34 +623,45 @@ table.dataTable tbody tr:hover {
   margin-bottom: 15px;
 }
 
+/* Selected keyword chip (draggable).
+   NOTE: previously defined twice; this is the merged, cascade-equivalent
+   result of both definitions. */
 .keyword-chip-selected {
   display: inline-block;
-  margin-right: 5px;
-  margin-bottom: 5px;
+  margin: 3px;
+  padding: 5px 10px;
+  background-color: #3498db;
+  color: white;
   border-radius: 15px;
-  padding: 2px 10px;
   position: relative;
+  cursor: move;
+  transition: background-color 0.2s, transform 0.1s;
 }
 
+.keyword-chip-selected:hover {
+  background-color: #2980b9;
+  transform: translateY(-1px);
+}
+
+/* Remove button on a chip (merged from two earlier definitions). */
 .remove-keyword {
   background: none;
   border: none;
   color: white;
   opacity: 0.7;
-  padding: 0 5px;
+  padding: 0 0 0 5px;
   font-size: 10px;
+  cursor: pointer;
 }
 
 .remove-keyword:hover {
   opacity: 1;
 }
 
-/* Custom keyword section */
 .custom-keyword-section .input-group {
   width: 100%;
 }
 
-/* Keyword values section */
 .keyword-values-section .form-group {
   margin-bottom: 10px;
 }
@@ -694,66 +672,195 @@ table.dataTable tbody tr:hover {
   font-weight: bold;
 }
 
-/* Filename preview */
-.filename-preview {
-  background-color: #f8f9fa;
+/* sortable package integration */
+.sortable-keywords {
+  min-height: 60px;
+  padding: 5px;
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.rank-list-container {
+  background-color: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.rank-list {
+  min-height: 60px;
+  margin-bottom: 0 !important;
+  background-color: transparent !important;
+  border: none !important;
+}
+
+.ui-sortable-helper {
+  transform: scale(1.05) !important;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16) !important;
+  z-index: 1000 !important;
+}
+
+.ui-sortable-placeholder {
+  visibility: visible !important;
+  background-color: rgba(52, 152, 219, 0.1) !important;
+  border: 1px dashed #3498db !important;
+  border-radius: 15px !important;
+}
+
+/* ============================================================================
+   8. TABLES (DataTables)
+   ========================================================================= */
+
+.dataTables_wrapper {
+  width: 100% !important;
+  min-height: 100px !important;
+  padding: 0;
+}
+
+.dataTables_wrapper .dataTables_length {
+  margin-bottom: 10px;
+  font-size: 12px;
+}
+
+.dataTables_wrapper .dataTables_info {
+  font-size: 12px;
+  color: #666;
+  padding-top: 8px;
+}
+
+.dataTables_wrapper .dataTables_paginate {
+  padding-top: 8px;
+  font-size: 12px;
+}
+
+table.dataTable {
+  width: 100% !important;
+  margin: 0 !important;
   border: 1px solid #ced4da;
-  padding: 10px;
-  text-align: center;
-  margin: 10px 0;
-  border-radius: 4px;
-  min-height: 50px;
+  border-radius: 3px;
 }
 
-.filename-preview-text {
-  word-break: break-all;
-  margin: 0;
-  font-size: 14px;
+table.dataTable thead th {
+  background-color: #f8f9fa !important;
+  color: #333 !important;
+  font-weight: bold !important;
+  border-bottom: 2px solid #dee2e6 !important;
+  padding: 8px !important;
 }
 
-/* Navigation buttons */
-.step-navigation {
-  margin-top: 30px;
-  padding-top: 15px;
-  border-top: 1px solid #eee;
-  text-align: right;
+table.dataTable tbody td {
+  padding: 8px !important;
+  vertical-align: top !important;
 }
 
-/* Add file button styling */
-.btn-primary {
-  background-color: #3498db;
-  border-color: #2980b9;
+table.dataTable tbody tr:nth-child(even) {
+  background-color: #fcfcfc !important;
 }
 
-.btn-primary:hover {
-  background-color: #2980b9;
-  border-color: #2472a4;
+table.dataTable tbody tr:hover {
+  background-color: #f5f5f5 !important;
 }
 
-/* Form controls */
-.form-group {
-  margin-bottom: 15px;
+.variable-table-container {
+  margin: 15px 0;
+  border: 1px solid #dee2e6;
+  border-radius: 5px;
+  overflow: hidden;
+  min-height: 200px;
+  background-color: white;
 }
 
-.control-label {
-  margin-bottom: 5px;
-  font-weight: bold;
+.shiny-datatable-output {
+  width: 100% !important;
+  min-height: 100px !important;
+  visibility: visible !important;
+  display: block !important;
 }
 
-/* Button transitions and effects */
-.btn {
-  transition: background-color 0.2s, transform 0.1s;
+#step2-variables_table {
+  width: 100% !important;
+  min-height: 100px !important;
+  visibility: visible !important;
+  display: block !important;
 }
 
-.btn:hover {
-  transform: translateY(-1px);
+.dataTables_wrapper table.dataTable tbody tr:empty {
+  display: none;
 }
 
-.btn:active {
-  transform: translateY(1px);
+.dataTables_wrapper table.dataTable td {
+  vertical-align: middle;
 }
 
-/* Modal improvements */
+.dataTables_wrapper table.dataTable tbody tr td:empty {
+  padding: 0;
+  height: 0;
+  visibility: hidden;
+}
+
+.dataTables_wrapper table.dataTable tbody tr td:has(:empty) {
+  padding: 8px;
+}
+
+/* ============================================================================
+   9. JSON PREVIEW
+   ========================================================================= */
+
+.json-preview {
+  background-color: #f8f9fa;
+  padding: 15px;
+  border: 1px solid #dee2e6;
+  border-radius: 5px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
+  color: #333;
+  margin: 0;  /* Remove default margins from pre tag */
+}
+
+.json-key {
+  color: #0066cc;
+}
+
+.json-string {
+  color: #a31515;
+}
+
+.json-value {
+  color: #008800;
+}
+
+.json-punctuation {
+  color: #333;
+}
+
+.json-preview span {
+  white-space: pre;
+  display: inline;
+}
+
+/* ============================================================================
+   10. PANELS, MODALS & NOTIFICATIONS
+   ========================================================================= */
+
+.panel {
+  border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  margin-bottom: 20px;
+}
+
+.panel-heading {
+  background-color: #f5f5f5;
+  border-bottom: 1px solid #ddd;
+  padding: 10px 15px;
+}
+
+.panel-body {
+  padding: 15px;
+}
+
 .modal-content {
   border-radius: 6px;
   box-shadow: 0 5px 15px rgba(0,0,0,0.2);
@@ -773,99 +880,46 @@ table.dataTable tbody tr:hover {
   border-bottom-right-radius: 6px;
 }
 
-/* Responsiveness */
-@media (max-width: 767px) {
-  .col-xs-6 {
-    width: 50%;
-  }
-
-  .main-header .navbar {
-    margin-left: 0 !important;
-    width: 100% !important;
-  }
-
-  .content-wrapper, .right-side {
-    margin-left: 0 !important;
-    width: 100% !important;
-  }
+/* Notifications: pinned top-right (no header bar to clear anymore) */
+#shiny-notification-panel {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  bottom: auto;
+  left: auto;
+  width: 350px;
 }
 
-/* Improved notifications */
 .shiny-notification {
+  position: relative;
+  margin-bottom: 8px;
   border-radius: 4px;
   box-shadow: 0 3px 10px rgba(0,0,0,0.15);
   padding: 10px 15px;
-  margin-bottom: 8px;
 }
 
-.sortable-keywords {
-  min-height: 60px;
-  padding: 5px;
-  display: flex;
-  flex-wrap: wrap;
+.warning-box {
+  padding: 10px;
+  background-color: #fff3cd;
+  border-radius: 3px;
+  margin-top: 15px;
 }
 
-/* Keyword chips in sortable list */
-.keyword-chip-selected {
-  display: inline-block;
-  margin: 3px;
-  padding: 5px 10px;
-  background-color: #3498db;
-  color: white;
-  border-radius: 15px;
-  position: relative;
-  cursor: move;
-  transition: background-color 0.2s, transform 0.1s;
+.warning-text {
+  color: #856404;
+  margin-bottom: 0;
 }
 
-.keyword-chip-selected:hover {
-  background-color: #2980b9;
-  transform: translateY(-1px);
+.confirmation-box {
+  margin: 20px 0;
+  padding: 10px;
+  background-color: #f8f9fa;
+  border-radius: 3px;
 }
 
-/* Button to remove keyword */
-.remove-keyword {
-  background: none;
-  border: none;
-  color: white;
-  opacity: 0.7;
-  padding: 0 0 0 5px;
-  font-size: 10px;
-  cursor: pointer;
-}
-
-.remove-keyword:hover {
-  opacity: 1;
-}
-
-/* Styling for the rank list from the sortable package */
-.rank-list-container {
-  background-color: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-.rank-list {
-  min-height: 60px;
-  margin-bottom: 0 !important;
-  background-color: transparent !important;
-  border: none !important;
-}
-
-/* Style for the dragging state */
-.ui-sortable-helper {
-  transform: scale(1.05) !important;
-  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16) !important;
-  z-index: 1000 !important;
-}
-
-/* Style for the placeholder during drag */
-.ui-sortable-placeholder {
-  visibility: visible !important;
-  background-color: rgba(52, 152, 219, 0.1) !important;
-  border: 1px dashed #3498db !important;
-  border-radius: 15px !important;
-}
+/* ============================================================================
+   11. VALIDATION DISPLAYS
+   ========================================================================= */
 
 .valid-status {
   background-color: #e6ffe6;
@@ -881,10 +935,15 @@ table.dataTable tbody tr:hover {
   margin-bottom: 15px;
 }
 
+/* Issue row in the checklist (merged from two earlier definitions;
+   cascade-equivalent). */
 .validation-issue {
-  margin-bottom: 15px;
-  padding: 10px;
-  border-left: 4px solid #ddd;
+  margin: 4px 0 15px 32px;
+  padding: 6px 12px;
+  background-color: #fff8f8;
+  border-left: 3px solid #dc3545;
+  font-size: 12px;
+  color: #dc3545;
 }
 
 .validation-summary {
@@ -899,8 +958,6 @@ table.dataTable tbody tr:hover {
   font-style: italic;
   color: #666;
 }
-
-/* Simple Validation Checklist Styles */
 
 .validation-checklist-container {
   max-height: 400px;
@@ -937,16 +994,6 @@ table.dataTable tbody tr:hover {
 
 .text-muted {
   color: #6c757d;
-}
-
-.validation-issue {
-  margin-top: 4px;
-  margin-left: 32px;
-  padding: 6px 12px;
-  background-color: #fff8f8;
-  border-left: 3px solid #dc3545;
-  font-size: 12px;
-  color: #dc3545;
 }
 
 .substep {

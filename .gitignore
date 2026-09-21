@@ -16,4 +16,9 @@ inst/doc
 
 # Temporary files
 *.log
-*~
+*~psychds.Rcheck/
+*.tar.gz
+.Rproj.user/
+.Rhistory
+.DS_Store
+docs/

@@ -51,7 +51,6 @@ The application provides a guided interface for:
 \item Standardizing filenames with Psych-DS keywords
 \item Generating data dictionaries
 \item Validating datasets against the Psych-DS specification
-\item Uploading to the Open Science Framework (OSF)
 }
 }
 \examples{

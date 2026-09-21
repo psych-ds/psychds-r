@@ -195,9 +195,12 @@ server <- function(input, output, session) {
         state$current_step <- 1
       }
     } else if (input$sidebar == "validate") {
-      # For validate tab, set the validation directory to the created dataset if available
+      # For validate tab, set the validation directory to the created dataset if
+      # available. The input lives inside the "validate_dataset" module, so the
+      # id must be namespaced (same pattern as the dictionary tab below) --
+      # unnamespaced "validate_dir" targets nothing and vanishes silently.
       if (!is.null(state$created_dataset_dir) && state$created_dataset_dir != "" && dir.exists(state$created_dataset_dir)) {
-        updateTextInput(session, "validate_dir", value = state$created_dataset_dir)
+        updateTextInput(session, "validate_dataset-validate_dir", value = state$created_dataset_dir)
         
         # Also reset the validation UI
         session$sendCustomMessage("reset_validation_ui", list())
@@ -297,7 +300,6 @@ server <- function(input, output, session) {
 
   dataDictionaryServer("data_dictionary", state, session)
   datasetExplorerServer("dataset_explorer", state, session)
-  osfUploadServer("osf_upload", state, session)
 
   # Modify your validate_btn event handler
 observeEvent(input$validate_btn, {
@@ -420,46 +422,6 @@ observeEvent(input$validation_results, {
           p("Dataset explorer would open here."),
           p("The selected directory is:"),
           p(strong(input$explorer_dir))
-        ),
-        easyClose = TRUE,
-        footer = modalButton("Close")
-      ))
-    }
-  })
-
-  observeEvent(input$upload_btn, {
-    if (input$upload_dir == "") {
-      showModal(modalDialog(
-        title = "Error",
-        "Please select a dataset directory first.",
-        easyClose = TRUE,
-        footer = modalButton("OK")
-      ))
-    } else if (input$osf_project == "") {
-      showModal(modalDialog(
-        title = "Error",
-        "Please enter an OSF project ID.",
-        easyClose = TRUE,
-        footer = modalButton("OK")
-      ))
-    } else if (input$osf_token == "") {
-      showModal(modalDialog(
-        title = "Error",
-        "Please enter your OSF token.",
-        easyClose = TRUE,
-        footer = modalButton("OK")
-      ))
-    } else {
-      # In a real implementation, this would upload to OSF
-      # For now, just show a placeholder
-      showModal(modalDialog(
-        title = "Upload to OSF",
-        div(
-          p("Dataset would be uploaded to OSF here."),
-          p("The selected directory is:"),
-          p(strong(input$upload_dir)),
-          p("OSF Project ID:"),
-          p(strong(input$osf_project))
         ),
         easyClose = TRUE,
         footer = modalButton("Close")
