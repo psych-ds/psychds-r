@@ -10,7 +10,6 @@ source("modules/step3_single_file.R")
 library(shiny)
 library(shinydashboard)
 library(shinyjs)
-library(shinyFiles)
 library(DT)
 library(jsonlite)
 library(tools)
@@ -70,47 +69,9 @@ is_valid_dir <- function(dir_path) {
   })
 }
 
-#' List all data files (CSV and TSV) in a directory (recursively)
-#'
-#' @param dir_path Character string of directory path to scan
-#' @param recursive Logical indicating whether to search recursively
-#' @param verbose Logical; if TRUE prints progress messages to the console.
-#'   Default is FALSE.
-#' @return List of data files (relative paths from dir_path)
-list_data_files <- function(dir_path, recursive = TRUE, verbose = FALSE) {
-  if (verbose) message("Listing data files in: ", dir_path)
-
-  # Ensure the directory exists
-  if (!dir.exists(dir_path)) {
-    if (verbose) message("Directory does not exist or is not accessible")
-    return(character(0))
-  }
-
-  tryCatch({
-    # Get all files (with full paths)
-    all_files <- list.files(dir_path, recursive = recursive, full.names = TRUE)
-    if (verbose) message("Found ", length(all_files), " total files")
-
-    # Filter for CSV and TSV files (case insensitive)
-    data_files <- all_files[grepl("\\.(csv|tsv)$", all_files, ignore.case = TRUE)]
-    if (verbose) message("Found ", length(data_files), " data files (CSV/TSV)")
-
-    # Get JUST the relative paths without using regex
-    # This is the most reliable approach
-    rel_paths <- list.files(dir_path, recursive = recursive, pattern = "\\.(csv|tsv)$",
-                            ignore.case = TRUE, full.names = FALSE)
-
-    if (verbose) {
-      message("Relative paths (first 3): ", paste(head(rel_paths, 3), collapse=", "),
-              ifelse(length(rel_paths) > 3, "...", ""))
-    }
-
-    return(rel_paths)
-  }, error = function(e) {
-    if (verbose) message("Error listing files: ", e$message)
-    return(character(0))
-  })
-}
+# NOTE: list_data_files() lives in modules/server_modules.R (fs-based,
+# permission-tolerant). A slower base-R duplicate that lived here was
+# removed -- whichever file sourced last silently won.
 
 #' Extract column information from a data file (CSV or TSV)
 #'

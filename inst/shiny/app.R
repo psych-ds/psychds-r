@@ -28,7 +28,6 @@ required_packages <- list(
   shiny = "1.7.0",
   shinydashboard = "0.7.0",
   shinyjs = "2.0.0",
-  shinyFiles = "0.9.0",
   DT = "0.20",
   jsonlite = "1.7.0"
 )
@@ -174,7 +173,6 @@ if (!interactive() || !exists("PSYCHDS_LOADING", envir = .GlobalEnv)) {
     safe_library("shiny", required = TRUE)
     safe_library("shinydashboard", required = TRUE)
     safe_library("shinyjs", required = TRUE)
-    safe_library("shinyFiles", required = TRUE)
     safe_library("DT", required = TRUE)
     safe_library("jsonlite", required = TRUE)
 

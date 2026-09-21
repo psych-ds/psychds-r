@@ -53,8 +53,8 @@
   invisible()
 }
 
-#' Startup Environment Check (MODIFIED VERSION)
-#' @keywords internal
+#' Startup Environment Check
+#' @noRd
 startup_check <- function() {
   
   # Don't run checks if explicitly disabled

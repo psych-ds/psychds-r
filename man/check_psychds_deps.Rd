@@ -32,8 +32,8 @@ and meet minimum version requirements.
 \details{
 This function checks for:
 \itemize{
-\item Required packages: shiny, shinydashboard, shinyjs, shinyFiles, DT, jsonlite
-\item Optional packages: httr, rmarkdown, knitr
+\item Required packages: shiny, shinydashboard, shinyjs, DT, jsonlite
+\item Optional packages: sortable, zip, pointblank
 \item Minimum version requirements for each package
 }
 

@@ -12,7 +12,6 @@
 - An interactive **Shiny application** for building Psych-DS compliant datasets from existing directories
 - Functions for **validating** existing datasets against the standard
 - Tools for generating **data dictionaries** with professional formatting
-- **OSF integration** for publishing validated datasets
 
 ## Installation
 
@@ -48,7 +47,6 @@ This opens a guided interface for:
 4. Generating data dictionaries
 5. Validating your dataset
 6. Exploring your dataset
-7. Optionally uploading to OSF
 
 ## Features
 
@@ -75,14 +73,6 @@ Validate datasets against the Psych-DS specification:
 - Verify data file integrity
 - Get detailed error messages and suggestions
 
-### ☁️ OSF Integration
-Upload validated datasets directly to the Open Science Framework:
-
-- Authenticate with personal access token
-- Create new projects or add to existing ones
-- Preserve folder structure
-- Auto-generate README files
-
 ## The Psych-DS Standard
 
 Psych-DS (Psychological Dataset Standard) provides a specification for organizing behavioral and psychological research data. Key components include:
@@ -96,9 +86,10 @@ Learn more at [psych-ds.github.io](https://psych-ds.github.io/)
 
 ## Requirements
 
-- R >= 4.0.0
-- Required packages: shiny, shinydashboard, shinyjs, shinyFiles, DT, jsonlite
+- R >= 4.1.0
+- Required packages: shiny, shinydashboard, shinyjs, DT, jsonlite
 - Optional: sortable, zip, pointblank (for full functionality)
+- Optional: Node.js >= 18 (for the `validate_dataset()` command-line validator)
 
 ## Getting Help
 
@@ -109,7 +100,7 @@ Learn more at [psych-ds.github.io](https://psych-ds.github.io/)
 
 ## Contributing
 
-Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details on:
+Contributions are welcome! Please read our [Contributing Guide](https://github.com/psych-ds/psychds-r/blob/main/CONTRIBUTING.md) for details on:
 
 - Reporting bugs
 - Suggesting features
@@ -123,7 +114,7 @@ If you use psychds in your research, please cite:
 @software{psychds,
   title = {psychds: Tools for Creating and Validating Psych-DS Datasets},
   author = {{Psych-DS Development Team}},
-  year = {2024},
+  year = {2026},
   url = {https://github.com/psych-ds/psychds-r}
 }
 ```

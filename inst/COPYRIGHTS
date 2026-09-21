@@ -1,6 +1,8 @@
 The psychds package includes the following third-party JavaScript libraries,
-bundled in inst/shiny/www/js/. These files are not part of the R source and
-are distributed under their respective licenses as noted below.
+bundled in inst/shiny/www/js/ (used by the Shiny app's in-browser validator)
+and inst/node/ (used by validate_dataset() via Node.js). These files are not
+part of the R source and are distributed under their respective licenses as
+noted below.
 
 --------------------------------------------------------------------------------
 
@@ -57,3 +59,74 @@ License: MIT License
   THE SOFTWARE.
 
 --------------------------------------------------------------------------------
+
+jsonld.js [VERSION - check the file header or the version you vendored]
+Source:  https://github.com/digitalbazaar/jsonld.js
+File:    inst/shiny/www/js/jsonld.min.js
+License: BSD 3-Clause License
+
+  Copyright (c) 2011-2022, Digital Bazaar, Inc.
+  All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+
+  * Redistributions of source code must retain the above copyright notice,
+    this list of conditions and the following disclaimer.
+
+  * Redistributions in binary form must reproduce the above copyright notice,
+    this list of conditions and the following disclaimer in the documentation
+    and/or other materials provided with the distribution.
+
+  * Neither the name of the copyright holder nor the names of its contributors
+    may be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+  LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+  CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+  SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+  INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+  POSSIBILITY OF SUCH DAMAGE.
+
+--------------------------------------------------------------------------------
+
+psychds-validator (browser build)
+Source:  https://github.com/psych-ds/psychds-validator
+Files:   inst/shiny/www/js/validator.js
+License: MIT License (same project and license as this package's authors'
+         validator; validator-utils.js is first-party glue code for this
+         package and is covered by the package LICENSE)
+
+--------------------------------------------------------------------------------
+
+psychds-validator 1.5.1 (Node.js single-file bundle) and compiled-in
+dependencies
+Source:  https://github.com/psych-ds/psychds-validator
+         (bundled from the npm package with esbuild; see tools/build-validator.sh)
+File:    inst/node/validate.bundle.mjs
+         (plus inst/node/defaultSchema.json and defaultSchemaOrg.json, which
+         are data files from the same project)
+
+The bundle compiles in the validator's npm dependency tree. Direct
+dependencies and their licenses:
+
+  chalk            MIT           https://github.com/chalk/chalk
+  cli-table3       MIT           https://github.com/cli-table/cli-table3
+  commander        MIT           https://github.com/tj/commander.js
+  csv-parse        MIT           https://github.com/adaltas/node-csv
+  eventemitter3    MIT           https://github.com/primus/eventemitter3
+  jsonld           BSD-3-Clause  https://github.com/digitalbazaar/jsonld.js
+  node-fetch       MIT           https://github.com/node-fetch/node-fetch
+  undici           MIT           https://github.com/nodejs/undici
+  winston          MIT           https://github.com/winstonjs/winston
+  @deno/shim-deno  MIT           https://github.com/denoland/node_deno_shims
+
+Transitive dependencies are MIT or similarly permissive; the original
+license comments are preserved verbatim inside validate.bundle.mjs itself
+(the bundle is built with esbuild's --legal-comments=inline option).

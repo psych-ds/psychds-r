@@ -47,25 +47,20 @@ navbar:
       href: https://github.com/psych-ds/psychds-r
       aria-label: GitHub
 
-# NOTE: The reference section is auto-generated from your roxygen2 documentation.
-# If you want custom groupings, uncomment and edit the section below AFTER 
-# you have documented your exported functions with roxygen2.
-#
-# To document a function, add roxygen2 comments above it:
-#   #' @export
-#   my_function <- function() { }
-#
-# Then run: devtools::document()
-
-# reference:
-#   - title: "Launch Application"
-#     desc: "Functions to start the Shiny application"
-#     contents:
-#       - run_psych_ds_app
-#   - title: "Setup & Configuration"
-#     contents:
-#       - check_psychds_deps
-#       - setup_pdf_generation
+reference:
+  - title: Run the application
+    desc: Launch the interactive dataset builder
+    contents:
+      - run_psych_ds_app
+      - run_app_safe
+  - title: Validate datasets
+    desc: Check a dataset against the Psych-DS specification
+    contents:
+      - validate_dataset
+  - title: Check dependencies
+    contents:
+      - check_psychds_deps
+      - check_dependencies
 
 # Article organization - only include vignettes that exist
 articles:
@@ -88,3 +83,4 @@ footer:
 news:
   one_page: true
   cran_dates: false
+  

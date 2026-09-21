@@ -22,3 +22,4 @@
 ^inst/node/node_modules/.*\.nyc_output.*$
 ^inst/node/node_modules/psychds-validator/script/src/.*\.test\..*$
 ^inst/node/node_modules/psychds-validator/esm/src/.*\.test\..*$
+^\.Rproj\.user$

@@ -6,13 +6,22 @@
 # Load UI modules
 source("modules/ui_modules.R")
 
+# Cache-bust the stylesheet with its modification time: the RStudio viewer
+# caches css/styles.css aggressively, so without a changing query string,
+# style edits show up in the browser but not the viewer.
+.css_version <- tryCatch(
+  as.integer(file.mtime(file.path("www", "css", "styles.css"))),
+  error = function(e) NA_integer_
+)
+if (is.na(.css_version)) .css_version <- as.integer(Sys.time())
+
 # Main UI definition
 ui <- dashboardPage(
   skin = "blue",
 
   # Header
   dashboardHeader(
-    title = span("psych-DS", style = "font-size: 24px;"),
+    title = span("Psych-DS", style = "font-size: 24px;"),
     titleWidth = 200
   ),
 
@@ -25,8 +34,7 @@ ui <- dashboardPage(
       menuItem("Create Dataset", tabName = "create", icon = icon("plus-circle")),
       menuItem("Validate Dataset", tabName = "validate", icon = icon("check-circle")),
       menuItem("Update Dictionary", tabName = "dictionary", icon = icon("book")),
-      menuItem("Dataset Explorer", tabName = "explorer", icon = icon("table")),
-      menuItem("Upload to OSF", tabName = "upload", icon = icon("cloud-upload"))
+      menuItem("Dataset Explorer", tabName = "explorer", icon = icon("table"))
     )
   ),
 
@@ -34,82 +42,18 @@ ui <- dashboardPage(
   dashboardBody(
     useShinyjs(),
 
+    # Pin the Psych-DS logo (top-left) and the sidebar while the page
+    # scrolls. The header's navbar itself is hidden in styles.css, leaving
+    # a logo-only header.
+    tags$script(HTML("$(document).ready(function(){ $('body').addClass('fixed'); });")),
+
     # External resources
     tags$head(
       # Include the external CSS file with cache-busting
       tags$link(rel = "stylesheet", type = "text/css",
-               href = "css/styles.css"),
-      # Change pop-up positioning
-      tags$style(HTML("
-        #shiny-notification-panel {
-          position: fixed;
-          top: 70px;
-          right: 20px;
-          bottom: auto;
-          left: auto;
-          width: 350px;
-        }
-        
-        .shiny-notification {
-          position: relative;
-          margin-bottom: 10px;
-        }
-        
-        /* Sidebar step indicators */
-        #create-step-indicators {
-          padding: 8px 15px 12px 45px;
-          display: flex;
-          gap: 6px;
-          align-items: center;
-          background-color: rgba(0,0,0,0.1);
-        }
-        
-        .step-indicator {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 24px;
-          height: 24px;
-          border-radius: 50%;
-          background-color: #4a5568;
-          color: #a0aec0;
-          font-size: 12px;
-          font-weight: 600;
-          transition: all 0.2s ease;
-          cursor: not-allowed;
-          border: none;
-          padding: 0;
-        }
-        
-        .step-indicator.clickable {
-          cursor: pointer;
-        }
-        
-        .step-indicator.clickable:hover {
-          transform: scale(1.1);
-        }
-        
-        .step-indicator.active {
-          background-color: #3498db;
-          color: white;
-        }
-        
-        .step-indicator.completed {
-          background-color: #27ae60;
-          color: white;
-          cursor: pointer;
-        }
-        
-        .step-indicator.completed:hover {
-          transform: scale(1.1);
-          background-color: #219a52;
-        }
-        
-        .step-separator {
-          color: #b8c7ce;
-          font-size: 10px;
-        }
-      ")),
+               href = paste0("css/styles.css?v=", .css_version)),
+      # All app CSS lives in www/css/styles.css (single source of truth);
+      # do not add inline tags$style() blocks here.
       # Include SortableJS library for drag-and-drop functionality (bundled locally)
       tags$script(src = "js/sortable.min.js"),
       
@@ -293,12 +237,6 @@ ui <- dashboardPage(
       tabItem(
         tabName = "explorer",
         datasetExplorerUI("dataset_explorer")
-      ),
-
-      # Upload to OSF Tab
-      tabItem(
-        tabName = "upload",
-        osfUploadUI("osf_upload")
       )
     )
   )

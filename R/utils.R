@@ -295,16 +295,22 @@ validate_dataset <- function(dir_path,
 
   dir_path <- normalizePath(dir_path, mustWork = TRUE)
 
+  # The single-file ESM bundle built by tools/build-validator.sh
+  # (validate.bundle.mjs, with the two defaultSchema*.json files beside it).
   validator_script <- system.file(
-    "node", "validate.js",
+    "node", "validate.bundle.mjs",
     package = "psychds"
   )
   if (!nchar(validator_script)) {
     stop("Bundled validator script not found. Is the psychds package installed correctly?")
   }
 
-  # Build CLI args the same way the npm CLI does
-   args <- c(shQuote(validator_script), shQuote(dir_path))
+  # Build CLI args the same way the npm CLI does. system2() builds a shell
+  # command on Unix but a plain command line on Windows, so quoting must
+  # match the platform or paths with spaces break.
+  qtype <- if (.Platform$OS.type == "windows") "cmd" else "sh"
+  args <- c(shQuote(validator_script, type = qtype),
+            shQuote(dir_path, type = qtype))
   if (json)       args <- c(args, "--json")
   if (verbose)    args <- c(args, "--verbose")
   if (use_events) args <- c(args, "--useEvents")
@@ -319,124 +325,6 @@ validate_dataset <- function(dir_path,
   invisible(status)
 }
 
-
-# Build a file tree structure matching what the JS validator expects.
-# Mirrors the logic of buildFileTree() in inst/shiny/global.R but
-# runs entirely in R without a Shiny session.
-#' @keywords internal
-.build_validation_tree <- function(dir_path) {
-
-  insert_node <- function(tree, parts, info) {
-    if (length(parts) == 0) return(tree)
-    key <- parts[[1]]
-    if (length(parts) == 1) {
-      tree[[key]] <- info
-    } else {
-      if (is.null(tree[[key]])) {
-        tree[[key]] <- list(type = "directory", name = key, contents = list())
-      }
-      tree[[key]]$contents <- insert_node(tree[[key]]$contents, parts[-1], info)
-    }
-    tree
-  }
-
-  all_files <- list.files(dir_path, recursive = TRUE,
-                          full.names = FALSE, all.files = FALSE)
-  all_dirs  <- list.dirs(dir_path,  recursive = TRUE,
-                         full.names = FALSE)
-  all_dirs  <- all_dirs[nchar(all_dirs) > 0]
-
-  tree <- list()
-
-  # Insert directories first
-  for (d in all_dirs) {
-    parts <- strsplit(d, .Platform$file.sep, fixed = TRUE)[[1]]
-    tree <- insert_node(tree, parts,
-                        list(type = "directory", name = parts[length(parts)],
-                             contents = list()))
-  }
-
-  # Insert files with content for JSON/text files
-  for (f in all_files) {
-    full <- file.path(dir_path, f)
-    parts <- strsplit(f, .Platform$file.sep, fixed = TRUE)[[1]]
-    ext <- tolower(tools::file_ext(f))
-
-    file_info <- list(
-      type    = "file",
-      name    = basename(f),
-      path    = f,
-      content = if (ext %in% c("json", "csv", "tsv", "txt")) {
-        tryCatch(paste(readLines(full, warn = FALSE), collapse = "\n"),
-                 error = function(e) "")
-      } else {
-        ""
-      }
-    )
-    tree <- insert_node(tree, parts, file_info)
-  }
-
-  list(type = "directory", name = basename(dir_path), contents = tree)
-}
-
-
-# Parse a raw validation result list into clean R structure.
-#' @keywords internal
-.parse_validation_result <- function(raw, verbose = FALSE) {
-
-  errors   <- character()
-  warnings <- character()
-  steps    <- list()
-
-  step_status <- raw$stepStatus
-
-  if (!is.null(step_status)) {
-    for (entry in step_status) {
-      # Each entry is a two-element list: [step_key, step_info]
-      if (length(entry) < 2) next
-      key  <- entry[[1]]
-      info <- entry[[2]]
-
-      complete <- isTRUE(info$complete)
-      success  <- isTRUE(info$success)
-      issue    <- info$issue  # NULL if no issue
-
-      steps[[key]] <- list(
-        complete = complete,
-        success  = success,
-        issue    = issue
-      )
-
-      if (complete && !success && !is.null(issue)) {
-        reason <- issue$reason %||% "Unknown error"
-        errors <- c(errors, paste0("[", key, "] ", reason))
-      }
-
-      if (verbose) {
-        status_label <- if (!complete) "SKIP"
-                        else if (success) "PASS"
-                        else "FAIL"
-        message(sprintf("  %-6s %s", status_label, key))
-        if (!success && !is.null(issue)) {
-          message("         ", issue$reason %||% "")
-        }
-      }
-    }
-  }
-
-  valid <- isTRUE(raw$valid) && length(errors) == 0
-
-  if (verbose) {
-    message(if (valid) "\nResult: VALID" else "\nResult: INVALID")
-  }
-
-  list(
-    valid        = valid,
-    errors       = errors,
-    warnings     = warnings,
-    step_results = steps
-  )
-}
 
 #' Check and Load Package Dependencies
 #' 
@@ -460,7 +348,6 @@ check_dependencies <- function(
       shiny = "1.7.0",           # Minimum for modern JS handling
       shinydashboard = "0.7.0",   # Basic dashboard functionality
       shinyjs = "2.0.0",          # JavaScript integration
-      shinyFiles = "0.9.0",       # File system access
       DT = "0.20",                # DataTables functionality
       jsonlite = "1.7.0",         # JSON parsing
       sortable = "0.4.0"          # Drag-and-drop support
@@ -473,22 +360,20 @@ check_dependencies <- function(
       shiny = "1.8.0",
       shinydashboard = "0.7.2", 
       shinyjs = "2.1.0",
-      shinyFiles = "0.9.3",
       DT = "0.31",
       jsonlite = "1.8.0",
       sortable = "0.5.0",
       zip = "2.2.0",
-      pointblank = "0.11.0",
-      osfr = "0.2.9"
+      pointblank = "0.11.0"
     )
   }
   
   # Core packages that must be present
-  core_packages <- c("shiny", "shinydashboard", "shinyjs", "shinyFiles", 
+  core_packages <- c("shiny", "shinydashboard", "shinyjs",
                      "DT", "jsonlite", "tools", "utils")
   
   # Optional packages that enhance functionality
-  optional_packages <- c("sortable", "zip", "pointblank", "osfr")
+  optional_packages <- c("sortable", "zip", "pointblank")
   
   # Initialize status tracking
   status <- list(
@@ -792,7 +677,7 @@ safe_load_package <- function(package_name,
 #' @param app_dir Directory containing the Shiny app
 #' @param ... Additional arguments passed to shiny::runApp
 #' @export
-run_app_safe <- function(app_dir = system.file("app", package = "psychds"),
+run_app_safe <- function(app_dir = system.file("shiny", package = "psychds"),
                         ...) {
   
   # ---- Pre-flight Checks ----
@@ -815,6 +700,8 @@ run_app_safe <- function(app_dir = system.file("app", package = "psychds"),
       warning("Old RStudio version detected. Some features may not work properly.")
       message("Consider updating RStudio or running in external browser.")
     }
+  } else {
+    rs_version <- NULL
   }
   
   # 3. Check dependencies
@@ -827,7 +714,6 @@ run_app_safe <- function(app_dir = system.file("app", package = "psychds"),
     "shiny",           # Load first
     "shinydashboard",  # Before shinyjs
     "shinyjs",         # Before custom JS
-    "shinyFiles",
     "DT",
     "jsonlite",
     "tools",
@@ -835,7 +721,7 @@ run_app_safe <- function(app_dir = system.file("app", package = "psychds"),
   )
   
   # Optional packages (don't fail if not available)
-  optional_packages <- c("sortable", "zip", "pointblank", "osfr")
+  optional_packages <- c("sortable", "zip", "pointblank")
   
   message("Loading required packages...")
   for (pkg in package_load_order) {
@@ -865,7 +751,7 @@ run_app_safe <- function(app_dir = system.file("app", package = "psychds"),
     force_browser <- getOption("psychds.force_browser", FALSE)
     
     # Detect potential viewer issues
-    if (rs_version < "2023.06.0" || force_browser) {
+    if ((!is.null(rs_version) && rs_version < "2023.06.0") || force_browser) {
       message("Opening in external browser for better compatibility...")
       old_browser_opt <- options(shiny.launch.browser = TRUE)
       on.exit(options(old_browser_opt), add = TRUE)
