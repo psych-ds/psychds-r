@@ -71,8 +71,6 @@
 <li>An interactive <strong>Shiny application</strong> for building Psych-DS compliant datasets from existing directories</li>
 <li>Functions for <strong>validating</strong> existing datasets against the standard</li>
 <li>Tools for generating <strong>data dictionaries</strong> with professional formatting</li>
-<li>
-<strong>OSF integration</strong> for publishing validated datasets</li>
 </ul>
 </div>
 <div class="section level2">
@@ -100,7 +98,7 @@
 </h3>
 <p>The easiest way to use psychds is through the interactive Shiny app:</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/psych-ds/psychds-r" class="external-link">psychds</a></span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://psych-ds.github.io/psychds-r/">psychds</a></span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/run_psych_ds_app.html">run_psych_ds_app</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
 <p>This opens a guided interface for:</p>
 <ol style="list-style-type: decimal">
@@ -110,7 +108,6 @@
 <li>Generating data dictionaries</li>
 <li>Validating your dataset</li>
 <li>Exploring your dataset</li>
-<li>Optionally uploading to OSF</li>
 </ol>
 </div>
 </div>
@@ -149,17 +146,6 @@
 <li>Get detailed error messages and suggestions</li>
 </ul>
 </div>
-<div class="section level3">
-<h3 id="cloud-osf-integration">☁️ OSF Integration<a class="anchor" aria-label="anchor" href="#cloud-osf-integration"></a>
-</h3>
-<p>Upload validated datasets directly to the Open Science Framework:</p>
-<ul>
-<li>Authenticate with personal access token</li>
-<li>Create new projects or add to existing ones</li>
-<li>Preserve folder structure</li>
-<li>Auto-generate README files</li>
-</ul>
-</div>
 </div>
 <div class="section level2">
 <h2 id="the-psych-ds-standard">The Psych-DS Standard<a class="anchor" aria-label="anchor" href="#the-psych-ds-standard"></a>
@@ -182,9 +168,10 @@
 <h2 id="requirements">Requirements<a class="anchor" aria-label="anchor" href="#requirements"></a>
 </h2>
 <ul>
-<li>R &gt;= 4.0.0</li>
-<li>Required packages: shiny, shinydashboard, shinyjs, shinyFiles, DT, jsonlite</li>
+<li>R &gt;= 4.1.0</li>
+<li>Required packages: shiny, shinydashboard, shinyjs, DT, jsonlite</li>
 <li>Optional: sortable, zip, pointblank (for full functionality)</li>
+<li>Optional: Node.js &gt;= 18 (for the <code><a href="reference/validate_dataset.html">validate_dataset()</a></code> command-line validator)</li>
 </ul>
 </div>
 <div class="section level2">
@@ -204,7 +191,7 @@
 <div class="section level2">
 <h2 id="contributing">Contributing<a class="anchor" aria-label="anchor" href="#contributing"></a>
 </h2>
-<p>Contributions are welcome! Please read our <a href="CONTRIBUTING.html">Contributing Guide</a> for details on:</p>
+<p>Contributions are welcome! Please read our <a href="https://github.com/psych-ds/psychds-r/blob/main/CONTRIBUTING.md" class="external-link">Contributing Guide</a> for details on:</p>
 <ul>
 <li>Reporting bugs</li>
 <li>Suggesting features</li>
@@ -218,7 +205,7 @@
 <div class="sourceCode" id="cb4"><pre class="sourceCode bibtex"><code class="sourceCode bibtex"><span id="cb4-1"><a href="#cb4-1" tabindex="-1"></a><span class="co">@software{psychds,</span></span>
 <span id="cb4-2"><a href="#cb4-2" tabindex="-1"></a><span class="co">  title = {psychds: Tools for Creating and Validating Psych-DS Datasets},</span></span>
 <span id="cb4-3"><a href="#cb4-3" tabindex="-1"></a><span class="co">  author = {{Psych-DS Development Team}},</span></span>
-<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">  year = {2024},</span></span>
+<span id="cb4-4"><a href="#cb4-4" tabindex="-1"></a><span class="co">  year = {2026},</span></span>
 <span id="cb4-5"><a href="#cb4-5" tabindex="-1"></a><span class="co">  url = {https://github.com/psych-ds/psychds-r}</span></span>
 <span id="cb4-6"><a href="#cb4-6" tabindex="-1"></a><span class="co">}</span></span></code></pre></div>
 </div>

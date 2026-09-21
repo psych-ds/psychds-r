@@ -1,14 +1,24 @@
 # Package index
 
-## All functions
+## Run the application
 
-- [`check_dependencies()`](https://psych-ds.github.io/psychds-r/reference/check_dependencies.md)
-  : Check and Load Package Dependencies
-- [`check_psychds_deps()`](https://psych-ds.github.io/psychds-r/reference/check_psychds_deps.md)
-  : Check psychds Dependencies
-- [`run_app_safe()`](https://psych-ds.github.io/psychds-r/reference/run_app_safe.md)
-  : Initialize Shiny App with Robust Package Management
+Launch the interactive dataset builder
+
 - [`run_psych_ds_app()`](https://psych-ds.github.io/psychds-r/reference/run_psych_ds_app.md)
   : Run the Psych-DS Shiny Application
+- [`run_app_safe()`](https://psych-ds.github.io/psychds-r/reference/run_app_safe.md)
+  : Initialize Shiny App with Robust Package Management
+
+## Validate datasets
+
+Check a dataset against the Psych-DS specification
+
 - [`validate_dataset()`](https://psych-ds.github.io/psychds-r/reference/validate_dataset.md)
   : Validate a Psych-DS Dataset
+
+## Check dependencies
+
+- [`check_psychds_deps()`](https://psych-ds.github.io/psychds-r/reference/check_psychds_deps.md)
+  : Check psychds Dependencies
+- [`check_dependencies()`](https://psych-ds.github.io/psychds-r/reference/check_dependencies.md)
+  : Check and Load Package Dependencies

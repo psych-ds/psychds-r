@@ -5,10 +5,7 @@ provides guidelines and instructions for contributing.
 
 ## Code of Conduct
 
-Please note that the psychds project is released with a [Contributor
-Code of
-Conduct](https://psych-ds.github.io/psychds-r/CODE_OF_CONDUCT.md). By
-contributing to this project you agree to abide by its terms.
+Please be respectful and constructive in all project interactions.
 
 ## How to Contribute
 

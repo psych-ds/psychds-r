@@ -16,12 +16,13 @@ run_psych_ds_app()
 
 ## Application Sections
 
-The app has four main sections accessible from the sidebar:
+The app has five sections accessible from the sidebar. After the Welcome
+page, the four tools are:
 
 1.  **Create Dataset** - Build a new Psych-DS dataset
-2.  **Update Data Dictionary** - Edit variable definitions
+2.  **Update Dictionary** - Edit variable definitions
 3.  **Validate Dataset** - Check compliance with the standard
-4.  **Upload to OSF** - Publish to Open Science Framework
+4.  **Dataset Explorer** - Browse and filter any Psych-DS dataset
 
 ------------------------------------------------------------------------
 
@@ -75,7 +76,12 @@ definitions.
 
 ### Step 3: Standardize Filenames
 
-Rename your data files using Psych-DS naming conventions:
+Rename your data files using Psych-DS naming conventions.
+
+If you selected exactly **one** data file, a simplified guided panel
+appears instead: pick your first keyword (usually `study`), give it a
+value, and optionally add more keyword-value pairs. The full interface
+below appears when two or more files are selected.
 
 1.  **Select files** - Check boxes to select multiple files for batch
     operations
@@ -108,7 +114,7 @@ After Step 3, you’ll be prompted to:
 
 ------------------------------------------------------------------------
 
-## Update Data Dictionary
+## Update Dictionary
 
 The data dictionary editor allows you to document all variables in your
 dataset.
@@ -201,35 +207,18 @@ Click on any item to see details and suggestions for fixing issues.
 
 ------------------------------------------------------------------------
 
-## Upload to OSF
+## Dataset Explorer
 
-Publish your validated dataset to the Open Science Framework:
+Browse any Psych-DS dataset interactively:
 
-### Authentication
+1.  **Load a dataset** - Select a Psych-DS dataset folder (datasets you
+    have just created or validated are filled in automatically)
+2.  **Browse files** - Click a data file to view its contents
+3.  **Filter and summarize** - Filter rows by keyword values, select
+    columns, and view summaries including missing-data counts
 
-1.  Go to [osf.io/settings/tokens](https://osf.io/settings/tokens)
-2.  Generate a Personal Access Token with appropriate permissions
-3.  Paste the token in the app
-4.  Click “Test Connection” to verify
-
-### Selecting Your Dataset
-
-1.  Browse to your validated Psych-DS dataset
-2.  Click “Verify Dataset” to confirm it’s ready for upload
-
-### Upload Options
-
-**Destination:** - Create a new OSF project - Add to an existing project
-
-**Configuration:** - Preserve folder structure (recommended) -
-Auto-generate README file - Set folder path on OSF
-
-### Uploading
-
-1.  Review the upload summary
-2.  Click “Start Upload”
-3.  Wait for completion
-4.  Get a link to your OSF project
+Because all Psych-DS datasets share the same structure, the explorer
+works on any compliant dataset, not just ones created with this app.
 
 ------------------------------------------------------------------------
 

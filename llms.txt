@@ -11,7 +11,6 @@ standard](https://psych-ds.github.io/). The package includes:
 - Functions for **validating** existing datasets against the standard
 - Tools for generating **data dictionaries** with professional
   formatting
-- **OSF integration** for publishing validated datasets
 
 ## Installation
 
@@ -50,7 +49,6 @@ This opens a guided interface for:
 4.  Generating data dictionaries
 5.  Validating your dataset
 6.  Exploring your dataset
-7.  Optionally uploading to OSF
 
 ## Features
 
@@ -80,15 +78,6 @@ Validate datasets against the Psych-DS specification:
 - Verify data file integrity
 - Get detailed error messages and suggestions
 
-### ☁️ OSF Integration
-
-Upload validated datasets directly to the Open Science Framework:
-
-- Authenticate with personal access token
-- Create new projects or add to existing ones
-- Preserve folder structure
-- Auto-generate README files
-
 ## The Psych-DS Standard
 
 Psych-DS (Psychological Dataset Standard) provides a specification for
@@ -106,10 +95,12 @@ Learn more at [psych-ds.github.io](https://psych-ds.github.io/)
 
 ## Requirements
 
-- R \>= 4.0.0
-- Required packages: shiny, shinydashboard, shinyjs, shinyFiles, DT,
-  jsonlite
+- R \>= 4.1.0
+- Required packages: shiny, shinydashboard, shinyjs, DT, jsonlite
 - Optional: sortable, zip, pointblank (for full functionality)
+- Optional: Node.js \>= 18 (for the
+  [`validate_dataset()`](https://psych-ds.github.io/psychds-r/reference/validate_dataset.md)
+  command-line validator)
 
 ## Getting Help
 
@@ -121,8 +112,8 @@ Learn more at [psych-ds.github.io](https://psych-ds.github.io/)
 ## Contributing
 
 Contributions are welcome! Please read our [Contributing
-Guide](https://psych-ds.github.io/psychds-r/CONTRIBUTING.md) for details
-on:
+Guide](https://github.com/psych-ds/psychds-r/blob/main/CONTRIBUTING.md)
+for details on:
 
 - Reporting bugs
 - Suggesting features
@@ -136,7 +127,7 @@ If you use psychds in your research, please cite:
 @software{psychds,
   title = {psychds: Tools for Creating and Validating Psych-DS Datasets},
   author = {{Psych-DS Development Team}},
-  year = {2024},
+  year = {2026},
   url = {https://github.com/psych-ds/psychds-r}
 }
 ```
@@ -154,18 +145,28 @@ MIT © Psych-DS Development Team
 
 # Package index
 
-## All functions
+## Run the application
 
-- [`check_dependencies()`](https://psych-ds.github.io/psychds-r/reference/check_dependencies.md)
-  : Check and Load Package Dependencies
-- [`check_psychds_deps()`](https://psych-ds.github.io/psychds-r/reference/check_psychds_deps.md)
-  : Check psychds Dependencies
-- [`run_app_safe()`](https://psych-ds.github.io/psychds-r/reference/run_app_safe.md)
-  : Initialize Shiny App with Robust Package Management
+Launch the interactive dataset builder
+
 - [`run_psych_ds_app()`](https://psych-ds.github.io/psychds-r/reference/run_psych_ds_app.md)
   : Run the Psych-DS Shiny Application
+- [`run_app_safe()`](https://psych-ds.github.io/psychds-r/reference/run_app_safe.md)
+  : Initialize Shiny App with Robust Package Management
+
+## Validate datasets
+
+Check a dataset against the Psych-DS specification
+
 - [`validate_dataset()`](https://psych-ds.github.io/psychds-r/reference/validate_dataset.md)
   : Validate a Psych-DS Dataset
+
+## Check dependencies
+
+- [`check_psychds_deps()`](https://psych-ds.github.io/psychds-r/reference/check_psychds_deps.md)
+  : Check psychds Dependencies
+- [`check_dependencies()`](https://psych-ds.github.io/psychds-r/reference/check_dependencies.md)
+  : Check and Load Package Dependencies
 
 # Articles
 

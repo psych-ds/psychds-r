@@ -17,12 +17,12 @@ Source:
 
 Leonard B, Kline Struhl M (2026). *psychds: Tools for Creating and
 Validating 'Psych-DS' Datasets*. R package version 0.1.0,
-<https://github.com/psych-ds/psychds-r>.
+<https://psych-ds.github.io/psychds-r/>.
 
     @Manual{,
       title = {psychds: Tools for Creating and Validating 'Psych-DS' Datasets},
       author = {Brian Leonard and Melissa {Kline Struhl}},
       year = {2026},
       note = {R package version 0.1.0},
-      url = {https://github.com/psych-ds/psychds-r},
+      url = {https://psych-ds.github.io/psychds-r/},
     }

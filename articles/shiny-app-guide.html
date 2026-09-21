@@ -79,25 +79,25 @@ through each section of the application.</p>
 <h2 id="launching-the-app">Launching the App<a class="anchor" aria-label="anchor" href="#launching-the-app"></a>
 </h2>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/psych-ds/psychds-r" class="external-link">psychds</a></span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://psych-ds.github.io/psychds-r/">psychds</a></span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/run_psych_ds_app.html">run_psych_ds_app</a></span><span class="op">(</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
 <h2 id="application-sections">Application Sections<a class="anchor" aria-label="anchor" href="#application-sections"></a>
 </h2>
-<p>The app has four main sections accessible from the sidebar:</p>
+<p>The app has five sections accessible from the sidebar. After the
+Welcome page, the four tools are:</p>
 <ol style="list-style-type: decimal">
 <li>
 <strong>Create Dataset</strong> - Build a new Psych-DS dataset</li>
 <li>
-<strong>Update Data Dictionary</strong> - Edit variable
-definitions</li>
+<strong>Update Dictionary</strong> - Edit variable definitions</li>
 <li>
 <strong>Validate Dataset</strong> - Check compliance with the
 standard</li>
 <li>
-<strong>Upload to OSF</strong> - Publish to Open Science
-Framework</li>
+<strong>Dataset Explorer</strong> - Browse and filter any Psych-DS
+dataset</li>
 </ol>
 <hr>
 </div>
@@ -164,7 +164,12 @@ definitions.</p>
 <div class="section level3">
 <h3 id="step-3-standardize-filenames">Step 3: Standardize Filenames<a class="anchor" aria-label="anchor" href="#step-3-standardize-filenames"></a>
 </h3>
-<p>Rename your data files using Psych-DS naming conventions:</p>
+<p>Rename your data files using Psych-DS naming conventions.</p>
+<p>If you selected exactly <strong>one</strong> data file, a simplified
+guided panel appears instead: pick your first keyword (usually
+<code>study</code>), give it a value, and optionally add more
+keyword-value pairs. The full interface below appears when two or more
+files are selected.</p>
 <ol style="list-style-type: decimal">
 <li><p><strong>Select files</strong> - Check boxes to select multiple
 files for batch operations</p></li>
@@ -201,7 +206,7 @@ dataset</li>
 </div>
 </div>
 <div class="section level2">
-<h2 id="update-data-dictionary">Update Data Dictionary<a class="anchor" aria-label="anchor" href="#update-data-dictionary"></a>
+<h2 id="update-dictionary">Update Dictionary<a class="anchor" aria-label="anchor" href="#update-dictionary"></a>
 </h2>
 <p>The data dictionary editor allows you to document all variables in
 your dataset.</p>
@@ -320,47 +325,25 @@ issues.</p>
 </div>
 </div>
 <div class="section level2">
-<h2 id="upload-to-osf">Upload to OSF<a class="anchor" aria-label="anchor" href="#upload-to-osf"></a>
+<h2 id="dataset-explorer">Dataset Explorer<a class="anchor" aria-label="anchor" href="#dataset-explorer"></a>
 </h2>
-<p>Publish your validated dataset to the Open Science Framework:</p>
-<div class="section level3">
-<h3 id="authentication">Authentication<a class="anchor" aria-label="anchor" href="#authentication"></a>
-</h3>
+<p>Browse any Psych-DS dataset interactively:</p>
 <ol style="list-style-type: decimal">
-<li>Go to <a href="https://osf.io/settings/tokens" class="external-link">osf.io/settings/tokens</a>
-</li>
-<li>Generate a Personal Access Token with appropriate permissions</li>
-<li>Paste the token in the app</li>
-<li>Click “Test Connection” to verify</li>
+<li>
+<strong>Load a dataset</strong> - Select a Psych-DS dataset folder
+(datasets you have just created or validated are filled in
+automatically)</li>
+<li>
+<strong>Browse files</strong> - Click a data file to view its
+contents</li>
+<li>
+<strong>Filter and summarize</strong> - Filter rows by keyword
+values, select columns, and view summaries including missing-data
+counts</li>
 </ol>
-</div>
-<div class="section level3">
-<h3 id="selecting-your-dataset">Selecting Your Dataset<a class="anchor" aria-label="anchor" href="#selecting-your-dataset"></a>
-</h3>
-<ol style="list-style-type: decimal">
-<li>Browse to your validated Psych-DS dataset</li>
-<li>Click “Verify Dataset” to confirm it’s ready for upload</li>
-</ol>
-</div>
-<div class="section level3">
-<h3 id="upload-options">Upload Options<a class="anchor" aria-label="anchor" href="#upload-options"></a>
-</h3>
-<p><strong>Destination:</strong> - Create a new OSF project - Add to an
-existing project</p>
-<p><strong>Configuration:</strong> - Preserve folder structure
-(recommended) - Auto-generate README file - Set folder path on OSF</p>
-</div>
-<div class="section level3">
-<h3 id="uploading">Uploading<a class="anchor" aria-label="anchor" href="#uploading"></a>
-</h3>
-<ol style="list-style-type: decimal">
-<li>Review the upload summary</li>
-<li>Click “Start Upload”</li>
-<li>Wait for completion</li>
-<li>Get a link to your OSF project</li>
-</ol>
+<p>Because all Psych-DS datasets share the same structure, the explorer
+works on any compliant dataset, not just ones created with this app.</p>
 <hr>
-</div>
 </div>
 <div class="section level2">
 <h2 id="troubleshooting">Troubleshooting<a class="anchor" aria-label="anchor" href="#troubleshooting"></a>

@@ -21,7 +21,7 @@ library(psychds)
 run_psych_ds_app()
 ```
 
-Navigate to **“Update Data Dictionary”** in the sidebar.
+Navigate to **“Update Dictionary”** in the sidebar.
 
 ### Step-by-Step Process
 

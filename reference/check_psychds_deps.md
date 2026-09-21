@@ -40,10 +40,9 @@ Invisibly returns a list with `missing_required` and
 
 This function checks for:
 
-- Required packages: shiny, shinydashboard, shinyjs, shinyFiles, DT,
-  jsonlite
+- Required packages: shiny, shinydashboard, shinyjs, DT, jsonlite
 
-- Optional packages: httr, rmarkdown, knitr
+- Optional packages: sortable, zip, pointblank
 
 - Minimum version requirements for each package
 
@@ -59,23 +58,15 @@ check_psychds_deps()
 #> ✓ shiny (1.14.0)
 #> ✓ shinydashboard (0.7.3)
 #> ✓ shinyjs (2.1.1)
-#> ✓ shinyFiles (0.9.3)
 #> ✓ DT (0.34.0)
 #> ✓ jsonlite (2.0.0)
-#> ✗ jsonvalidate - MISSING (required)
-#> ✗ dplyr - MISSING (required)
-#> ✗ tidyr - MISSING (required)
-#> ✗ readr - MISSING (required)
 #> 
 #> Recommended packages:
-#> ✓ httr (1.4.9)
-#> ✓ rmarkdown (2.32)
-#> ✓ knitr (1.52)
+#> ✓ sortable (0.6.0)
+#> ✓ zip (3.0.2)
+#> ✓ pointblank (0.12.4)
 #> 
-#> ⚠ Missing required packages: jsonvalidate, dplyr, tidyr, readr
-#> 
-#> To install missing packages, run:
-#> install.packages(c("jsonvalidate", "dplyr", "tidyr", "readr"))
+#> ✓ All required dependencies are installed!
 
 # Detailed check with environment info
 check_psychds_deps(detailed = TRUE)
@@ -83,25 +74,17 @@ check_psychds_deps(detailed = TRUE)
 #> ✓ shiny (1.14.0)
 #> ✓ shinydashboard (0.7.3)
 #> ✓ shinyjs (2.1.1)
-#> ✓ shinyFiles (0.9.3)
 #> ✓ DT (0.34.0)
 #> ✓ jsonlite (2.0.0)
-#> ✗ jsonvalidate - MISSING (required)
-#> ✗ dplyr - MISSING (required)
-#> ✗ tidyr - MISSING (required)
-#> ✗ readr - MISSING (required)
 #> 
 #> Recommended packages:
-#> ✓ httr (1.4.9)
-#> ✓ rmarkdown (2.32)
-#> ✓ knitr (1.52)
+#> ✓ sortable (0.6.0)
+#> ✓ zip (3.0.2)
+#> ✓ pointblank (0.12.4)
 #> 
 #> Environment:
 #>   R version: 4.6.1
 #>   Platform: unix
 #> 
-#> ⚠ Missing required packages: jsonvalidate, dplyr, tidyr, readr
-#> 
-#> To install missing packages, run:
-#> install.packages(c("jsonvalidate", "dplyr", "tidyr", "readr"))
+#> ✓ All required dependencies are installed!
 ```

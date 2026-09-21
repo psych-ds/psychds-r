@@ -104,7 +104,7 @@ will walk you through:</p>
 <p>Before using psychds, verify that all dependencies are properly
 installed:</p>
 <div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/psych-ds/psychds-r" class="external-link">psychds</a></span><span class="op">)</span></span>
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://psych-ds.github.io/psychds-r/">psychds</a></span><span class="op">)</span></span>
 <span></span>
 <span><span class="co"># Basic check</span></span>
 <span><span class="fu"><a href="../reference/check_psychds_deps.html">check_psychds_deps</a></span><span class="op">(</span><span class="op">)</span></span>
@@ -115,7 +115,6 @@ installed:</p>
 <ul>
 <li>Installed package versions</li>
 <li>R environment information</li>
-<li>PDF generation capabilities (optional)</li>
 </ul>
 </div>
 <div class="section level2">
@@ -141,6 +140,20 @@ application:</p>
 </div>
 </div>
 <div class="section level2">
+<h2 id="validating-from-the-console">Validating from the Console<a class="anchor" aria-label="anchor" href="#validating-from-the-console"></a>
+</h2>
+<p>Existing datasets can be validated without launching the app:</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/validate_dataset.html">validate_dataset</a></span><span class="op">(</span><span class="st">"path/to/my-dataset"</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># JSON output for programmatic use</span></span>
+<span><span class="fu"><a href="../reference/validate_dataset.html">validate_dataset</a></span><span class="op">(</span><span class="st">"path/to/my-dataset"</span>, json <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
+<p>This runs the same official ‘Psych-DS’ validator used by the app, via
+a bundled script. It requires ‘Node.js’ (&gt;= 18) to be installed and
+on your PATH; everything else, including the validation schemas, ships
+with the package, and no network access is needed.</p>
+</div>
+<div class="section level2">
 <h2 id="understanding-psych-ds-structure">Understanding Psych-DS Structure<a class="anchor" aria-label="anchor" href="#understanding-psych-ds-structure"></a>
 </h2>
 <p>A Psych-DS compliant dataset has the following structure:</p>
@@ -161,26 +174,26 @@ application:</p>
 </h4>
 <p>This JSON file contains metadata about your dataset using Schema.org
 vocabulary:</p>
-<div class="sourceCode" id="cb7"><pre class="sourceCode json"><code class="sourceCode json"><span id="cb7-1"><a href="#cb7-1" tabindex="-1"></a><span class="fu">{</span></span>
-<span id="cb7-2"><a href="#cb7-2" tabindex="-1"></a>  <span class="dt">"@context"</span><span class="fu">:</span> <span class="st">"https://schema.org/"</span><span class="fu">,</span></span>
-<span id="cb7-3"><a href="#cb7-3" tabindex="-1"></a>  <span class="dt">"@type"</span><span class="fu">:</span> <span class="st">"Dataset"</span><span class="fu">,</span></span>
-<span id="cb7-4"><a href="#cb7-4" tabindex="-1"></a>  <span class="dt">"name"</span><span class="fu">:</span> <span class="st">"Visual Attention Experiment 2024"</span><span class="fu">,</span></span>
-<span id="cb7-5"><a href="#cb7-5" tabindex="-1"></a>  <span class="dt">"description"</span><span class="fu">:</span> <span class="st">"A study examining visual attention in adults"</span><span class="fu">,</span></span>
-<span id="cb7-6"><a href="#cb7-6" tabindex="-1"></a>  <span class="dt">"author"</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb7-7"><a href="#cb7-7" tabindex="-1"></a>    <span class="fu">{</span></span>
-<span id="cb7-8"><a href="#cb7-8" tabindex="-1"></a>      <span class="dt">"@type"</span><span class="fu">:</span> <span class="st">"Person"</span><span class="fu">,</span></span>
-<span id="cb7-9"><a href="#cb7-9" tabindex="-1"></a>      <span class="dt">"givenName"</span><span class="fu">:</span> <span class="st">"Jane"</span><span class="fu">,</span></span>
-<span id="cb7-10"><a href="#cb7-10" tabindex="-1"></a>      <span class="dt">"familyName"</span><span class="fu">:</span> <span class="st">"Smith"</span></span>
-<span id="cb7-11"><a href="#cb7-11" tabindex="-1"></a>    <span class="fu">}</span></span>
-<span id="cb7-12"><a href="#cb7-12" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
-<span id="cb7-13"><a href="#cb7-13" tabindex="-1"></a>  <span class="dt">"variableMeasured"</span><span class="fu">:</span> <span class="ot">[</span></span>
-<span id="cb7-14"><a href="#cb7-14" tabindex="-1"></a>    <span class="fu">{</span></span>
-<span id="cb7-15"><a href="#cb7-15" tabindex="-1"></a>      <span class="dt">"@type"</span><span class="fu">:</span> <span class="st">"PropertyValue"</span><span class="fu">,</span></span>
-<span id="cb7-16"><a href="#cb7-16" tabindex="-1"></a>      <span class="dt">"name"</span><span class="fu">:</span> <span class="st">"participant_id"</span><span class="fu">,</span></span>
-<span id="cb7-17"><a href="#cb7-17" tabindex="-1"></a>      <span class="dt">"description"</span><span class="fu">:</span> <span class="st">"Unique participant identifier"</span></span>
-<span id="cb7-18"><a href="#cb7-18" tabindex="-1"></a>    <span class="fu">}</span></span>
-<span id="cb7-19"><a href="#cb7-19" tabindex="-1"></a>  <span class="ot">]</span></span>
-<span id="cb7-20"><a href="#cb7-20" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
+<div class="sourceCode" id="cb8"><pre class="sourceCode json"><code class="sourceCode json"><span id="cb8-1"><a href="#cb8-1" tabindex="-1"></a><span class="fu">{</span></span>
+<span id="cb8-2"><a href="#cb8-2" tabindex="-1"></a>  <span class="dt">"@context"</span><span class="fu">:</span> <span class="st">"https://schema.org/"</span><span class="fu">,</span></span>
+<span id="cb8-3"><a href="#cb8-3" tabindex="-1"></a>  <span class="dt">"@type"</span><span class="fu">:</span> <span class="st">"Dataset"</span><span class="fu">,</span></span>
+<span id="cb8-4"><a href="#cb8-4" tabindex="-1"></a>  <span class="dt">"name"</span><span class="fu">:</span> <span class="st">"Visual Attention Experiment 2024"</span><span class="fu">,</span></span>
+<span id="cb8-5"><a href="#cb8-5" tabindex="-1"></a>  <span class="dt">"description"</span><span class="fu">:</span> <span class="st">"A study examining visual attention in adults"</span><span class="fu">,</span></span>
+<span id="cb8-6"><a href="#cb8-6" tabindex="-1"></a>  <span class="dt">"author"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb8-7"><a href="#cb8-7" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb8-8"><a href="#cb8-8" tabindex="-1"></a>      <span class="dt">"@type"</span><span class="fu">:</span> <span class="st">"Person"</span><span class="fu">,</span></span>
+<span id="cb8-9"><a href="#cb8-9" tabindex="-1"></a>      <span class="dt">"givenName"</span><span class="fu">:</span> <span class="st">"Jane"</span><span class="fu">,</span></span>
+<span id="cb8-10"><a href="#cb8-10" tabindex="-1"></a>      <span class="dt">"familyName"</span><span class="fu">:</span> <span class="st">"Smith"</span></span>
+<span id="cb8-11"><a href="#cb8-11" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb8-12"><a href="#cb8-12" tabindex="-1"></a>  <span class="ot">]</span><span class="fu">,</span></span>
+<span id="cb8-13"><a href="#cb8-13" tabindex="-1"></a>  <span class="dt">"variableMeasured"</span><span class="fu">:</span> <span class="ot">[</span></span>
+<span id="cb8-14"><a href="#cb8-14" tabindex="-1"></a>    <span class="fu">{</span></span>
+<span id="cb8-15"><a href="#cb8-15" tabindex="-1"></a>      <span class="dt">"@type"</span><span class="fu">:</span> <span class="st">"PropertyValue"</span><span class="fu">,</span></span>
+<span id="cb8-16"><a href="#cb8-16" tabindex="-1"></a>      <span class="dt">"name"</span><span class="fu">:</span> <span class="st">"participant_id"</span><span class="fu">,</span></span>
+<span id="cb8-17"><a href="#cb8-17" tabindex="-1"></a>      <span class="dt">"description"</span><span class="fu">:</span> <span class="st">"Unique participant identifier"</span></span>
+<span id="cb8-18"><a href="#cb8-18" tabindex="-1"></a>    <span class="fu">}</span></span>
+<span id="cb8-19"><a href="#cb8-19" tabindex="-1"></a>  <span class="ot">]</span></span>
+<span id="cb8-20"><a href="#cb8-20" tabindex="-1"></a><span class="fu">}</span></span></code></pre></div>
 </div>
 <div class="section level4">
 <h4 id="file-naming-conventions">File Naming Conventions<a class="anchor" aria-label="anchor" href="#file-naming-conventions"></a>
@@ -234,8 +247,8 @@ detailed usage instructions</li>
 <li>Learn about <a href="data-dictionaries.html">Creating Data
 Dictionaries</a>
 </li>
-<li>Explore the <a href="psych-ds-spec.html">Psych-DS Specification</a>
-for technical details</li>
+<li>See the <a href="https://psych-ds.github.io/" class="external-link">Psych-DS
+documentation</a> for the full specification</li>
 </ul>
 </div>
 <div class="section level2">

@@ -49,7 +49,6 @@ The detailed check will show:
 
 - Installed package versions
 - R environment information
-- PDF generation capabilities (optional)
 
 ## Launching the Application
 
@@ -75,6 +74,23 @@ run_psych_ds_app(port = 3838)
 # Minimal dependency checking for faster startup
 run_psych_ds_app(startup_mode = "minimal")
 ```
+
+## Validating from the Console
+
+Existing datasets can be validated without launching the app:
+
+``` r
+
+validate_dataset("path/to/my-dataset")
+
+# JSON output for programmatic use
+validate_dataset("path/to/my-dataset", json = TRUE)
+```
+
+This runs the same official ‘Psych-DS’ validator used by the app, via a
+bundled script. It requires ‘Node.js’ (\>= 18) to be installed and on
+your PATH; everything else, including the validation schemas, ships with
+the package, and no network access is needed.
 
 ## Understanding Psych-DS Structure
 
@@ -141,9 +157,8 @@ Example: `study-attention_session-1_task-stroop_data.csv`
   for detailed usage instructions
 - Learn about [Creating Data
   Dictionaries](https://psych-ds.github.io/psychds-r/articles/data-dictionaries.md)
-- Explore the [Psych-DS
-  Specification](https://psych-ds.github.io/psychds-r/articles/psych-ds-spec.md)
-  for technical details
+- See the [Psych-DS documentation](https://psych-ds.github.io/) for the
+  full specification
 
 ## Getting Help
 

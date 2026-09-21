@@ -72,8 +72,6 @@ The application provides a guided interface for:
 
 - Validating datasets against the Psych-DS specification
 
-- Uploading to the Open Science Framework (OSF)
-
 ## See also
 
 [`check_psychds_deps()`](https://psych-ds.github.io/psychds-r/reference/check_psychds_deps.md)
