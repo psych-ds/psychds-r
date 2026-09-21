@@ -1,4 +1,4 @@
-# psychds
+# psychds <a href="https://psych-ds.github.io/psychds-r/">
 <!-- badges: start -->
 [![CRAN status](https://www.r-pkg.org/badges/version/psychds)](https://CRAN.R-project.org/package=psychds)
 [![R-CMD-check](https://github.com/psych-ds/psychds-r/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/psych-ds/psychds-r/actions/workflows/R-CMD-check.yaml)
@@ -47,14 +47,6 @@ This opens a guided interface for:
 4. Generating data dictionaries
 5. Validating your dataset
 6. Exploring your dataset
-
-### Check Dependencies
-
-Before running the app, verify that all required packages are installed:
-
-```r
-check_psychds_deps(detailed = TRUE)
-```
 
 ## Features
 
